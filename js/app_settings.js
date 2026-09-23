@@ -32,7 +32,7 @@
         { id: 'openSettings', label: 'Open / close settings', defaults: [CTRL + 83], slots: 1, app: true },
         { id: 'setBackground', label: 'Use the image as background', note: 'Without an image: choose a file', defaults: [CTRL + 76], slots: 1, app: true },
         { id: 'showInterface', label: 'Show the controls', note: 'Scrolls down so the search is at the top; again: back to the image', defaults: [85], slots: 1, app: true },
-        { id: 'addToAnalysis', label: 'Add to / remove from the tag analysis', defaults: [84], slots: 1, app: true }
+        { id: 'addToAnalysis', label: 'Add to / remove from the tag analysis', defaults: [67], slots: 1, app: true }
     ];
 
     // Keys that already do something fixed: Enter (play/pause, search), Tab, Esc, F5, F11, F12,
@@ -1785,7 +1785,7 @@
     }
 
     // ---------- Tag analysis ----------
-    // Images added to it (T or the 🧪 button) are compared: the tags most of them share can be searched for.
+    // Images added to it (C or the 🧪 button) are compared: the tags most of them share can be searched for.
 
     // Tags that say nothing about what is in the image.
     const GENERIC_TAG = /^(hi_?res|absurd_?res|highres|absurdres|lowres|low_res|\d{4}|\d+:\d+|digital_media_\(artwork\)|[a-z]+_\(artwork\)|animated|webm|sound|comic|english_text|text|signature|watermark|url|patreon.*|conditional_dnp|dialogue)$/i;
