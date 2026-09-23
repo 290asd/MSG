@@ -118,7 +118,12 @@ class SiteManager
 				function(){
 					doneSearchingSiteCallback(siteManager);
 				},
-				this.handleGeneralError.bind(siteManager),
+				// Unreachable or timed out: counts as done, so the other sites' results still show.
+				function(url, hideVisibleWarning){
+					siteManager.ranIntoErrorWhileSearching = true;
+					siteManager.handleGeneralError(url, hideVisibleWarning);
+					doneSearchingSiteCallback(siteManager);
+				},
 			);
 		}
 	}
@@ -164,7 +169,7 @@ class SiteManager
 	handleGeneralError(url, hideVisibleWarning = false)
 	{
 		if (!hideVisibleWarning)
-			this.sitesManager.displayWarningMessage('Error making the request to ' + url);
+			this.sitesManager.displayWarningMessage(new URL(url).hostname + ' did not answer, so its results are missing. Try again in a moment.'); // not the URL: it can hold an API key
 	}
 
 	addSlides(responseText)

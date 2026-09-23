@@ -92,7 +92,11 @@ class SiteManagerE621 extends SiteManager
 			},
 			this.handleErrorFromSiteResponse.bind(this),
 			() => doneSearchingSiteCallback(this),
-			this.handleGeneralError.bind(this));
+			(url, hide) => {
+				this.ranIntoErrorWhileSearching = true;
+				this.handleGeneralError(url, hide);
+				doneSearchingSiteCallback(this);
+			});
 	}
 
 	doesResponseTextIndicateOnline(responseText)

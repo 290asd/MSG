@@ -62,6 +62,10 @@ class WebRequester
                 onError(url, useSecondaryXhr);
             }
 		};
+
+		// A site that doesn't answer (rule34.xxx sometimes) would otherwise keep the search waiting forever.
+		xhr.timeout = 30000;
+		xhr.ontimeout = xhr.onerror;
 		
 		xhr.send();
 	}
