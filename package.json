@@ -1,7 +1,7 @@
 {
   "name": "msg",
   "productName": "MSG",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A slideshow for booru sites, based on the BooruSlideshow extension.",
   "main": "main.js",
   "scripts": {
