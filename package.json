@@ -1,0 +1,18 @@
+{
+  "name": "msg",
+  "productName": "MSG",
+  "version": "1.0.0",
+  "description": "A slideshow for booru sites, based on the BooruSlideshow extension.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-packager . MSG --overwrite --icon=img/msg_icon_black.ico --ignore=\"^/MSG-\" --ignore=\"^/release\"",
+    "build:linux": "electron-packager . MSG --platform=linux --arch=x64 --overwrite --ignore=\"^/MSG-\" --ignore=\"^/release\"",
+    "build:mac": "electron-packager . MSG --platform=darwin --arch=x64,arm64 --overwrite --icon=img/msg_icon.icns --app-bundle-id=fi.msg.app --ignore=\"^/MSG-\" --ignore=\"^/release\""
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^44.4.4"
+  }
+}

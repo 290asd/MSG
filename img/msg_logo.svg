@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="37 34 460 460">
+	<!-- MSG logo: skeletal formula of monosodium glutamate, Na⁺ ⁻OOC–CH₂–CH₂–CH(NH₂)–COOH.
+	     Drawn in black; the white version (dark theme) is made by swapping the color.
+	     msg_logo_small.svg is the same without the letters, for 32 px and below. -->
+	<defs>
+		<!-- Bonds stop short of the atom labels. -->
+		<mask id="bonds-mask">
+			<rect x="0" y="0" width="560" height="560" fill="#fff"/>
+			<circle cx="136" cy="176" r="30" fill="black"/>
+			<circle cx="76" cy="298" r="30" fill="black"/>
+			<circle cx="316" cy="164" r="32" fill="black"/>
+			<circle cx="376" cy="368" r="30" fill="black"/>
+			<circle cx="436" cy="264" r="32" fill="black"/>
+		</mask>
+	</defs>
+
+	<g mask="url(#bonds-mask)" stroke="#000" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" fill="none">
+		<!-- Carbon chain -->
+		<polyline points="136,256 196,222 256,256 316,222 376,256"/>
+		<!-- C1: C=O up, C–O⁻ down-left -->
+		<line x1="136" y1="256" x2="136" y2="176"/>
+		<line x1="110" y1="244" x2="110" y2="188"/>
+		<line x1="136" y1="256" x2="76" y2="298"/>
+		<!-- C4: C–NH₂ up -->
+		<line x1="316" y1="222" x2="316" y2="164"/>
+		<!-- C5: C=O down, C–OH right -->
+		<line x1="376" y1="256" x2="376" y2="368"/>
+		<line x1="350" y1="270" x2="350" y2="352"/>
+		<line x1="376" y1="256" x2="436" y2="264"/>
+	</g>
+
+	<g fill="#000" font-family="Segoe UI, Arial, sans-serif" font-weight="700" text-anchor="middle" dominant-baseline="central">
+		<text x="136" y="176" font-size="56">O</text>
+		<text x="76" y="298" font-size="56">O<tspan font-size="36" dy="-22">−</tspan></text>
+		<text x="118" y="368" font-size="46">Na<tspan font-size="32" dy="-18">+</tspan></text>
+		<text x="316" y="160" font-size="52">NH<tspan font-size="32" dy="12">2</tspan></text>
+		<text x="376" y="368" font-size="56">O</text>
+		<text x="452" y="264" font-size="52">OH</text>
+	</g>
+</svg>

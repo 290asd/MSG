@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="40 40 432 432">
+	<!-- MSG logo for 32 px and below: the glutamate skeleton of msg_logo.svg with thicker bonds,
+	     the atoms as dots instead of letters. Drawn in black; the white version swaps the color. -->
+	<g stroke="#000" stroke-width="38" stroke-linecap="round" stroke-linejoin="round" fill="none">
+		<polyline points="96,300 176,254 256,300 336,254 416,300"/>
+		<line x1="96" y1="300" x2="96" y2="170"/>
+		<line x1="336" y1="254" x2="336" y2="150"/>
+		<line x1="416" y1="300" x2="416" y2="410"/>
+	</g>
+
+	<g fill="#000">
+		<circle cx="96" cy="140" r="50"/>
+		<circle cx="336" cy="120" r="50"/>
+		<circle cx="416" cy="420" r="50"/>
+	</g>
+</svg>

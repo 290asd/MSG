@@ -1,0 +1,456 @@
+diff --git a/index.html b/index.html
+index d83c015..3de4b8d 100644
+--- a/index.html
++++ b/index.html
+@@ -2,38 +2,12 @@
+ <html lang="en">
+   <head>
+     <meta charset="UTF-8" />
+-    <link rel="icon" type="image/svg+xml" href="/favicon.png" />
+-    <link rel="manifest" href="/manifest.json" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <meta name="theme-color" content="#1c1a1f" />
+     <title>JOI.how</title>
+-    <meta
+-      name="description"
+-      content="jack-off-instruction stroke-to-the-beat slideshow"
+-    />
+-    <meta property="og:title" content="JOI.how" />
+-    <meta
+-      property="og:description"
+-      content="jack-off-instruction stroke-to-the-beat slideshow"
+-    />
+-    <meta property="og:image" content="https://joi.clynamic.net/banner.png" />
+-    <meta property="og:url" content="https://joi.clynamic.net/" />
+-    <meta property="og:type" content="website" />
+-    <meta property="og:image:width" content="1200" />
+-    <meta property="og:image:height" content="630" />
+-    <meta name="twitter:card" content="summary_large_image" />
+-    <meta property="twitter:domain" content="joi.clynamic.net" />
+-    <meta property="twitter:url" content="https://joi.clynamic.net/" />
+-    <meta name="twitter:title" content="JOI.how" />
+-    <meta
+-      name="twitter:description"
+-      content="jack-off-instruction stroke-to-the-beat slideshow"
+-    />
+-    <meta name="twitter:image" content="https://joi.clynamic.net/banner.png" />
+   </head>
+   <body>
+     <noscript>You need to enable JavaScript to run this app</noscript>
+-    <script type="module" src="/src/index.tsx"></script>
++    <script type="module" src="./src/index.tsx"></script>
+     <div id="root"></div>
+   </body>
+ </html>
+diff --git a/src/app/App.tsx b/src/app/App.tsx
+index ce5230c..101f41c 100644
+--- a/src/app/App.tsx
++++ b/src/app/App.tsx
+@@ -1,4 +1,4 @@
+-import { BrowserRouter, Routes, Route } from 'react-router-dom';
++import { HashRouter, Routes, Route } from 'react-router-dom';
+ import { HomePage } from '../home';
+ import { GamePage } from '../game';
+ 
+@@ -6,13 +6,13 @@ import '@awesome.me/webawesome/dist/styles/webawesome.css';
+ 
+ export const App = () => {
+   return (
+-    <BrowserRouter
++    <HashRouter
+       future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+     >
+       <Routes>
+         <Route path='/' element={<HomePage />} />
+         <Route path='/play' element={<GamePage />} />
+       </Routes>
+-    </BrowserRouter>
++    </HashRouter>
+   );
+ };
+diff --git a/src/common/ContentSection.tsx b/src/common/ContentSection.tsx
+index e7f9fbd..559ee0d 100644
+--- a/src/common/ContentSection.tsx
++++ b/src/common/ContentSection.tsx
+@@ -5,6 +5,10 @@ export const ContentSection = styled.section`
+   color: var(--card-color);
+ 
+   border-radius: var(--border-radius);
++  border: 1px solid var(--msg-glass-border, transparent);
++  box-shadow:
++    var(--msg-shadow, none),
++    inset 0 1px 0 var(--msg-glass-highlight, transparent);
+ 
+   width: 100%;
+   margin-bottom: 14px;
+@@ -18,5 +22,5 @@ export const ContentSection = styled.section`
+   font-size: 0.9rem;
+   line-height: 25px;
+   font-weight: normal;
+-  color: #d3cedc;
++  color: var(--card-color);
+ `;
+diff --git a/src/common/Fields.tsx b/src/common/Fields.tsx
+index 891f115..7999628 100644
+--- a/src/common/Fields.tsx
++++ b/src/common/Fields.tsx
+@@ -13,11 +13,10 @@ const StyledFields = styled.fieldset`
+   flex-direction: column;
+ 
+   background: var(--section-background);
+-  color: #b9bad6;
++  color: var(--wa-color-text-quiet);
+ 
+-  border: unset;
+-  border-left: 2px solid var(--legend-background);
+-  border-radius: unset;
++  border: 1px solid var(--msg-field-border, transparent);
++  border-radius: 16px;
+ 
+   margin: 0;
+   padding: var(--wa-space-s);
+@@ -29,13 +28,16 @@ const StyledFields = styled.fieldset`
+   }
+ `;
+ 
++// MSG: a heading like MSG's settings subheadings instead of a label box.
+ const StyledFieldsLegend = styled.legend`
+   width: fit-content;
+-  padding: 4px 8px;
+-  background: var(--legend-background);
++  padding: 0 6px;
+   color: var(--legend-color);
+   line-height: 100%;
+-  font-size: 1rem;
++  font-size: 0.8rem;
++  font-weight: 600;
++  letter-spacing: 0.06em;
++  text-transform: uppercase;
+ `;
+ 
+ export const Fields: React.FC<FieldsProps> = ({
+diff --git a/src/common/SettingsInfo.tsx b/src/common/SettingsInfo.tsx
+index 3371efa..703f101 100644
+--- a/src/common/SettingsInfo.tsx
++++ b/src/common/SettingsInfo.tsx
+@@ -5,7 +5,7 @@ export interface SettingsInfoProps extends React.HTMLAttributes<HTMLElement> {
+ }
+ 
+ const StyledSettingsInfo = styled.em`
+-  color: #9495ad; // TODO: Use CSS variable
++  color: var(--wa-color-text-quiet);
+   font-size: 0.8rem;
+ 
+   line-height: 1.1;
+diff --git a/src/common/SettingsLabel.tsx b/src/common/SettingsLabel.tsx
+index e5c1bd9..f83f16d 100644
+--- a/src/common/SettingsLabel.tsx
++++ b/src/common/SettingsLabel.tsx
+@@ -1,7 +1,7 @@
+ import styled from 'styled-components';
+ 
+ export const SettingsLabel = styled.label`
+-  color: #b9bad6; // TODO: Use CSS variable
++  color: var(--card-color);
+   font-size: 0.9rem;
+ 
+   white-space: nowrap;
+diff --git a/src/game/GamePage.tsx b/src/game/GamePage.tsx
+index 95855d2..36bcbd3 100644
+--- a/src/game/GamePage.tsx
++++ b/src/game/GamePage.tsx
+@@ -41,6 +41,7 @@ const StyledTopBar = styled.div`
+   display: flex;
+   justify-content: space-between;
+   flex-wrap: wrap;
++  padding-right: 64px;
+ 
+   & > *:first-child {
+     margin-bottom: 8px;
+diff --git a/src/game/components/GameSettings.tsx b/src/game/components/GameSettings.tsx
+index 980ec37..2547d22 100644
+--- a/src/game/components/GameSettings.tsx
++++ b/src/game/components/GameSettings.tsx
+@@ -6,7 +6,6 @@ import {
+   DurationSettings,
+   EventSettings,
+   HypnoSettings,
+-  ImageSettings,
+   PaceSettings,
+   PlayerSettings,
+   ToyListSettings,
+@@ -64,7 +63,6 @@ const GameSettingsDialogContent = memo(() => (
+     <ClimaxSettings />
+     <BoardSettings />
+     <ToyListSettings />
+-    <ImageSettings />
+   </StyledGameSettingsDialog>
+ ));
+ 
+diff --git a/src/game/components/events/climax.ts b/src/game/components/events/climax.ts
+index 8daaa66..cd690bc 100644
+--- a/src/game/components/events/climax.ts
++++ b/src/game/components/events/climax.ts
+@@ -72,7 +72,7 @@ export const climaxEvent = (data: EventDataRef) => {
+                 {
+                   title: 'Leave',
+                   onClick: () => {
+-                    window.location.href = '/';
++                    window.location.hash = '#/';
+                   },
+                 },
+               ],
+@@ -100,7 +100,7 @@ export const climaxEvent = (data: EventDataRef) => {
+                 {
+                   title: 'Leave',
+                   onClick: () => {
+-                    window.location.href = '/';
++                    window.location.hash = '#/';
+                   },
+                 },
+               ],
+diff --git a/src/home/HomePage.tsx b/src/home/HomePage.tsx
+index 5952154..e3f03e7 100644
+--- a/src/home/HomePage.tsx
++++ b/src/home/HomePage.tsx
+@@ -1,14 +1,5 @@
+ import styled from 'styled-components';
+-import {
+-  HomeTitle,
+-  WallTakerAd,
+-  ReleaseNotes,
+-  AgeWarning,
+-  Introduction,
+-  Instructions,
+-  VersionDisplay,
+-  StartButton,
+-} from './components';
++import { Instructions, StartButton } from './components';
+ import { SettingsSection } from '../settings';
+ import { HomeProvider } from './HomeProvider';
+ 
+@@ -34,13 +25,7 @@ export const HomePage = () => {
+   return (
+     <HomeProvider>
+       <StyledHomePage>
+-        <HomeTitle />
+-        <AgeWarning />
+-        <Introduction />
+         <SettingsSection />
+-        <WallTakerAd />
+-        <VersionDisplay />
+-        <ReleaseNotes />
+         <Instructions />
+         <StartButton />
+       </StyledHomePage>
+diff --git a/src/home/components/StartButton.tsx b/src/home/components/StartButton.tsx
+index 46eecb4..9a50614 100644
+--- a/src/home/components/StartButton.tsx
++++ b/src/home/components/StartButton.tsx
+@@ -6,6 +6,8 @@ import { WaButton } from '@awesome.me/webawesome/dist/react';
+ 
+ const StyledStartSection = styled(ContentSection)`
+   background: transparent;
++  border: none;
++  box-shadow: none;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+diff --git a/src/index.tsx b/src/index.tsx
+index c2ecc4e..93c9882 100644
+--- a/src/index.tsx
++++ b/src/index.tsx
+@@ -5,13 +5,13 @@ import React from 'react';
+ import ReactDOM from 'react-dom/client';
+ import { App } from './app/App.tsx';
+ import './index.css';
++import './msg-theme.css';
++import './msg.ts';
+ import { SettingsProvider, ImageProvider } from './settings';
+ import { E621Provider } from './e621';
+ import { ToyClientProvider } from './toy';
+ import { LocalImageProvider } from './local/LocalProvider.tsx';
+-import { registerServiceWorker } from './utils/serviceWorker.ts';
+ 
+-registerServiceWorker();
+ 
+ ReactDOM.createRoot(document.getElementById('root')!).render(
+   <React.StrictMode>
+diff --git a/src/msg-theme.css b/src/msg-theme.css
+new file mode 100644
+index 0000000..2419f09
+--- /dev/null
++++ b/src/msg-theme.css
+@@ -0,0 +1,103 @@
++/* MSG: joi.how in MSG's look (liquid glass over the favorites page). Loaded after index.css,
++   so these replace joi.how's own colors. The theme follows MSG's (html[data-theme], set by msg.ts). */
++
++:root,
++:root[data-theme='dark'] {
++  --background: transparent;
++  --text-color: #f3f5f9;
++
++  --overlay-background: rgba(22, 25, 32, 0.6);
++  --overlay-color: #f3f5f9;
++
++  --primary: #4ea4ff;
++
++  --card-background: rgba(22, 25, 32, 0.55);
++  --card-color: #f3f5f9;
++
++  --section-background: rgba(255, 255, 255, 0.06);
++
++  --button-background: rgba(255, 255, 255, 0.1);
++  --button-color: #f3f5f9;
++
++  --legend-background: rgba(255, 255, 255, 0.12);
++  --legend-color: #a2abbb;
++  --msg-field-border: rgba(255, 255, 255, 0.1);
++
++  --msg-glass-border: rgba(255, 255, 255, 0.13);
++  --msg-glass-highlight: rgba(255, 255, 255, 0.2);
++  --msg-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
++
++  --border-radius: 22px;
++
++  --wa-color-text-quiet: #a2abbb;
++  --wa-font-family-body: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
++  --wa-border-radius-scale: 1.6;
++  --wa-form-control-border-color: rgba(255, 255, 255, 0.14);
++  --wa-form-control-background-color: rgba(255, 255, 255, 0.08);
++  --wa-form-control-height: 2.25rem;
++
++  color-scheme: dark;
++}
++
++:root[data-theme='light'] {
++  --text-color: #121620;
++  --primary: #0a74e0;
++  --card-background: rgba(255, 255, 255, 0.55);
++  --card-color: #121620;
++  --section-background: rgba(20, 30, 50, 0.05);
++  --button-background: rgba(20, 30, 50, 0.08);
++  --button-color: #121620;
++  --legend-background: rgba(20, 30, 50, 0.1);
++  --legend-color: #5a6475;
++  --msg-field-border: rgba(20, 30, 50, 0.1);
++  --msg-glass-border: rgba(255, 255, 255, 0.75);
++  --msg-glass-highlight: rgba(255, 255, 255, 0.95);
++  --msg-shadow: 0 12px 34px rgba(30, 40, 60, 0.18);
++  --wa-color-text-quiet: #5a6475;
++  --wa-form-control-border-color: rgba(20, 30, 50, 0.14);
++  --wa-form-control-background-color: rgba(20, 30, 50, 0.06);
++
++  color-scheme: light;
++}
++
++html,
++body {
++  background: transparent;
++}
++
++body {
++  font-size: 15px;
++}
++
++/* Dialogs (game settings, events) and the game's overlays blur the game image behind them. */
++wa-dialog::part(dialog) {
++  background: var(--card-background);
++  backdrop-filter: blur(28px) saturate(170%);
++  border: 1px solid var(--msg-glass-border);
++  box-shadow: var(--msg-shadow), inset 0 1px 0 var(--msg-glass-highlight);
++  border-radius: 22px;
++}
++
++wa-button::part(base) {
++  border-radius: 999px;
++}
++
++wa-button[variant='brand']::part(base),
++wa-button[appearance='accent']::part(base) {
++  font-weight: 600;
++}
++
++/* Like MSG: no scrollbars. */
++::-webkit-scrollbar {
++  display: none;
++}
++
++wa-slider::part(track) {
++  background: var(--button-background);
++}
++
++/* Scroll areas inside joi.how's components (shadow DOM) too. */
++* ,
++wa-dialog::part(body) {
++  scrollbar-width: none;
++}
+diff --git a/src/msg.ts b/src/msg.ts
+new file mode 100644
+index 0000000..9b97286
+--- /dev/null
++++ b/src/msg.ts
+@@ -0,0 +1,26 @@
++// MSG: joi.how runs in a panel on MSG's favorites page (an iframe of this build).
++
++// Follow MSG's light/dark theme.
++const syncTheme = () => {
++  try {
++    document.documentElement.dataset.theme =
++      window.parent.document.documentElement.dataset.theme || 'dark';
++  } catch {
++    document.documentElement.dataset.theme = 'dark';
++  }
++};
++syncTheme();
++try {
++  new MutationObserver(syncTheme).observe(
++    window.parent.document.documentElement,
++    { attributes: true, attributeFilter: ['data-theme'] }
++  );
++} catch {
++  // not inside MSG
++}
++
++// Esc closes the panel, unless it closes one of joi.how's own dialogs.
++window.addEventListener('keydown', e => {
++  if (e.key === 'Escape' && !document.querySelector('wa-dialog[open]'))
++    window.parent.postMessage('msg-joi-close', '*');
++});
+diff --git a/src/settings/SettingsSection.tsx b/src/settings/SettingsSection.tsx
+index 67670cb..aad9e41 100644
+--- a/src/settings/SettingsSection.tsx
++++ b/src/settings/SettingsSection.tsx
+@@ -6,8 +6,6 @@ import {
+   HypnoSettings,
+   PaceSettings,
+   PlayerSettings,
+-  ServiceSettings,
+-  ImageSettings,
+   BoardSettings,
+   ToyListSettings,
+   TradeSettings,
+@@ -34,8 +32,6 @@ export const SettingsSection = () => {
+       <HypnoSettings />
+       <ClimaxSettings />
+       <BoardSettings />
+-      <ServiceSettings />
+-      <ImageSettings />
+       <ToyListSettings />
+       <TradeSettings />
+     </StyledSettingsSection>
+diff --git a/vite.config.ts b/vite.config.ts
+index 5816367..cd0a733 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -16,8 +16,9 @@ export default defineConfig({
+     host: '0.0.0.0',
+     port: 5224,
+   },
++  base: './',
+   build: {
+-    sourcemap: true,
++    sourcemap: false,
+   },
+   optimizeDeps: {
+     esbuildOptions: {

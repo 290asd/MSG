@@ -1,0 +1,1756 @@
+/* MSG – shared styles for the slideshow and favorites pages.
+   The current image or video stays fixed in the background; everything else is
+   "liquid glass" that floats and scrolls over it. */
+
+/* ---------- Theme tokens ---------- */
+
+:root,
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--bg: #0b0c10;
+	--text: #f3f5f9;
+	--muted: #a2abbb;
+	--glass: rgba(22, 25, 32, 0.6);
+	--glass-strong: rgba(20, 22, 28, 0.74);
+	--glass-border: rgba(255, 255, 255, 0.13);
+	--glass-highlight: rgba(255, 255, 255, 0.2);
+	--glass-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+	--field: rgba(255, 255, 255, 0.08);
+	--field-hover: rgba(255, 255, 255, 0.14);
+	--field-border: rgba(255, 255, 255, 0.1);
+	--separator: rgba(255, 255, 255, 0.07);
+	--accent: #4ea4ff;
+	--accent-soft: rgba(78, 164, 255, 0.22);
+	--accent-text: #ffffff;
+	--heart: #ff6b8b;
+	--danger: #ff5f66;
+	--danger-soft: rgba(255, 95, 102, 0.2);
+	--ambient-opacity: 0.55;
+}
+
+:root[data-theme="light"] {
+	color-scheme: light;
+	--bg: #e9edf3;
+	--text: #121620;
+	--muted: #5a6475;
+	--glass: rgba(255, 255, 255, 0.5);
+	--glass-strong: rgba(250, 251, 253, 0.8);
+	--glass-border: rgba(255, 255, 255, 0.75);
+	--glass-highlight: rgba(255, 255, 255, 0.95);
+	--glass-shadow: 0 12px 34px rgba(30, 40, 60, 0.18);
+	--field: rgba(20, 30, 50, 0.06);
+	--field-hover: rgba(20, 30, 50, 0.1);
+	--field-border: rgba(20, 30, 50, 0.1);
+	--separator: rgba(20, 30, 50, 0.08);
+	--accent: #0a74e0;
+	--accent-soft: rgba(10, 116, 224, 0.14);
+	--accent-text: #ffffff;
+	--heart: #e8436a;
+	--danger: #d93a41;
+	--danger-soft: rgba(217, 58, 65, 0.12);
+	--ambient-opacity: 0.45;
+}
+
+/* ---------- Base ---------- */
+
+* {
+	box-sizing: border-box;
+}
+
+/* hidden always hides, also elements whose class sets a display (e.g. .glass-button). */
+[hidden] {
+	display: none !important;
+}
+
+html {
+	scroll-behavior: smooth;
+}
+
+body {
+	margin: 0;
+	font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+	font-size: 15px;
+	color: var(--text);
+	background: var(--bg);
+	transition: background-color 0.3s;
+}
+
+a {
+	color: var(--accent);
+}
+
+h4 {
+	margin: 0 0 12px;
+	font-size: 0.78em;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+/* No scrollbars: the page scrolls with the wheel, touch or the keyboard. */
+* {
+	scrollbar-width: none;
+}
+
+::-webkit-scrollbar {
+	display: none;
+}
+
+/* The liquid glass material. */
+.glass {
+	background: var(--glass);
+	-webkit-backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
+	backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
+	border: 1px solid var(--glass-border);
+	box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight), inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+	border-radius: 22px;
+}
+
+/* ---------- Controls ---------- */
+
+button,
+.glass-button {
+	font: inherit;
+	color: var(--text);
+	background: var(--field);
+	border: 1px solid var(--field-border);
+	border-radius: 12px;
+	padding: 8px 14px;
+	cursor: pointer;
+	text-decoration: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	white-space: nowrap;
+	transition: background-color 0.15s, transform 0.1s, border-color 0.15s;
+}
+
+button:hover,
+.glass-button:hover {
+	background: var(--field-hover);
+}
+
+button:active,
+.glass-button:active {
+	transform: scale(0.96);
+}
+
+button:disabled {
+	opacity: 0.4;
+	cursor: default;
+	transform: none;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+.glass-button:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+button.primary {
+	background: var(--accent);
+	border-color: transparent;
+	color: var(--accent-text);
+	font-weight: 600;
+}
+
+button.primary:hover {
+	filter: brightness(1.08);
+}
+
+button.danger {
+	background: var(--danger-soft);
+	border-color: transparent;
+	color: var(--danger);
+	font-weight: 600;
+}
+
+.icon-button {
+	width: 40px;
+	height: 40px;
+	padding: 0;
+	font-size: 20px;
+	border-radius: 50%;
+}
+
+select,
+input[type="search"],
+input[type="text"],
+input[type="password"],
+input[type="number"],
+textarea {
+	font: inherit;
+	color: var(--text);
+	background: var(--field);
+	border: 1px solid var(--field-border);
+	border-radius: 12px;
+	padding: 9px 14px;
+	transition: border-color 0.15s, background-color 0.15s;
+}
+
+input:focus,
+textarea:focus {
+	outline: none;
+	border-color: var(--accent);
+	background: var(--field-hover);
+}
+
+input::placeholder,
+textarea::placeholder {
+	color: var(--muted);
+	opacity: 0.8;
+}
+
+input:disabled {
+	opacity: 0.45;
+}
+
+textarea {
+	width: 100%;
+	resize: vertical;
+}
+
+.muted,
+.note {
+	color: var(--muted);
+}
+
+/* ---------- Background: current slide ---------- */
+
+#ambient {
+	position: fixed;
+	inset: -10%;
+	z-index: 0;
+	background-size: cover;
+	background-position: center;
+	filter: blur(60px) saturate(150%);
+	opacity: var(--ambient-opacity);
+	transition: background-image 0.5s;
+	pointer-events: none;
+}
+
+/* The background image (no slide yet) uses the blur chosen in Settings → Appearance. */
+body:not(.has-slide) #ambient {
+	filter: blur(var(--background-blur, 60px)) saturate(150%);
+}
+
+#slide-wrapper {
+	position: fixed;
+	inset: 0;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+}
+
+#current-image,
+#current-video {
+	display: none;
+	max-width: 100vw;
+	max-height: 100vh;
+	object-fit: contain;
+}
+
+/* The "searching" thinking orb (js/loading_orb.js), on a small glass disc so it shows on any image. */
+#loading-animation {
+	display: none;
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	width: 92px;
+	height: 92px;
+	padding: 14px;
+	border-radius: 50%;
+	background: var(--glass-strong);
+	-webkit-backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
+	backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
+	border: 1px solid var(--glass-border);
+	box-shadow: var(--glass-shadow);
+}
+
+/* The slideshow page's original tag box; the tag panel below replaces it. */
+#tags {
+	display: none !important;
+}
+
+/* ---------- Page content (below the image) ----------
+   With a slide showing, the content starts one screen down, so the image is
+   all you see until you scroll. Without one, it starts near the top. */
+
+#content {
+	position: relative;
+	z-index: 10;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 16px;
+	max-width: 1200px;
+	margin: 18vh auto 0;
+	padding: 0 16px 40px;
+}
+
+body.has-slide #content {
+	margin-top: 100vh;
+	padding-top: 16px;
+}
+
+#content > .card {
+	width: 100%;
+}
+
+.card {
+	padding: 18px 20px;
+}
+
+/* ---------- Player: navigation pill and the next slides ---------- */
+
+#player {
+	display: none;
+	flex-direction: column;
+	align-items: center;
+	gap: 14px;
+}
+
+body.has-slide #player {
+	display: flex;
+}
+
+/* Whether the image being shown is a favorite (slideshow page). */
+#player {
+	position: relative;
+	transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+#fave-badge {
+	display: none;
+	position: absolute;
+	top: 14px;
+	left: 18px;
+	padding: 4px 12px;
+	border-radius: 999px;
+	font-size: 0.85em;
+	font-weight: 600;
+	color: var(--heart);
+	background: color-mix(in srgb, var(--heart) 16%, transparent);
+}
+
+body.current-faved #fave-badge {
+	display: inline-block;
+}
+
+body.current-faved #player {
+	border-color: color-mix(in srgb, var(--heart) 55%, transparent);
+	box-shadow: var(--glass-shadow), 0 0 0 1px color-mix(in srgb, var(--heart) 35%, transparent), 0 0 28px color-mix(in srgb, var(--heart) 22%, transparent), inset 0 1px 0 var(--glass-highlight);
+}
+
+#navigation {
+	display: none;
+	padding: 5px 7px;
+	border-radius: 999px;
+	background: var(--field);
+	border: 1px solid var(--field-border);
+	white-space: nowrap;
+}
+
+#navigation > * {
+	vertical-align: middle;
+}
+
+.nav-button,
+#favorite-button {
+	width: 42px;
+	height: 42px;
+	padding: 0;
+	border-radius: 50%;
+	border-color: transparent;
+	background: transparent;
+	font-size: 16px;
+}
+
+.nav-button:hover,
+#favorite-button:hover {
+	background: var(--field-hover);
+}
+
+.nav-button.play-pause {
+	background: var(--accent);
+	color: var(--accent-text);
+}
+
+.nav-button.active {
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+
+#favorite-button {
+	font-size: 22px;
+	color: var(--muted);
+}
+
+#favorite-button.faved {
+	color: var(--heart);
+	background: color-mix(in srgb, var(--heart) 18%, transparent);
+}
+
+#slide-counter {
+	display: inline-block;
+	min-width: 76px;
+	padding: 0 8px;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+	color: var(--muted);
+}
+
+.nav-divider {
+	display: inline-block;
+	width: 1px;
+	height: 24px;
+	margin: 0 4px;
+	background: var(--separator);
+}
+
+/* Narrow windows: smaller buttons, and the pill wraps onto two rows instead of running past the card. */
+@media (max-width: 680px) {
+	#navigation {
+		max-width: 100%;
+		white-space: normal;
+		text-align: center;
+		border-radius: 26px;
+	}
+
+	.nav-button,
+	#favorite-button {
+		width: 36px;
+		height: 36px;
+		font-size: 14px;
+	}
+
+	#slide-counter {
+		min-width: 0;
+		padding: 0 4px;
+	}
+
+	.nav-divider {
+		display: none;
+	}
+}
+
+/* One row; app_settings.js asks for as many thumbnails as fit. */
+#thumbnail-list-wrapper {
+	width: 100%;
+	overflow: hidden;
+}
+
+#thumbnail-list {
+	display: flex;
+	flex-wrap: nowrap;
+	justify-content: center;
+	gap: 10px;
+	padding: 4px 0;
+}
+
+.thumbnail {
+	flex: none;
+}
+
+.thumbnail {
+	width: 104px;
+	height: 104px;
+	border-radius: 14px;
+	overflow: hidden;
+	background: var(--field);
+	cursor: pointer;
+	transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.thumbnail:hover {
+	transform: translateY(-3px) scale(1.04);
+	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.thumbnail-image {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	transition: opacity 0.3s, filter 0.3s;
+}
+
+.thumbnail-image-greyed-out {
+	opacity: 0.45;
+	filter: grayscale(100%);
+}
+
+/* ---------- Messages ---------- */
+
+#messages {
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+#messages:not(:has(p[style*="block"])) {
+	display: none;
+}
+
+#warning-message,
+#info-message {
+	display: none;
+	margin: 0;
+	padding: 10px 18px;
+	border-radius: 16px;
+	text-align: center;
+	-webkit-backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
+	backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
+	border: 1px solid var(--glass-border);
+	box-shadow: var(--glass-shadow);
+}
+
+#warning-message {
+	background: color-mix(in srgb, var(--danger) 30%, var(--glass-strong));
+}
+
+#info-message {
+	background: color-mix(in srgb, var(--accent) 22%, var(--glass-strong));
+}
+
+/* ---------- Search / filter ---------- */
+
+/* One toolbar row: the search box stretches, the buttons keep their size. */
+/* Stays at the top of the window once scrolled past it. */
+#search,
+#filter {
+	position: sticky;
+	top: 12px;
+	z-index: 20;
+	padding: 10px;
+	border-radius: 999px;
+}
+
+/* The border beam (css/vendor/border-beam.css) is tuned for small cards; the search bar is
+   much wider, so its multipliers bring it back to about how it looks in the library's demo. */
+#search[data-beam] {
+	--beam-stroke-opacity: 2.6;
+	--beam-inner-opacity: 1.6;
+	--beam-bloom-opacity: 2.2;
+}
+
+.search-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+}
+
+#filter-site,
+#search-sort,
+#pools-sort {
+	height: 40px;
+	border-radius: 999px;
+	cursor: pointer;
+}
+
+/* Glass drop-down menus: the site menu on the favorites page and the search history. */
+select,
+::picker(select) {
+	appearance: base-select;
+}
+
+select {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+select::picker-icon {
+	color: var(--muted);
+	transition: rotate 0.2s;
+}
+
+select:open::picker-icon {
+	rotate: 180deg;
+}
+
+::picker(select),
+.menu {
+	color: var(--text);
+	background: var(--glass);
+	-webkit-backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
+	backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
+	border: 1px solid var(--glass-border);
+	box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+	border-radius: 18px;
+	padding: 6px;
+	margin-block: 6px;
+}
+
+select option,
+.menu li {
+	border-radius: 12px;
+	padding: 8px 14px;
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+select option::checkmark {
+	display: none;
+}
+
+select option:hover,
+select option:focus-visible,
+select option:checked,
+.menu li:hover,
+.menu li.active {
+	background: var(--field-hover);
+	outline: none;
+}
+
+select option:checked {
+	color: var(--accent);
+	font-weight: 600;
+}
+
+.menu {
+	position: fixed;
+	inset: auto;
+	margin: 0;
+	list-style: none;
+	max-height: 50vh;
+	overflow-y: auto;
+}
+
+body.solid-style ::picker(select),
+body.solid-style .menu {
+	background: var(--glass-solid);
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
+}
+
+#search-text,
+#filter-text {
+	flex: 1;
+	min-width: 160px;
+	border-radius: 999px;
+	padding-left: 18px;
+}
+
+.search-row button,
+.search-row .glass-button {
+	flex: none;
+	height: 40px;
+	border-radius: 999px;
+}
+
+.search-row .icon-button {
+	width: 40px;
+}
+
+.toolbar-divider {
+	flex: none;
+	width: 1px;
+	height: 24px;
+	margin: 0 4px;
+	background: var(--separator);
+}
+
+/* Narrow windows: the buttons move under the search box. */
+@media (max-width: 700px) {
+	#search,
+	#filter {
+		border-radius: 22px;
+	}
+
+	.search-row {
+		flex-wrap: wrap;
+		justify-content: center;
+	}
+
+	#search-text,
+	#filter-text {
+		flex-basis: 100%;
+		order: -1;
+	}
+
+	.toolbar-divider {
+		display: none;
+	}
+}
+
+/* ---------- Tags (e621 style: one list per category, in e621's colors) ---------- */
+
+:root,
+:root[data-theme="dark"] {
+	--tag-invalid: #ff3d3d;
+	--tag-artist: #f2ac08;
+	--tag-contributor: #c0c0c0;
+	--tag-copyright: #dd00dd;
+	--tag-character: #00aa00;
+	--tag-species: #ed5d1f;
+	--tag-general: #b4c7d9;
+	--tag-meta: #ffffff;
+	--tag-lore: #228822;
+}
+
+/* Darker versions of the same colors, readable on the light theme. */
+:root[data-theme="light"] {
+	--tag-invalid: #d42a2a;
+	--tag-artist: #b57f00;
+	--tag-contributor: #71706e;
+	--tag-copyright: #a300a3;
+	--tag-character: #008000;
+	--tag-species: #c64a14;
+	--tag-general: #2e76b4;
+	--tag-meta: #555555;
+	--tag-lore: #1d6e1d;
+}
+
+#tag-panel {
+	display: none;
+}
+
+body.has-slide.tags-visible #tag-panel {
+	display: block;
+}
+
+/* On the left over the image. It stays put while the page scrolls; the wheel over it scrolls the tags. */
+body[data-tags-position="left"] #tag-panel {
+	position: fixed;
+	top: 12px;
+	left: 12px;
+	z-index: 15;
+	width: 270px;
+	max-height: calc(100vh - 24px);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+/* Keep the content clear of the tag panel. */
+body.has-slide.tags-visible[data-tags-position="left"] #content {
+	padding-left: 298px;
+}
+
+/* At the bottom of the page, the categories sit side by side. */
+body[data-tags-position="below"] #tag-list {
+	columns: 230px;
+	column-gap: 28px;
+}
+
+.tag-group {
+	break-inside: avoid;
+	margin-bottom: 16px;
+}
+
+.tag-group:last-child {
+	margin-bottom: 0;
+}
+
+.tag-group h5 {
+	margin: 0 0 6px;
+	font-size: 0.95em;
+	font-weight: 700;
+	color: var(--text);
+}
+
+.tag-group ul {
+	display: flex;
+	flex-direction: column;
+}
+
+.tag-group .tag {
+	display: block;
+	width: 100%;
+	padding: 2px 8px;
+	border: 0;
+	border-left: 3px solid transparent;
+	border-radius: 0 6px 6px 0;
+	background: transparent;
+	font-size: 0.9em;
+	text-align: left;
+	white-space: normal;
+	color: var(--tag-color);
+}
+
+.tag-group .tag:hover {
+	background: var(--field-hover);
+	border-left-color: var(--tag-color);
+	transform: none;
+}
+
+.tag-invalid { --tag-color: var(--tag-invalid); }
+.tag-artist { --tag-color: var(--tag-artist); }
+.tag-contributor { --tag-color: var(--tag-contributor); }
+.tag-copyright { --tag-color: var(--tag-copyright); }
+.tag-character { --tag-color: var(--tag-character); }
+.tag-species { --tag-color: var(--tag-species); }
+.tag-general { --tag-color: var(--tag-general); }
+.tag-meta { --tag-color: var(--tag-meta); }
+.tag-lore { --tag-color: var(--tag-lore); }
+
+/* While a blur slider is moved, the settings window steps aside (app_settings.js). */
+#settings-dialog {
+	transition: opacity 0.15s;
+}
+
+body.settings-peek #settings-dialog {
+	opacity: 0;
+}
+
+body.settings-peek #settings-dialog::backdrop {
+	background: transparent;
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
+}
+
+/* Background blur slider: the background image is shown on its own while it is moved. */
+body.background-preview #slide-wrapper,
+body.background-preview #content,
+body.background-preview #tag-panel {
+	visibility: hidden;
+}
+
+body.background-preview #ambient {
+	filter: blur(var(--background-blur, 60px)) saturate(150%);
+}
+
+/* Tips while an image loads, under the loading animation. */
+#loading-tip {
+	position: absolute;
+	top: calc(50% + 60px);
+	left: 50%;
+	max-width: min(560px, calc(100vw - 32px));
+	padding: 10px 18px;
+	border-radius: 18px;
+	text-align: center;
+	line-height: 1.5;
+	transform: translate(-50%, 8px);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.3s, transform 0.3s;
+}
+
+#loading-tip.visible {
+	opacity: 1;
+	transform: translate(-50%, 0);
+}
+
+.tip-label {
+	margin-right: 4px;
+	font-weight: 700;
+	color: var(--accent);
+}
+
+kbd {
+	padding: 1px 6px;
+	border-radius: 6px;
+	border: 1px solid var(--field-border);
+	background: var(--field);
+	font-family: "Cascadia Code", Consolas, monospace;
+	font-size: 0.85em;
+}
+
+/* The logo is drawn in black; white on the dark theme. */
+:root[data-theme="dark"] .logo {
+	filter: invert(1);
+}
+
+/* Rainbow frame around an image that is a favorite (slideshow page). The beam itself is
+   css/vendor/border-beam.css; app_settings.js places this over the image and switches it on. */
+#fave-beam {
+	display: none;
+	position: absolute;
+	pointer-events: none;
+	z-index: 2;
+	--beam-stroke-opacity: 3;
+	--beam-inner-opacity: 1.8;
+	--beam-bloom-opacity: 2.4;
+}
+
+#fave-beam[data-active],
+#fave-beam[data-fading] {
+	display: block;
+}
+
+/* Solid effects (Settings → Appearance): no blur and no animations; the loading orb is drawn by
+   script and keeps turning. */
+:root,
+:root[data-theme="dark"] {
+	--glass-solid: rgb(26, 29, 36);
+}
+
+:root[data-theme="light"] {
+	--glass-solid: rgb(246, 247, 250);
+}
+
+body.solid-style .glass,
+body.solid-style #warning-message,
+body.solid-style #info-message,
+body.solid-style #loading-animation {
+	background: var(--glass-solid);
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
+}
+
+body.solid-style #settings-dialog::backdrop {
+	background: rgba(0, 0, 0, 0.55);
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
+}
+
+body.solid-style *,
+body.solid-style *::before,
+body.solid-style *::after {
+	animation: none !important;
+	transition: none !important;
+}
+
+body.solid-style [data-beam]::before,
+body.solid-style [data-beam]::after,
+body.solid-style [data-beam-bloom],
+body.solid-style .tap-heart {
+	display: none !important;
+}
+
+/* The background image stays, sharp; behind a slide there is just the plain background. */
+body.solid-style #ambient {
+	filter: none;
+}
+
+body.solid-style.has-slide #ambient {
+	display: none;
+}
+
+/* Short notice at the bottom of the window (e.g. after Ctrl+L). */
+#toast {
+	position: fixed;
+	inset: auto auto 24px 50%;
+	margin: 0;
+	color: var(--text);
+	z-index: 40;
+	padding: 10px 18px;
+	border-radius: 999px;
+	background: var(--glass-strong);
+	transform: translate(-50%, 20px);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.2s, transform 0.2s;
+}
+
+#toast.visible {
+	opacity: 1;
+	transform: translate(-50%, 0);
+}
+
+/* ---------- Touch screen mode ---------- */
+
+body.touch-mode .nav-button,
+body.touch-mode #favorite-button {
+	width: 54px;
+	height: 54px;
+	font-size: 20px;
+}
+
+body.touch-mode #content button,
+body.touch-mode #content .glass-button,
+body.touch-mode #content input {
+	min-height: 46px;
+}
+
+body.touch-mode .tag-group .tag {
+	padding: 7px 10px;
+}
+
+body.touch-mode #slide-wrapper {
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+.tap-heart {
+	position: fixed;
+	z-index: 30;
+	font-size: 96px;
+	color: var(--heart);
+	pointer-events: none;
+	transform: translate(-50%, -50%) scale(0.4);
+	text-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+	animation: tap-heart 0.8s ease-out forwards;
+}
+
+.tap-heart.unfaved {
+	color: #ffffff;
+	opacity: 0.8;
+}
+
+@keyframes tap-heart {
+	30% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+	100% { transform: translate(-50%, -60%) scale(1); opacity: 0; }
+}
+
+/* ---------- Settings window ---------- */
+
+#settings-dialog {
+	width: min(980px, 94vw);
+	height: min(700px, 88vh);
+	padding: 0;
+	color: var(--text);
+	background: var(--glass-strong);
+	border-radius: 26px;
+	overflow: hidden;
+}
+
+#settings-dialog[open] {
+	animation: settings-in 0.2s ease-out;
+}
+
+@keyframes settings-in {
+	from { opacity: 0; transform: translateY(12px) scale(0.98); }
+}
+
+#settings-dialog::backdrop {
+	background: rgba(0, 0, 0, 0.3);
+	-webkit-backdrop-filter: blur(6px);
+	backdrop-filter: blur(6px);
+}
+
+.settings-shell {
+	display: grid;
+	grid-template-columns: 230px 1fr;
+	height: 100%;
+}
+
+.settings-nav {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 22px 14px;
+	border-right: 1px solid var(--separator);
+	background: var(--field);
+	overflow-y: auto;
+}
+
+.settings-nav h2 {
+	margin: 0 10px 14px;
+	font-size: 1.3em;
+}
+
+.settings-tab {
+	justify-content: flex-start;
+	border-color: transparent;
+	background: transparent;
+	border-radius: 10px;
+	padding: 9px 12px;
+}
+
+.settings-tab.active {
+	background: var(--accent);
+	color: var(--accent-text);
+}
+
+/* The title stays put and only the section scrolls, fading out at its top edge,
+   so the title needs no background of its own. */
+.settings-content {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: hidden;
+	padding: 0 28px;
+}
+
+.settings-header {
+	flex: none;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 20px 0 8px;
+}
+
+.settings-section {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 12px 0 28px;
+	-webkit-mask-image: linear-gradient(transparent, #000 12px);
+	mask-image: linear-gradient(transparent, #000 12px);
+}
+
+.settings-header h3 {
+	margin: 0;
+	font-size: 1.4em;
+}
+
+.settings-section[hidden] {
+	display: none;
+}
+
+.section-intro {
+	margin: 12px 4px;
+	color: var(--muted);
+	font-size: 0.9em;
+	line-height: 1.45;
+}
+
+.subheading {
+	margin: 26px 4px 10px;
+}
+
+.settings-list {
+	background: var(--field);
+	border: 1px solid var(--field-border);
+	border-radius: 16px;
+	overflow: hidden;
+}
+
+.settings-list > li {
+	border-top: 1px solid var(--separator);
+}
+
+.settings-list > li:first-child {
+	border-top: 0;
+}
+
+.row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 12px 16px;
+	min-height: 52px;
+}
+
+label.row {
+	cursor: pointer;
+}
+
+.row.stacked {
+	flex-wrap: wrap;
+}
+
+.row small {
+	display: block;
+	margin-top: 2px;
+	font-size: 0.82em;
+	color: var(--muted);
+}
+
+.row input[type="number"] {
+	width: 110px;
+	text-align: center;
+}
+
+.siteOffline span {
+	color: var(--danger);
+}
+
+.siteOffline span::after {
+	content: " (offline)";
+	font-size: 0.85em;
+}
+
+/* Login fields under a site; the view shows them with an inline display style. */
+.settings-list > li.account {
+	display: none;
+	border-top: 0;
+	padding: 0 16px 12px;
+}
+
+.settings-list > li.account[style*="inline"] {
+	display: flex !important;
+	align-items: center;
+	gap: 10px;
+}
+
+li.account input {
+	flex: 1;
+	min-width: 0;
+}
+
+li.account a {
+	font-size: 0.85em;
+	white-space: nowrap;
+}
+
+#blacklist-container {
+	margin-top: 12px;
+}
+
+#clear-history {
+	margin-top: 16px;
+}
+
+.section-footer {
+	margin-top: 14px;
+}
+
+/* Switches */
+.settings-list input[type="checkbox"] {
+	-webkit-appearance: none;
+	appearance: none;
+	flex: none;
+	position: relative;
+	width: 46px;
+	height: 28px;
+	margin: 0;
+	border-radius: 999px;
+	background: var(--field-hover);
+	border: 1px solid var(--field-border);
+	cursor: pointer;
+	transition: background-color 0.2s;
+}
+
+.settings-list input[type="checkbox"]::before {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	background: #ffffff;
+	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+	transition: transform 0.2s;
+}
+
+.settings-list input[type="checkbox"]:checked {
+	background: var(--accent);
+	border-color: transparent;
+}
+
+.settings-list input[type="checkbox"]:checked::before {
+	transform: translateX(18px);
+}
+
+/* Segmented control (theme, tag position) */
+.segmented {
+	display: inline-flex;
+	padding: 3px;
+	border-radius: 12px;
+	background: var(--field-hover);
+}
+
+.segmented input {
+	display: none;
+}
+
+.segmented span {
+	display: block;
+	padding: 7px 14px;
+	border-radius: 9px;
+	cursor: pointer;
+	transition: background-color 0.15s;
+}
+
+.segmented input:checked + span {
+	background: var(--accent);
+	color: var(--accent-text);
+}
+
+/* Hotkeys */
+.key-buttons {
+	display: flex;
+	gap: 8px;
+}
+
+.key-button {
+	min-width: 76px;
+	font-family: "Cascadia Code", Consolas, monospace;
+	font-size: 0.9em;
+	box-shadow: inset 0 -2px 0 var(--field-border);
+}
+
+.key-button.recording {
+	border-color: var(--accent);
+	color: var(--accent);
+	animation: recording 1s ease-in-out infinite;
+}
+
+@keyframes recording {
+	50% { background: var(--accent-soft); }
+}
+
+.hotkey-message {
+	margin: 0 0 12px;
+	padding: 10px 14px;
+	border-radius: 12px;
+	background: var(--accent-soft);
+}
+
+/* Background image picker */
+.background-picker {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+#background-preview {
+	width: 96px;
+	height: 54px;
+	border-radius: 10px;
+	border: 1px solid var(--field-border);
+	background: var(--field) center / cover;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 0.85em;
+	color: var(--muted);
+}
+
+.slider {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.slider input[type="range"] {
+	width: 200px;
+	accent-color: var(--accent);
+}
+
+.slider output {
+	min-width: 52px;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	color: var(--muted);
+}
+
+/* Quick searches (keys 1–0): key, site toggles, tags, "Use current". */
+.quick-row {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 10px;
+	padding: 10px 16px;
+}
+
+.quick-row kbd {
+	min-width: 28px;
+	text-align: center;
+	font-size: 1em;
+}
+
+.quick-sites {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	flex: 1 1 260px;
+}
+
+.quick-site {
+	padding: 3px 9px;
+	border-radius: 999px;
+	font-size: 0.82em;
+}
+
+.quick-site.active {
+	background: var(--accent);
+	border-color: transparent;
+	color: var(--accent-text);
+}
+
+.quick-tags {
+	flex: 0 1 170px;
+	min-width: 0;
+}
+
+/* Rule34 login under its site (Sites & accounts), and folder paths (Folders). */
+.settings-list > li.account-fields {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 0 16px 12px;
+	border-top: 0;
+}
+
+li.account-fields input {
+	flex: 1;
+	min-width: 0;
+}
+
+li.account-fields a {
+	font-size: 0.85em;
+	white-space: nowrap;
+}
+
+.folder-path {
+	display: block;
+	margin-top: 4px;
+	font-family: "Cascadia Code", Consolas, monospace;
+	font-size: 0.85em;
+	word-break: break-all;
+}
+
+.row > .folder-path {
+	margin-top: 0;
+}
+
+/* About */
+.about-header {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 4px 4px 8px;
+}
+
+.about-header img {
+	width: 72px;
+	height: 72px;
+}
+
+.about-header h2 {
+	margin: 0 0 4px;
+}
+
+.about-header p {
+	margin: 0;
+	font-size: 0.9em;
+}
+
+.credit {
+	margin-bottom: 10px;
+	padding: 12px 16px;
+	border-radius: 14px;
+	background: var(--field);
+	border: 1px solid var(--field-border);
+}
+
+.credit p {
+	margin: 0;
+	line-height: 1.5;
+}
+
+.license-text {
+	margin: 10px 0 0;
+	padding: 10px 12px;
+	border-radius: 10px;
+	background: var(--field);
+	font-family: "Cascadia Code", Consolas, monospace;
+	font-size: 0.82em;
+	white-space: pre-wrap;
+	color: var(--muted);
+}
+
+.touch-guide {
+	display: grid;
+	grid-template-columns: 30% 1fr 30%;
+	gap: 8px;
+	margin-top: 14px;
+}
+
+.touch-guide div {
+	padding: 22px 10px;
+	border-radius: 14px;
+	border: 1px dashed var(--field-border);
+	background: var(--field);
+	text-align: center;
+}
+
+.touch-guide b,
+.touch-guide span {
+	display: block;
+}
+
+.touch-guide span {
+	margin-top: 4px;
+	color: var(--muted);
+	font-size: 0.9em;
+}
+
+/* ---------- Narrow windows ---------- */
+
+@media (max-width: 760px) {
+	body.has-slide.tags-visible[data-tags-position="left"] #content {
+		padding-left: 16px;
+	}
+
+	body[data-tags-position="left"] #tag-panel {
+		width: calc(100vw - 24px);
+	}
+
+	.settings-shell {
+		grid-template-columns: 1fr;
+		grid-template-rows: auto 1fr;
+	}
+
+	.settings-nav {
+		flex-direction: row;
+		overflow-x: auto;
+		padding: 12px;
+		border-right: 0;
+		border-bottom: 1px solid var(--separator);
+	}
+
+	.settings-nav h2 {
+		display: none;
+	}
+}
+
+/* ---------- Refract effects style (test) ----------
+   js/liquid_glass.js draws the glass cards with WebGL on one canvas between the image and the cards,
+   so those cards have no background of their own. */
+#liquid-glass-canvas {
+	position: fixed;
+	inset: 0;
+	z-index: 5;
+	width: 100vw;
+	height: 100vh;
+	pointer-events: none;
+}
+
+body.refract-style .glass.lg-drawn {
+	background: transparent;
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
+	box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25), inset 0 1px 0 var(--glass-highlight);
+}
+
+/* ---------- joi.how (test) on the favorites page ---------- */
+/* Over the page: the favorites stay visible behind it, blurred like behind the glass cards. */
+#joi-panel {
+	position: fixed;
+	inset: 0;
+	z-index: 60;
+	background: color-mix(in srgb, var(--bg) 35%, transparent);
+	-webkit-backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
+	backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
+}
+
+#joi-panel[hidden] {
+	display: none;
+}
+
+#joi-frame {
+	width: 100%;
+	height: 100%;
+	border: 0;
+	background: transparent; /* joi.how follows MSG's theme, so the frame stays see-through */
+}
+
+#joi-close {
+	position: absolute;
+	top: 12px;
+	right: 12px;
+}
+
+/* ---------- e621 pools ---------- */
+#save-pool-button.active {
+	color: var(--accent);
+}
+
+#pools-dialog {
+	width: min(1100px, 94vw);
+	height: min(760px, 90vh);
+	padding: 0;
+	color: var(--text);
+	background: var(--glass-strong);
+	border-radius: 26px;
+	overflow: hidden;
+}
+
+#pools-dialog[open] {
+	display: flex;
+	flex-direction: column;
+	animation: settings-in 0.2s ease-out;
+}
+
+#pools-dialog::backdrop {
+	background: rgba(0, 0, 0, 0.3);
+	-webkit-backdrop-filter: blur(6px);
+	backdrop-filter: blur(6px);
+}
+
+.pools-header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 20px 24px 12px;
+}
+
+.pools-header h3 {
+	margin: 0 auto 0 0;
+	font-size: 1.4em;
+}
+
+.pools-header small {
+	color: var(--muted);
+	font-weight: normal;
+}
+
+#pools-filter {
+	width: 240px;
+	border-radius: 999px;
+}
+
+#pools-status {
+	margin: 0 24px 8px;
+	color: var(--muted);
+}
+
+#pool-list {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	align-content: start;
+	gap: 18px;
+	padding: 8px 24px 24px;
+}
+
+.pool-tile {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	color: var(--text);
+	text-decoration: none;
+}
+
+.pool-tile img {
+	width: 100%;
+	aspect-ratio: 3 / 4;
+	object-fit: cover;
+	border-radius: 14px;
+	background: var(--field);
+	border: 1px solid var(--field-border);
+	transition: transform 0.15s;
+}
+
+.pool-tile:hover img {
+	transform: scale(1.03);
+}
+
+.pool-name {
+	font-size: 0.85em;
+	line-height: 1.3;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.pool-tile small {
+	color: var(--muted);
+}
+
+.pool-remove {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	width: 28px;
+	height: 28px;
+	font-size: 16px;
+	background: var(--glass-strong);
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+
+.pool-tile:hover .pool-remove,
+.pool-remove:focus-visible {
+	opacity: 1;
+}
+
+/* ---------- Tag analysis ---------- */
+#analysis-add-button.active {
+	background: var(--accent-soft);
+}
+
+#analysis-dialog {
+	width: min(820px, 94vw);
+	max-height: 88vh;
+	padding: 0 0 20px;
+	color: var(--text);
+	background: var(--glass-strong);
+	border-radius: 26px;
+}
+
+#analysis-dialog[open] {
+	animation: settings-in 0.2s ease-out;
+}
+
+#analysis-dialog::backdrop {
+	background: rgba(0, 0, 0, 0.3);
+	-webkit-backdrop-filter: blur(6px);
+	backdrop-filter: blur(6px);
+}
+
+#analysis-dialog .section-intro {
+	margin: 12px 24px 8px;
+}
+
+#analysis-images {
+	display: flex;
+	gap: 8px;
+	overflow-x: auto;
+	padding: 4px 24px;
+}
+
+.analysis-image {
+	flex: none;
+	padding: 0;
+	width: 72px;
+	height: 72px;
+	border-radius: 12px;
+	overflow: hidden;
+}
+
+.analysis-image img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.analysis-image:hover img {
+	opacity: 0.4;
+}
+
+#analysis-tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 4px 24px;
+}
+
+.analysis-tag {
+	border-radius: 999px;
+}
+
+.analysis-tag small {
+	color: var(--muted);
+	margin-left: 4px;
+}
+
+.analysis-tag.active {
+	background: var(--accent);
+	color: var(--accent-text);
+	border-color: transparent;
+}
+
+.analysis-tag.active small {
+	color: inherit;
+	opacity: 0.8;
+}
+
+.analysis-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 10px;
+	padding: 16px 24px 0;
+}
+
+#analysis-top {
+	height: 40px;
+	border-radius: 999px;
+}
