@@ -45,6 +45,8 @@
         appTheme: 'dark',
         appHotkeys: defaultHotkeys(),
         tagsPosition: 'left',
+        // Clicking a tag: 'replace' searches for that tag only, 'add' adds it to the search.
+        tagClick: 'replace',
         showTags: false,
         touchMode: false,
         backgroundImage: '',
@@ -603,7 +605,7 @@
                 link.className = 'tag';
                 link.textContent = tag.replace(/_/g, ' ');
                 link.title = (isFavoritesPage ? 'Filter by ' : 'Search for ') + tag;
-                link.addEventListener('click', () => searchForTag(tag));
+                link.addEventListener('click', () => searchForTag(tag, settings.tagClick == 'add'));
                 item.appendChild(link);
                 list.appendChild(item);
             }
@@ -613,9 +615,10 @@
         }
     }
 
-    function searchForTag(tag) {
+    function searchForTag(tag, addToSearch = false) {
         let textBox = document.getElementById(isFavoritesPage ? 'filter-text' : 'search-text');
-        textBox.value = tag;
+        let words = textBox.value.trim().split(/\s+/).filter(w => w);
+        textBox.value = !addToSearch ? tag : words.includes(tag) ? words.join(' ') : words.concat(tag).join(' ');
         textBox.dispatchEvent(new CustomEvent('change'));
         document.getElementById(isFavoritesPage ? 'filter-button' : 'search-button').click();
     }
@@ -1411,6 +1414,8 @@
                     '<input type="checkbox" id="app-show-tags"' + (settings.showTags ? ' checked' : '') + '></label></li>' +
                 '<li class="row stacked"><span>Tag position<small>Click a tag to ' + (isFavoritesPage ? 'filter by it' : 'search for it') + '.</small></span>' +
                     segmented('tags-position', [['left', 'Left, over the image'], ['below', 'At the bottom']], settings.tagsPosition) + '</li>' +
+                '<li class="row stacked"><span>Clicking a tag<small>' + (isFavoritesPage ? 'Filter' : 'Search') + ' for that tag alone, or add it to what is in the ' + (isFavoritesPage ? 'filter' : 'search') + ' box now.</small></span>' +
+                    segmented('tag-click', [['replace', 'Only that tag'], ['add', 'Add to the search']], settings.tagClick) + '</li>' +
             '</ul>' +
 
             '<h4 class="subheading">Background image</h4>' +
@@ -1472,6 +1477,13 @@
                 settings.effectsStyle = radio.value;
                 save('effectsStyle');
                 applyLayoutSettings();
+            });
+        });
+
+        section.querySelectorAll('input[name="tag-click"]').forEach(function (radio) {
+            radio.addEventListener('change', function () {
+                settings.tagClick = radio.value;
+                save('tagClick');
             });
         });
 
