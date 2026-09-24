@@ -41,7 +41,8 @@ class SiteManagerLocal extends SiteManager
 
         // A pool offline: its downloaded folder, "<name> (<number>)", in page order.
         let poolId = poolIdFromSearch(searchText);
-        let words = poolId != null ? [] : searchText.toLowerCase().replace(/_/g, ' ').split(/\s+/).filter(word => word && word != '*');
+        let words = poolId != null ? [] : searchText.toLowerCase().replace(/(^|\s)(?:order|sort):\S+/g, ' ') // sorting is done afterwards
+            .replace(/_/g, ' ').split(/\s+/).filter(word => word && word != '*');
 
         for (let file of files)
         {

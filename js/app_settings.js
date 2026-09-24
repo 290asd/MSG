@@ -2010,8 +2010,18 @@
         let model = controller()._model;
         let performSearch = model.performSearch;
         model.performSearch = function (searchText) {
-            if (settings.searchSortMenu && settings.searchSort && poolIdFromSearch(searchText) == null)
-                searchText = (searchText.replace(SORT_TERM, ' ').trim() + ' ' + settings.searchSort).trim();
+            let sort = settings.searchSort;
+            // Your folders have no scores: there the score orders mean newest first.
+            let onlyFolders = offlineMode || this.getSelectedSitesToSearch().every(site => site == SITE_LOCAL);
+            if (onlyFolders && /score/.test(sort)) {
+                sort = '';
+                showToast('Your folders have no scores, so they are sorted by newest.');
+            }
+            if (settings.searchSortMenu && poolIdFromSearch(searchText) == null) {
+                searchText = searchText.replace(SORT_TERM, ' ').trim();
+                if (sort)
+                    searchText += ' ' + sort;
+            }
             return performSearch.call(this, searchText);
         };
 
