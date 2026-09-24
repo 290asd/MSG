@@ -501,31 +501,17 @@ class SlideshowView
 		}
         else
 		{
-			var message = '';
-		
+			// Says what was searched, where, and for which files, e.g. No images or videos were found for "sky" on rule34.xxx.
             var includingImagesOrGifs = (this._model.includeImages || this._model.includeGifs);
+            var what = includingImagesOrGifs && this._model.includeWebms ? 'images or videos' : includingImagesOrGifs ? 'images' : 'videos';
+            var sites = this._model.sitesManager.siteManagers.filter(m => m.isEnabled)
+                .map(m => m.id == SITE_LOCAL ? 'your folders' : m.url.replace(/^https?:\/\//, ''));
+            var searchText = (this._model.searchText || '').trim();
 
-            var {explicit, questionable, safe} = {
-                "explicit": this._model.includeExplicit,
-                "questionable": this._model.includeQuestionable,
-                "safe": this._model.includeSafe
-            };
+            var message = 'No ' + what + ' were found' + (searchText ? ' for "' + searchText + '"' : '') + (sites.length ? ' on ' + sites.join(', ') : '') + '.';
+            if (!(this._model.includeExplicit && this._model.includeQuestionable && this._model.includeSafe))
+                message += ' Only the ratings chosen in Settings → Filtering are shown.';
 
-            let messageStart = `No ${explicit && questionable && safe ? "explicit," :
-                explicit && (questionable || safe) ? "explicit or" :
-                explicit ? "explicit" :
-                ""} ${questionable && safe ? "questionable or" :
-                questionable ? "questionable" :
-                ""} ${safe ? "safe" :
-                ""}`;
-			
-			if (includingImagesOrGifs && this._model.includeWebms)
-                message = messageStart + ' images were found.';
-            else if (includingImagesOrGifs && !this._model.includeWebms)
-                message = messageStart + ' images or videos were found.';
-            else if (!includingImagesOrGifs && this._model.includeWebms)
-                message = messageStart + ' videos were found.';
-			
             this.displayWarningMessage(message);
         }
     }

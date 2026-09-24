@@ -35,8 +35,9 @@
 		<main id="content">
 			<section id="search" class="glass card" data-beam="search" data-active>
 				<div class="search-row">
-					<select id="search-sort" hidden title="How the results are sorted (adds an order: term to the search)">
-						<option value="">Newest</option>
+					<select id="search-sort" hidden title="How the results are sorted. Default: as you typed it (order: terms work as usual)">
+						<option value="">Default</option>
+						<option value="order:id_desc">Newest</option>
 						<option value="order:id_asc">Oldest</option>
 						<option value="order:score">Highest score</option>
 						<option value="order:score_asc">Lowest score</option>

@@ -1402,7 +1402,7 @@
             '</ul>' +
 
             '<ul class="settings-list">' +
-                '<li><label class="row"><span>Sort menu in the search bar<small>Choose Newest, Oldest, Highest or Lowest score from a menu instead of typing order: terms.</small></span>' +
+                '<li><label class="row"><span>Sort menu in the search bar<small>Choose Newest, Oldest, Highest or Lowest score from a menu instead of typing order: terms. Default searches exactly what you type.</small></span>' +
                     '<input type="checkbox" id="search-sort-menu"' + (settings.searchSortMenu ? ' checked' : '') + '></label></li>' +
                 '<li><label class="row"><span>Show tips while loading<small>Tips about the app\'s features, shown while an image is loading.</small></span>' +
                     '<input type="checkbox" id="app-show-tips"' + (settings.showTips ? ' checked' : '') + '></label></li>' +
@@ -2026,14 +2026,12 @@
             // Your folders have no scores: there the score orders mean newest first.
             let onlyFolders = offlineMode || this.getSelectedSitesToSearch().every(site => site == SITE_LOCAL);
             if (onlyFolders && /score/.test(sort)) {
-                sort = '';
+                sort = 'order:id_desc';
                 showToast('Your folders have no scores, so they are sorted by newest.');
             }
-            if (settings.searchSortMenu && poolIdFromSearch(searchText) == null) {
-                searchText = searchText.replace(SORT_TERM, ' ').trim();
-                if (sort)
-                    searchText += ' ' + sort;
-            }
+            // Default leaves the search as it is typed; any other choice replaces a typed order: term.
+            if (settings.searchSortMenu && sort && poolIdFromSearch(searchText) == null)
+                searchText = searchText.replace(SORT_TERM, ' ').trim() + ' ' + sort;
             return performSearch.call(this, searchText);
         };
 

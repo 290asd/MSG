@@ -584,11 +584,34 @@ class PersonalListView
             this.updateNavigationButtonsAndDisplay();
             this.showNavigation();
         }
+        else if (this._model.filtered)
+        {
+            this.hideNavigation();
+            this.displayWarningMessage(this.noMatchMessage());
+        }
         else
         {
             this.hideNavigation();
             this.displayInfoMessage("No images have been faved yet.");
         }
+    }
+
+    // A filter that found nothing says so, and points out tags that are written with _ (dark nek0gami → dark_nek0gami).
+    noMatchMessage() {
+        let text = this._model.filterText.trim();
+        let message = text ? 'No favorites match "' + text + '"' : 'No favorites here';
+        if (this._model.siteFilter)
+            message += ' on the chosen site';
+        if (typeof offlineMode != 'undefined' && offlineMode)
+            message += ' among the downloaded ones';
+        message += '.';
+
+        let words = text.toLowerCase().split(/\s+/).filter(word => word && !/^[-~]/.test(word));
+        let joined = words.join('_');
+        if (words.length > 1 && this._model.personalList.personalListItems.some(item => typeof item.tags == 'string' && (' ' + item.tags.toLowerCase() + ' ').includes(' ' + joined + ' ')))
+            message += ' Tags with several words are written with _: try ' + joined + '.';
+
+        return message;
     }
 
     updateNavigationButtonsAndDisplay() {
