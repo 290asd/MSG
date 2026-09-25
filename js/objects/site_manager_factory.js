@@ -14,6 +14,8 @@ class SiteManagerFactory
 				return new SiteManagerGelbooru(sitesManager, pageLimit);
 			case SITE_KONACHAN:
 				return new SiteManagerMoebooru(sitesManager, id, 'https://konachan.com', pageLimit);
+			case SITE_REALBOORU:
+				return new SiteManagerRealbooru(sitesManager, pageLimit);
 			case SITE_RULE34:
 				return new SiteManagerRule34(sitesManager, pageLimit);
 			case SITE_SAFEBOORU:

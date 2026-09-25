@@ -12,6 +12,7 @@ class SlideshowModel extends MediaModel
             [SITE_E621]: false,
             [SITE_GELBOORU]: false,
             [SITE_KONACHAN]: false,
+            [SITE_REALBOORU]: false,
             [SITE_RULE34]: false,
             [SITE_SAFEBOORU]: true,
             [SITE_XBOORU]: false,
@@ -62,6 +63,7 @@ class SlideshowModel extends MediaModel
         this.sitesManager.addSite(SITE_E621, standardPageLimit);
         this.sitesManager.addSite(SITE_GELBOORU, standardPageLimit);
         this.sitesManager.addSite(SITE_KONACHAN, standardPageLimit);
+        this.sitesManager.addSite(SITE_REALBOORU, 42); // its pages hold 42
         this.sitesManager.addSite(SITE_RULE34, standardPageLimit);
         this.sitesManager.addSite(SITE_SAFEBOORU, standardPageLimit);
         this.sitesManager.addSite(SITE_XBOORU, standardPageLimit);

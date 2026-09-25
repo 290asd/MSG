@@ -43,6 +43,7 @@ A background image for the start screen, and how much it is blurred, can be chos
 - Quick search cards on the front page: each quick search is a card of its own, two to a row, with the first picture of its results, the search and the main tags (artist, character, series: e621 and Danbooru only). Click a card to run the search. Turn them off in Settings → Appearance.
 - U brings up the controls (the search at the top of the window); again goes back to the image. No scrollbars.
 - Rule34 works again through its new API, with the user ID and API key under Sites & accounts (rule34.xxx → My Account → Options).
+- Realbooru is a site too (`js/objects/site_managers/site_manager_realbooru.js`). Its API is switched off, so MSG reads the site's pages instead: no login needed, but a page of 42 takes about 10 seconds (the site answers 503 if asked faster), the rating filter doesn't apply, and it can break if the site's pages change.
 
 These live in `js/app_settings.js`. It changes hotkeys by setting the key constants in `globals.js`, which the views read on every key press.
 

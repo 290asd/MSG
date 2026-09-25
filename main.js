@@ -279,6 +279,7 @@ function refererFor (url) {
   if (host.endsWith('e621.net')) return 'https://e621.net/'
   if (host.endsWith('gelbooru.com')) return 'https://gelbooru.com'
   if (host.endsWith('rule34.xxx')) return 'https://rule34.xxx/'
+  if (host.endsWith('realbooru.com')) return 'https://realbooru.com/'
   return undefined
 }
 
@@ -528,7 +529,7 @@ app.whenReady().then(() => {
   // Like the extension's rules_header_referer.json: these sites reject images without their own Referer.
   // (e621's CDN returns 403 to image requests with no Referer, which file:// pages never send.)
   session.defaultSession.webRequest.onBeforeSendHeaders(
-    { urls: ['https://*.gelbooru.com/*', 'https://*.e621.net/*', 'https://*.rule34.xxx/*'] },
+    { urls: ['https://*.gelbooru.com/*', 'https://*.e621.net/*', 'https://*.rule34.xxx/*', 'https://*.realbooru.com/*'] },
     (details, callback) => {
       details.requestHeaders.Referer = refererFor(details.url)
       callback({ requestHeaders: details.requestHeaders })

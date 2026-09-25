@@ -42,7 +42,7 @@ class PersonalListView extends MediaView
         for (let item of this._model.personalList.personalListItems)
             counts[item.siteId] = (counts[item.siteId] || 0) + 1;
 
-        let names = { ATFB: 'ATFBooru', DANB: 'Danbooru', DERP: 'Derpibooru', E621: 'e621', GELB: 'Gelbooru', KONA: 'Konachan', RULE: 'Rule34', SAFE: 'Safebooru', XBOO: 'Xbooru', YAND: 'Yande.re', LOCL: 'Your folders' };
+        let names = { ATFB: 'ATFBooru', DANB: 'Danbooru', DERP: 'Derpibooru', E621: 'e621', GELB: 'Gelbooru', KONA: 'Konachan', REAL: 'Realbooru', RULE: 'Rule34', SAFE: 'Safebooru', XBOO: 'Xbooru', YAND: 'Yande.re', LOCL: 'Your folders' };
         let total = this._model.personalList.personalListItems.length;
         select.replaceChildren(new Option('All sites (' + total + ')', ''));
         for (let id of Object.keys(counts).sort((a, b) => counts[b] - counts[a]))
