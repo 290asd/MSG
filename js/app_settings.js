@@ -2361,28 +2361,147 @@
             '<p class="section-intro">Images, videos and tags come from the sites you search and belong to their artists and sites. The tag panel follows e621\'s tag categories and colors.</p>';
     }
 
+    let currentSettingsSection = 'appearance';
+
+    // Leaves the search: the rows come back and the search box is emptied.
+    function stopSettingsSearch() {
+        document.querySelector('.settings-content').classList.remove('searching');
+        document.querySelectorAll('.search-miss').forEach(function (e) { e.classList.remove('search-miss'); });
+        document.querySelector('.settings-no-match').hidden = true;
+        document.getElementById('settings-search').value = '';
+    }
+
     function showSettingsSection(name) {
         let dialog = document.getElementById('settings-dialog');
         let section = dialog.querySelector('.settings-section[data-section="' + name + '"]') || dialog.querySelector('.settings-section');
         name = section.dataset.section;
+        currentSettingsSection = name;
 
+        stopSettingsSearch();
         dialog.querySelectorAll('.settings-section').forEach(function (s) { s.hidden = s !== section; });
         dialog.querySelectorAll('.settings-tab').forEach(function (tab) { tab.classList.toggle('active', tab.dataset.section == name); });
         document.getElementById('settings-section-title').textContent = section.dataset.title;
-        section.scrollTop = 0;
+        dialog.querySelector('.settings-scroll').scrollTop = 0;
 
         try {
             localStorage.setItem('settingsSection', name);
         } catch (e) {}
     }
 
+    // Shows the rows of every section that have all the words typed in the search box.
+    // A section or a subheading whose own title matches shows everything under it.
+    function searchSettings() {
+        let dialog = document.getElementById('settings-dialog');
+        let words = document.getElementById('settings-search').value.toLowerCase().split(/\s+/).filter(Boolean);
+        if (words.length == 0)
+            return showSettingsSection(currentSettingsSection);
+
+        let matches = text => words.every(word => text.toLowerCase().includes(word));
+        let found = false;
+
+        dialog.querySelector('.settings-content').classList.add('searching');
+        document.getElementById('settings-section-title').textContent = 'Search results';
+        dialog.querySelectorAll('.settings-tab').forEach(function (tab) { tab.classList.remove('active'); });
+
+        dialog.querySelectorAll('.settings-section').forEach(function (section) {
+            let showAll = matches(section.dataset.title);
+            let any = false;
+
+            for (let child of section.children) {
+                if (child.matches('h4.subheading'))
+                    showAll = matches(section.dataset.title) || matches(child.textContent);
+
+                let units = child.matches('.settings-list') ? Array.from(child.children) : [child];
+                let shown = 0;
+                for (let unit of units) {
+                    let hide = !showAll && !matches(unit.textContent);
+                    unit.classList.toggle('search-miss', hide);
+                    shown += hide ? 0 : 1;
+                }
+                if (child.matches('.settings-list'))
+                    child.classList.toggle('search-miss', shown == 0);
+                any = any || shown > 0;
+            }
+
+            section.hidden = false;
+            section.classList.toggle('search-miss', !any);
+            found = found || any;
+        });
+
+        let notice = dialog.querySelector('.settings-no-match');
+        notice.hidden = found;
+        if (!found) {
+            notice.textContent = 'No settings match "' + words.join(' ') + '".';
+            if (isFavoritesPage) {
+                let link = document.createElement('a');
+                link.textContent = 'the slideshow page\'s settings';
+                link.addEventListener('click', () => openSlideshowSettings('sites'));
+                notice.append(' The search, filtering, quick search and history settings are in ', link, '.');
+            }
+        }
+    }
+
+    // The settings of the slideshow page, from the favorites page.
+    function openSlideshowSettings(section) {
+        if (!confirm('This leaves the favorites page and opens the slideshow page\'s settings.\n\nContinue?'))
+            return;
+        location.href = 'slideshow.html#settings=' + section;
+    }
+
+    function setupSettingsSearch() {
+        let dialog = document.getElementById('settings-dialog');
+        let input = document.getElementById('settings-search');
+
+        let notice = document.createElement('p');
+        notice.className = 'settings-no-match';
+        notice.hidden = true;
+        dialog.querySelector('.settings-scroll').appendChild(notice);
+
+        input.addEventListener('input', searchSettings);
+
+        // The first Esc only empties the search; the window closes with the next one.
+        input.addEventListener('keydown', function (e) {
+            if (e.key == 'Escape' && input.value) {
+                e.preventDefault();
+                e.stopPropagation();
+                showSettingsSection(currentSettingsSection);
+            }
+        });
+
+        // A section that draws itself again (e.g. the hotkeys) is searched again.
+        let pending = false;
+        // (The sections only, not the notice, which the search itself rewrites.)
+        let observer = new MutationObserver(function () {
+            if (!input.value || pending)
+                return;
+            pending = true;
+            requestAnimationFrame(function () {
+                pending = false;
+                searchSettings();
+            });
+        });
+        dialog.querySelectorAll('.settings-section').forEach(function (section) {
+            observer.observe(section, { childList: true, subtree: true });
+        });
+
+        dialog.addEventListener('close', function () {
+            if (input.value)
+                showSettingsSection(currentSettingsSection);
+        });
+    }
+
     function setupSettingsWindow() {
         let dialog = document.getElementById('settings-dialog');
         let settingsButton = document.getElementById('settings-button');
 
+        setupSettingsSearch();
+
         dialog.querySelectorAll('.settings-tab').forEach(function (tab) {
             tab.addEventListener('click', function () {
-                showSettingsSection(tab.dataset.section);
+                if (tab.dataset.page)
+                    openSlideshowSettings(tab.dataset.section);
+                else
+                    showSettingsSection(tab.dataset.section);
             });
         });
 
@@ -2391,6 +2510,14 @@
             lastSection = localStorage.getItem('settingsSection');
         } catch (e) {}
         showSettingsSection(lastSection || 'appearance');
+
+        // Opened from the favorites page's settings with #settings=<section>.
+        let requested = !isFavoritesPage && location.hash.match(/^#settings=(\w+)$/);
+        if (requested) {
+            history.replaceState(null, '', location.pathname);
+            showSettingsSection(requested[1]);
+            dialog.showModal();
+        }
 
         settingsButton.addEventListener('click', function () {
             settingsButton.blur();
