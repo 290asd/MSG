@@ -1117,6 +1117,7 @@
             if (folder) {
                 settings.downloadFolder = folder;
                 save('downloadFolder');
+                loadLocalCopies();
                 renderFolders();
             }
         });
@@ -1126,6 +1127,7 @@
             reset.addEventListener('click', function () {
                 settings.downloadFolder = '';
                 save('downloadFolder');
+                loadLocalCopies();
                 renderFolders();
             });
         }
@@ -1421,6 +1423,16 @@
             updateForCurrentSlide();
     }
 
+    // The random favorite is picked at start; after changing its settings, pick (or drop it) now.
+    async function applyRandomBackground(section) {
+        let saved = (await chrome.storage.sync.get('backgroundImage')).backgroundImage || '';
+        settings.backgroundImage = settings.backgroundRandomFavorite
+            ? await window.appInfo.randomFavoriteImage(settings.backgroundRandomGifs, settings.backgroundRandomVideos) || saved
+            : saved;
+        paintBackground(section.querySelector('#background-preview'), settings.backgroundImage);
+        updateForCurrentSlide();
+    }
+
     function renderAppearance() {
         let section = document.querySelector('.settings-section[data-section="appearance"]');
 
@@ -1512,6 +1524,7 @@
             section.querySelector('#background-random-' + name.toLowerCase()).addEventListener('change', function (e) {
                 settings['backgroundRandom' + name] = e.target.checked;
                 save('backgroundRandom' + name);
+                applyRandomBackground(section);
             });
         });
 
