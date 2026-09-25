@@ -47,6 +47,8 @@
         tagsPosition: 'left',
         // Clicking a tag: 'replace' searches for that tag only, 'add' adds it to the search.
         tagClick: 'replace',
+        // Favorites: clicking the image opens its post on the site.
+        clickOpensPost: true,
         showTags: false,
         touchMode: false,
         backgroundImage: '',
@@ -91,6 +93,7 @@
 
     function defaultHotkeys() {
         let hotkeys = {};
+    window.clickOpensPost = () => settings.clickOpensPost;
         for (let action of HOTKEY_ACTIONS)
             hotkeys[action.id] = action.defaults.slice();
         return hotkeys;
@@ -1425,6 +1428,9 @@
                     '<div class="background-picker">' +
                         '<div id="background-preview"' + (settings.backgroundImage ? ' style="background-image: url(\'' + settings.backgroundImage + '\')"' : '') + '>' + (settings.backgroundImage ? '' : 'None') + '</div>' +
                         '<button id="choose-background">Choose image…</button>' +
+                (isFavoritesPage ?
+                    '<li><label class="row"><span>Click the image to open its post<small>Opens the post on the site in your browser.</small></span>' +
+                        '<input type="checkbox" id="app-click-opens-post"' + (settings.clickOpensPost ? ' checked' : '') + '></label></li>' : '') +
                         (settings.backgroundImage ? '<button id="remove-background">Remove</button>' : '') +
                     '</div></li>' +
                 sliderRow('background-blur', 'Blur', 'How blurred the background image is. 0 is sharp.', settings.backgroundBlur, 120) +
@@ -1532,6 +1538,11 @@
             '<ul class="settings-list">' +
                 '<li><label class="row"><span>Touch screen mode<small>Larger buttons, and tap gestures on the image.</small></span>' +
                     '<input type="checkbox" id="app-touch-mode"' + (settings.touchMode ? ' checked' : '') + '></label></li>' +
+
+        section.querySelector('#app-click-opens-post')?.addEventListener('change', function (e) {
+            settings.clickOpensPost = e.target.checked;
+            save('clickOpensPost');
+        });
             '</ul>' +
             '<div class="touch-guide">' +
                 '<div><b>Tap left edge</b><span>Previous</span></div>' +

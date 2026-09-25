@@ -128,7 +128,7 @@ class PersonalListController
     {
         var currentSlide = this._model.getCurrentSlide();
 
-        if (currentSlide == null)
+        if (currentSlide == null || !window.clickOpensPost())
             return;
 
         this._view.openUrlInNewWindow(currentSlide.viewableWebsitePostUrl);
