@@ -6,7 +6,7 @@
 
     let canvas = document.getElementById('loading-animation');
     let engine = window.ThinkingOrbsEngine;
-    let preset = engine.resolvePreset('searching', SIZE);
+    let preset = engine.searching;
     let dpr = Math.min(2, window.devicePixelRatio || 1);
 
     canvas.width = canvas.height = Math.round(SIZE * dpr);
@@ -22,7 +22,7 @@
 
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, SIZE, SIZE);
-        engine.paintFrame(ctx, engine.MODE_FRAMES[preset.mode](SIZE, time, preset.opts), dark);
+        engine.paintFrame(ctx, preset.frame(SIZE, time, preset.opts), dark);
     }
 
     function loop() {

@@ -4,6 +4,8 @@
  * component and scoped to MSG's elements:
  *   [data-beam="search"] the search bar on the slideshow page (borderRadius 999, dark and light theme),
  *   [data-beam="fave"]   the frame around an image that is a favorite (borderRadius 0, dark: it sits on the image).
+ * Trimmed for MSG: the parts that css/app.css overrode or hid (the frame's inner glow, bloom and endless
+ * animation) and the -webkit- prefixed masks are removed.
  *
  * MIT License
  *
@@ -87,18 +89,6 @@
     radial-gradient(ellipse 74px 32px at 93.9% 0%, rgb(255, 120, 40), transparent),
     radial-gradient(ellipse 26px 42px at 100% 27.1%, rgb(240, 50, 180), transparent),
     radial-gradient(ellipse 52px 48px at 100% 27.1%, rgb(180, 40, 240), transparent);
-  -webkit-mask:
-    conic-gradient(
-      from var(--beam-angle-msg-search-dark),
-      transparent 0%, transparent 30%,
-      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
-      white 52%, white 80%,
-      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
-      transparent 95%, transparent 100%
-    ),
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: source-in, xor;
   mask:
     conic-gradient(
       from var(--beam-angle-msg-search-dark),
@@ -133,18 +123,6 @@
     radial-gradient(ellipse 23px 38px at 100% 27.1%, rgba(240, 50, 180, 0.45), transparent),
     radial-gradient(ellipse 47px 43px at 100% 27.1%, rgba(180, 40, 240, 0.45), transparent);
   box-shadow: inset 0 0 9px 1px rgba(255, 255, 255, 0.27);
-  -webkit-mask-image:
-    conic-gradient(
-      from var(--beam-angle-msg-search-dark),
-      transparent 0%, transparent 30%,
-      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
-      white 52%, white 80%,
-      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
-      transparent 95%, transparent 100%
-    ),
-    linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white),
-    linear-gradient(to right, white, transparent 28px, transparent calc(100% - 28px), white);
-  -webkit-mask-composite: source-in, source-over;
   mask-image:
     conic-gradient(
       from var(--beam-angle-msg-search-dark),
@@ -185,8 +163,6 @@
         rgba(255, 255, 255, 0.03) 78%,
         transparent 82%
       );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
   padding: 1px;
@@ -287,18 +263,6 @@
     radial-gradient(ellipse 74px 32px at 93.9% 0%, rgb(255, 120, 40), transparent),
     radial-gradient(ellipse 26px 42px at 100% 27.1%, rgb(240, 50, 180), transparent),
     radial-gradient(ellipse 52px 48px at 100% 27.1%, rgb(180, 40, 240), transparent);
-  -webkit-mask:
-    conic-gradient(
-      from var(--beam-angle-msg-search-light),
-      transparent 0%, transparent 30%,
-      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
-      white 52%, white 80%,
-      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
-      transparent 95%, transparent 100%
-    ),
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: source-in, xor;
   mask:
     conic-gradient(
       from var(--beam-angle-msg-search-light),
@@ -333,18 +297,6 @@
     radial-gradient(ellipse 23px 38px at 100% 27.1%, rgba(240, 50, 180, 0.45), transparent),
     radial-gradient(ellipse 47px 43px at 100% 27.1%, rgba(180, 40, 240, 0.45), transparent);
   box-shadow: inset 0 0 9px 1px rgba(0, 0, 0, 0.14);
-  -webkit-mask-image:
-    conic-gradient(
-      from var(--beam-angle-msg-search-light),
-      transparent 0%, transparent 30%,
-      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
-      white 52%, white 80%,
-      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
-      transparent 95%, transparent 100%
-    ),
-    linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white),
-    linear-gradient(to right, white, transparent 28px, transparent calc(100% - 28px), white);
-  -webkit-mask-composite: source-in, source-over;
   mask-image:
     conic-gradient(
       from var(--beam-angle-msg-search-light),
@@ -385,8 +337,6 @@
         rgba(0, 0, 0, 0.02) 78%,
         transparent 82%
       );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
   padding: 1px;
@@ -447,18 +397,6 @@
   overflow: hidden;
 }
 
-[data-beam="fave"][data-active] {
-  animation:
-    beam-spin-msg-fave 3.2s linear infinite,
-    beam-fade-in-msg-fave 0.6s ease forwards;
-}
-
-[data-beam="fave"][data-fading] {
-  animation:
-    beam-spin-msg-fave 3.2s linear infinite,
-    beam-fade-out-msg-fave 0.5s ease forwards;
-}
-
 [data-beam="fave"][data-active]::after,
 [data-beam="fave"][data-fading]::after {
   content: "";
@@ -487,18 +425,6 @@
     radial-gradient(ellipse 74px 32px at 93.9% 0%, rgb(255, 120, 40), transparent),
     radial-gradient(ellipse 26px 42px at 100% 27.1%, rgb(240, 50, 180), transparent),
     radial-gradient(ellipse 52px 48px at 100% 27.1%, rgb(180, 40, 240), transparent);
-  -webkit-mask:
-    conic-gradient(
-      from var(--beam-angle-msg-fave),
-      transparent 0%, transparent 30%,
-      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
-      white 52%, white 80%,
-      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
-      transparent 95%, transparent 100%
-    ),
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: source-in, xor;
   mask:
     conic-gradient(
       from var(--beam-angle-msg-fave),
@@ -514,92 +440,6 @@
   pointer-events: none;
   z-index: 2;
   opacity: calc(var(--beam-opacity-msg-fave) * 0.26 * var(--beam-stroke-opacity, 1) * var(--beam-strength, 1));
-  animation: beam-hue-shift-msg-fave 12s ease-in-out infinite;
-}
-
-[data-beam="fave"][data-active]::before,
-[data-beam="fave"][data-fading]::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 0px;
-  background: radial-gradient(ellipse 63px 36px at 33% -7.4%, rgba(255, 50, 100, 0.45), transparent),
-    radial-gradient(ellipse 54px 32px at 12% -5%, rgba(40, 140, 255, 0.45), transparent),
-    radial-gradient(ellipse 36px 63px at 2.1% 68.3%, rgba(50, 200, 80, 0.45), transparent),
-    radial-gradient(ellipse 18px 32px at 2.1% 68.3%, rgba(30, 185, 170, 0.45), transparent),
-    radial-gradient(ellipse 162px 29px at 74.4% 100%, rgba(100, 70, 255, 0.45), transparent),
-    radial-gradient(ellipse 77px 23px at 55% 100%, rgba(40, 140, 255, 0.45), transparent),
-    radial-gradient(ellipse 67px 29px at 93.9% 0%, rgba(255, 120, 40, 0.45), transparent),
-    radial-gradient(ellipse 23px 38px at 100% 27.1%, rgba(240, 50, 180, 0.45), transparent),
-    radial-gradient(ellipse 47px 43px at 100% 27.1%, rgba(180, 40, 240, 0.45), transparent);
-  box-shadow: inset 0 0 9px 1px rgba(255, 255, 255, 0.27);
-  -webkit-mask-image:
-    conic-gradient(
-      from var(--beam-angle-msg-fave),
-      transparent 0%, transparent 30%,
-      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
-      white 52%, white 80%,
-      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
-      transparent 95%, transparent 100%
-    ),
-    linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white),
-    linear-gradient(to right, white, transparent 28px, transparent calc(100% - 28px), white);
-  -webkit-mask-composite: source-in, source-over;
-  mask-image:
-    conic-gradient(
-      from var(--beam-angle-msg-fave),
-      transparent 0%, transparent 30%,
-      rgba(255, 255, 255, 0.1) 36%, rgba(255, 255, 255, 0.35) 44%,
-      white 52%, white 80%,
-      rgba(255, 255, 255, 0.35) 86%, rgba(255, 255, 255, 0.1) 92%,
-      transparent 95%, transparent 100%
-    ),
-    linear-gradient(white, transparent 28px, transparent calc(100% - 28px), white),
-    linear-gradient(to right, white, transparent 28px, transparent calc(100% - 28px), white);
-  mask-composite: intersect, add;
-  pointer-events: none;
-  z-index: 1;
-  opacity: calc(var(--beam-opacity-msg-fave) * 0.42 * var(--beam-inner-opacity, 1) * var(--beam-strength, 1));
-  clip-path: inset(0 round 0px);
-  animation: beam-hue-shift-msg-fave 12s ease-in-out infinite;
-}
-
-[data-beam="fave"] [data-beam-bloom] {
-  display: none;
-  position: absolute;
-  inset: 0;
-  border-radius: 0px;
-  clip-path: inset(0 round 0px);
-  background: conic-gradient(
-        from var(--beam-angle-msg-fave),
-        transparent 0%, transparent 58%,
-        rgba(255, 255, 255, 0.03) 62%,
-        rgba(255, 255, 255, 0.08) 65%,
-        rgba(255, 255, 255, 0.2) 67%,
-        rgba(255, 255, 255, 0.45) 69%,
-        rgba(255, 255, 255, 0.85) 70%,
-        rgba(255, 255, 255, 0.85) 70.5%,
-        rgba(255, 255, 255, 0.45) 71.5%,
-        rgba(255, 255, 255, 0.2) 73%,
-        rgba(255, 255, 255, 0.08) 75%,
-        rgba(255, 255, 255, 0.03) 78%,
-        transparent 82%
-      );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  padding: 1px;
-  filter: blur(8px) brightness(1.30) saturate(1.20);
-  pointer-events: none;
-  z-index: 3;
-  opacity: 0;
-}
-
-[data-beam="fave"][data-active] [data-beam-bloom],
-[data-beam="fave"][data-fading] [data-beam-bloom] {
-  display: block;
-  opacity: calc(var(--beam-opacity-msg-fave) * 0.24 * var(--beam-bloom-opacity, 1) * var(--beam-strength, 1));
 }
 
 @keyframes beam-spin-msg-fave {
@@ -615,15 +455,3 @@
   to { --beam-opacity-msg-fave: 0; }
 }
 
-@keyframes beam-hue-shift-msg-fave {
-  0% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) - 30deg)) brightness(1.30) saturate(1.20); }
-  50% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) + 30deg)) brightness(1.30) saturate(1.20); }
-  100% { filter: hue-rotate(calc(var(--beam-hue-base, 0deg) - 30deg)) brightness(1.30) saturate(1.20); }
-}
-
-[data-beam="fave"][data-paused],
-[data-beam="fave"][data-paused]::after,
-[data-beam="fave"][data-paused]::before,
-[data-beam="fave"][data-paused] [data-beam-bloom] {
-  animation-play-state: paused !important;
-}

@@ -866,8 +866,6 @@ kbd {
 	pointer-events: none;
 	z-index: 2;
 	--beam-stroke-opacity: 3;
-	--beam-inner-opacity: 1.8;
-	--beam-bloom-opacity: 2.4;
 }
 
 #fave-beam[data-active],
@@ -875,19 +873,9 @@ kbd {
 	display: block;
 }
 
-/* Cheap on a full-size overlay: no bloom, no inner glow, no hue-rotate animation; the beam goes
-   around once and then stays still (an endless repaint of the whole image cost a lot of FPS). */
-#fave-beam [data-beam-bloom],
-#fave-beam[data-active]::before,
-#fave-beam[data-fading]::before {
-	display: none !important;
-}
-
-#fave-beam[data-active]::after,
-#fave-beam[data-fading]::after {
-	animation: none;
-}
-
+/* Cheap on a full-size overlay: no bloom, no inner glow, no hue-rotate animation (the vendor CSS has
+   only the outline for this beam); it goes around once and then stays still (an endless repaint of
+   the whole image cost a lot of FPS). */
 #fave-beam[data-active] {
 	animation: beam-spin-msg-fave 3.2s linear 1 forwards, beam-fade-in-msg-fave 0.6s ease forwards;
 }
@@ -1159,7 +1147,6 @@ body.touch-mode #slide-wrapper {
 	min-height: 0;
 	overflow-y: auto;
 	padding-bottom: 28px;
-	-webkit-mask-image: linear-gradient(transparent, #000 12px);
 	mask-image: linear-gradient(transparent, #000 12px);
 }
 
