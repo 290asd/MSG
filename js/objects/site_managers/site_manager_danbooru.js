@@ -74,6 +74,9 @@ class SiteManagerDanbooru extends SiteManager
 
 				newSlide.tagGroups = SiteManagerDanbooru.getTagGroups(jsonPost);
 
+				if (jsonPost.large_file_url)
+					newSlide.sampleFileUrl = this.getCorrectFileUrl(jsonPost.large_file_url);
+
 				this.allUnsortedSlides.push(newSlide);
 			}
 		}

@@ -205,6 +205,9 @@ class SiteManagerE621 extends SiteManager
 
 		newSlide.tagGroups = tagGroups;
 
+		if (jsonPost.sample && jsonPost.sample.url)
+			newSlide.sampleFileUrl = urlPrefix + jsonPost.sample.url;
+
 		this.allUnsortedSlides.push(newSlide);
 	}
 

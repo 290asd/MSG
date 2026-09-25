@@ -6,6 +6,8 @@ class Slide
 		this.id = id;
 		this.fileUrl = fileUrl;
 		this.previewFileUrl = previewFileUrl;
+		// A medium-sized picture for the front page cards (e621 and Danbooru only).
+		this.sampleFileUrl = null;
 		this.viewableWebsitePostUrl = viewableWebsitePostUrl;
 		this.width = width;
 		this.height = height;

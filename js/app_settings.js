@@ -95,7 +95,10 @@
         downloadFolder: '',
         rule34UserId: '',
         rule34ApiKey: '',
-        quickSearches: Array.from({ length: 10 }, () => ({ sites: [], tags: '' }))
+        quickSearches: Array.from({ length: 10 }, () => ({ sites: [], tags: '' })),
+        // The quick searches as cards with the first picture, on the front page. Layout: 'grid' or 'wide'.
+        quickCards: true,
+        quickCardLayout: 'grid'
     };
 
     let settings = JSON.parse(JSON.stringify(DEFAULTS));
@@ -1339,12 +1342,14 @@
                     quick.sites = quick.sites.includes(site) ? quick.sites.filter(s => s != site) : quick.sites.concat(site);
                     button.classList.toggle('active', quick.sites.includes(site));
                     save('quickSearches');
+                    renderQuickCards();
                 });
             });
 
             row.querySelector('.quick-tags').addEventListener('change', function (e) {
                 quick.tags = e.target.value.trim();
                 save('quickSearches');
+                renderQuickCards();
             });
 
             row.querySelector('.quick-current').addEventListener('click', function () {
@@ -1352,8 +1357,173 @@
                 quick.tags = document.getElementById('search-text').value.trim();
                 save('quickSearches');
                 renderQuickSearches();
+                renderQuickCards();
             });
         });
+    }
+
+    // ---------- Quick search cards (front page) ----------
+
+    // Each quick search as a card with the first picture of its results and, in the wide layout,
+    // the main tags. One request at a time, spaced out, and remembered for a while.
+    const QUICK_CARD_TTL = 10 * 60 * 1000;
+    const QUICK_CARD_GAP = 700;
+    const quickCardCache = new Map();
+    // The first request waits until the model has loaded the blacklist and ratings.
+    // ponytail: a fixed wait, an event from the model if it ever loads slower than this.
+    let quickCardQueue = new Promise(resolve => setTimeout(resolve, 1500));
+    let quickCardRun = 0;
+
+    // The first slide of the quick search's first site, or null. {slide, cached}
+    function fetchQuickSlide(quick) {
+        let siteId = quick.sites[0];
+        let query = applySearchSort(quick.tags, [siteId], true);
+        let key = siteId + '|' + query;
+        let hit = quickCardCache.get(key);
+
+        if (hit && Date.now() - hit.time < QUICK_CARD_TTL)
+            return Promise.resolve({ slide: hit.slide, cached: true });
+
+        return new Promise(function (resolve) {
+            // Its own manager: the live ones share one request that a new one cancels.
+            let manager = SiteManagerFactory.createSiteManager({ model: controller()._model, displayWarningMessage() {} }, siteId, 5);
+            let timer = setTimeout(() => resolve({ slide: null, cached: false }), 35000);
+
+            manager.isOnline = true;
+            manager.enable();
+            manager.performSearch(query, function () {
+                clearTimeout(timer);
+                let slide = manager.allUnsortedSlides[0] || null;
+                if (!manager.ranIntoErrorWhileSearching)
+                    quickCardCache.set(key, { slide: slide, time: Date.now() });
+                resolve({ slide: slide, cached: false });
+            });
+        });
+    }
+
+    function queueQuickSlide(quick, run) {
+        let result = quickCardQueue.then(async function () {
+            if (run != quickCardRun || !quick.tags || quick.sites[0] == SITE_LOCAL || offlineMode)
+                return null;
+            let { slide, cached } = await fetchQuickSlide(quick);
+            if (!cached)
+                await new Promise(resolve => setTimeout(resolve, QUICK_CARD_GAP));
+            return slide;
+        }).catch(() => null);
+        quickCardQueue = result;
+        return result;
+    }
+
+    function isHttpUrl(url) {
+        return /^https?:\/\//i.test(url || '');
+    }
+
+    function quickCardTags(slide) {
+        let groups = slide.tagGroups || {};
+        let tags = [];
+
+        for (let [category, count] of [['artist', 2], ['character', 2], ['copyright', 1]])
+            for (let tag of (groups[category] || []).slice(0, count))
+                tags.push([category, tag]);
+
+        return tags;
+    }
+
+    function renderQuickCards() {
+        let section = document.getElementById('quick-cards');
+
+        if (!section)
+            return; // favorites page
+
+        let run = ++quickCardRun;
+        let cards = settings.quickSearches.map((quick, index) => ({ quick, index })).filter(card => card.quick.sites.length);
+        let wide = settings.quickCardLayout == 'wide';
+
+        section.hidden = !settings.quickCards || cards.length == 0;
+        section.replaceChildren();
+        if (section.hidden)
+            return;
+
+        // Static markup only: nothing from the sites goes in with innerHTML.
+        let header = document.createElement('div');
+        header.className = 'quick-cards-header';
+        header.innerHTML = '<h3>Quick searches</h3>' +
+            segmented('quick-card-layout', [['grid', 'Pictures'], ['wide', 'With tags']], settings.quickCardLayout) +
+            '<button class="glass-button icon-button" id="quick-cards-refresh" title="Load the pictures again">&#8635;</button>';
+        section.append(header);
+
+        header.querySelectorAll('input[name="quick-card-layout"]').forEach(function (radio) {
+            radio.addEventListener('change', function () {
+                settings.quickCardLayout = radio.value;
+                save('quickCardLayout');
+                renderQuickCards();
+            });
+        });
+
+        header.querySelector('#quick-cards-refresh').addEventListener('click', function () {
+            quickCardCache.clear();
+            renderQuickCards();
+        });
+
+        let grid = document.createElement('div');
+        grid.className = 'quick-cards-grid' + (wide ? ' wide' : '');
+        section.append(grid);
+
+        for (let { quick, index } of cards) {
+            let card = document.createElement('button');
+            card.className = 'quick-card';
+            card.type = 'button';
+
+            let picture = document.createElement('div');
+            picture.className = 'quick-card-picture';
+            card.append(picture);
+
+            let number = document.createElement('kbd');
+            number.textContent = (index + 1) % 10;
+            picture.append(number);
+
+            let info = document.createElement('div');
+            info.className = 'quick-card-info';
+            let names = siteCheckboxes().filter(c => quick.sites.includes(c.value)).map(c => siteName(c).split('.')[0]);
+            let label = document.createElement('span');
+            label.className = 'quick-card-query';
+            label.textContent = quick.tags || 'The search box';
+            let sites = document.createElement('small');
+            sites.textContent = names.join(', ');
+            info.append(label, sites);
+            card.append(info);
+
+            card.title = 'Search ' + (quick.tags || 'what is in the search box') + ' (' + names.join(', ') + ')';
+            card.addEventListener('click', () => runQuickSearch(index));
+            grid.append(card);
+
+            queueQuickSlide(quick, run).then(function (slide) {
+                if (!slide)
+                    return;
+
+                let url = slide.sampleFileUrl || slide.previewFileUrl;
+                if (isHttpUrl(url)) {
+                    let image = document.createElement('img');
+                    image.loading = 'lazy';
+                    image.alt = '';
+                    image.src = url;
+                    picture.prepend(image);
+                }
+
+                if (wide) {
+                    let tagList = document.createElement('div');
+                    tagList.className = 'quick-card-tags';
+                    for (let [category, name] of quickCardTags(slide)) {
+                        let tag = document.createElement('span');
+                        tag.className = 'quick-tag tag-' + category;
+                        tag.textContent = name.replace(/_/g, ' ');
+                        tagList.append(tag);
+                    }
+                    if (tagList.childElementCount)
+                        info.append(tagList);
+                }
+            });
+        }
     }
 
     // ---------- Settings window ----------
@@ -1456,6 +1626,9 @@
             '<ul class="settings-list">' +
                 '<li><label class="row"><span>Sort menu in the search bar<small>Choose Newest, Oldest, Highest or Lowest score from a menu instead of typing order: terms. Default searches exactly what you type.</small></span>' +
                     '<input type="checkbox" id="search-sort-menu"' + (settings.searchSortMenu ? ' checked' : '') + '></label></li>' +
+                (isFavoritesPage ? '' :
+                    '<li><label class="row"><span>Quick search cards<small>The quick searches as cards on the front page, each with the first picture of its results. Set them in Quick searches.</small></span>' +
+                        '<input type="checkbox" id="quick-cards-toggle"' + (settings.quickCards ? ' checked' : '') + '></label></li>') +
                 '<li><label class="row"><span>Download button<small>A Download button in the toolbar that saves the image or video on the screen to the download folder.</small></span>' +
                     '<input type="checkbox" id="show-download-button"' + (settings.showDownloadButton ? ' checked' : '') + '></label></li>' +
                 '<li><label class="row"><span>Show tips while loading<small>Tips about the app\'s features, shown while an image is loading.</small></span>' +
@@ -1506,6 +1679,15 @@
             save('searchSortMenu');
             updateSearchSortMenu();
         });
+
+        let cardsToggle = section.querySelector('#quick-cards-toggle');
+        if (cardsToggle) {
+            cardsToggle.addEventListener('change', function (e) {
+                settings.quickCards = e.target.checked;
+                save('quickCards');
+                renderQuickCards();
+            });
+        }
 
         section.querySelector('#show-download-button').addEventListener('change', function (e) {
             settings.showDownloadButton = e.target.checked;
@@ -2148,20 +2330,26 @@
         let model = controller()._model;
         let performSearch = model.performSearch;
         model.performSearch = function (searchText) {
-            let sort = settings.searchSort;
-            // Your folders have no scores: there the score orders mean newest first.
-            let onlyFolders = offlineMode || this.getSelectedSitesToSearch().every(site => site == SITE_LOCAL);
-            if (onlyFolders && /score/.test(sort)) {
-                sort = 'order:id_desc';
-                showToast('Your folders have no scores, so they are sorted by newest.');
-            }
-            // Default leaves the search as it is typed; any other choice replaces a typed order: term.
-            if (settings.searchSortMenu && sort && poolIdFromSearch(searchText) == null)
-                searchText = searchText.replace(SORT_TERM, ' ').trim() + ' ' + sort;
-            return performSearch.call(this, searchText);
+            return performSearch.call(this, applySearchSort(searchText, this.getSelectedSitesToSearch(), false));
         };
 
         updateSearchSortMenu();
+    }
+
+    // The search text as it is sent: with the chosen order in place of a typed order: term.
+    function applySearchSort(searchText, sites, quiet) {
+        let sort = settings.searchSort;
+        // Your folders have no scores: there the score orders mean newest first.
+        let onlyFolders = offlineMode || sites.every(site => site == SITE_LOCAL);
+        if (onlyFolders && /score/.test(sort)) {
+            sort = 'order:id_desc';
+            if (!quiet)
+                showToast('Your folders have no scores, so they are sorted by newest.');
+        }
+        // Default leaves the search as it is typed; any other choice replaces a typed order: term.
+        if (settings.searchSortMenu && sort && poolIdFromSearch(searchText) == null)
+            searchText = searchText.replace(SORT_TERM, ' ').trim() + ' ' + sort;
+        return searchText;
     }
 
     function updateSearchSortMenu() {
@@ -3041,6 +3229,7 @@
         renderDataSection();
         renderVideoSettings();
         renderQuickSearches();
+        renderQuickCards();
         renderFolders();
         setupRule34Account();
         setupGelbooruAccount();
