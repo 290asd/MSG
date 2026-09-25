@@ -1890,10 +1890,15 @@ body.has-slide #quick-cards {
 	border-radius: 18px;
 }
 
+/* --r is the picture's shape, set from the image once it is known. The height stays at 200px at most;
+   a wide picture is stopped at about half the card and gets shorter instead. */
 .quick-card-picture {
+	--r: 1.33;
 	position: relative;
-	flex: 0 0 40%;
-	aspect-ratio: 4 / 3;
+	flex: none;
+	align-self: flex-start;
+	width: min(calc(200px * var(--r)), 48%);
+	aspect-ratio: var(--r);
 	border-radius: 12px;
 	overflow: hidden;
 	background: var(--field);
@@ -1921,7 +1926,6 @@ body.has-slide #quick-cards {
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
-	justify-content: center;
 	gap: 4px;
 	min-width: 0;
 	flex: 1;
@@ -1938,10 +1942,18 @@ body.has-slide #quick-cards {
 	color: var(--muted);
 }
 
+/* Takes the space the picture leaves, without making the card taller (fitQuickTags hides what does not fit). */
 .quick-card-tags {
+	position: relative;
+	flex: 1 1 0;
+	min-height: 0;
+	align-self: stretch;
+	overflow: hidden;
 	display: flex;
 	flex-wrap: wrap;
+	align-content: flex-start;
 	gap: 6px;
+	margin-top: 4px;
 }
 
 .quick-tag {

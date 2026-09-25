@@ -1421,11 +1421,29 @@
         let groups = slide.tagGroups || {};
         let tags = [];
 
-        for (let [category, count] of [['artist', 2], ['character', 2], ['copyright', 1]])
+        // Most important first: the card shows as many as fit (fitQuickTags).
+        for (let [category, count] of [['artist', 3], ['character', 4], ['copyright', 3], ['species', 2]])
             for (let tag of (groups[category] || []).slice(0, count))
                 tags.push([category, tag]);
 
         return tags;
+    }
+
+    // The picture's shape for an image of this width / height: a compact 1.15 unless that would crop
+    // more than 13 % of the image, so a narrow or a wide image is cut only a little at the edges.
+    function quickPictureRatio(ratio) {
+        return Math.min(Math.max(1.15, ratio * 0.87), ratio / 0.87);
+    }
+
+    // Keeps the tags that fit in the space the card has left, from the first on; the rest are hidden.
+    function fitQuickTags(list) {
+        let full = false;
+
+        for (let tag of list.children) {
+            tag.hidden = false;
+            full = full || tag.offsetTop + tag.offsetHeight > list.clientHeight;
+            tag.hidden = full;
+        }
     }
 
     function renderQuickCards() {
@@ -1491,6 +1509,10 @@
                     return;
 
                 let url = slide.sampleFileUrl || slide.previewFileUrl;
+                let ratio = Number(slide.width) / Number(slide.height);
+                if (ratio > 0 && isFinite(ratio))
+                    picture.style.setProperty('--r', quickPictureRatio(ratio));
+
                 if (isHttpUrl(url)) {
                     let image = document.createElement('img');
                     image.loading = 'lazy';
@@ -1507,8 +1529,10 @@
                     tag.textContent = name.replace(/_/g, ' ');
                     tagList.append(tag);
                 }
-                if (tagList.childElementCount)
+                if (tagList.childElementCount) {
                     info.append(tagList);
+                    new ResizeObserver(() => fitQuickTags(tagList)).observe(tagList);
+                }
             });
         }
     }
