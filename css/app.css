@@ -1841,7 +1841,9 @@ body.refract-style .glass.lg-drawn {
 }
 
 /* ---------- Quick search cards (front page) ---------- */
-#quick-cards[hidden] {
+/* Only on the front page: gone while a slide is showing. */
+#quick-cards[hidden],
+body.has-slide #quick-cards {
 	display: none;
 }
 
