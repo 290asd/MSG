@@ -84,9 +84,30 @@ class SiteManager
 		}
 	}
 
+	// A site answers either with XML (post elements named xmlPostsTag) or with JSON:
+	// an array of posts, or an object holding it under jsonPostsKey.
 	doesResponseTextIndicateOnline(responseText)
 	{
-		console.log('doesResponseTextIndicateOnline() was not implemented.');
+		if (this.xmlPostsTag)
+			return new DOMParser().parseFromString(responseText, "text/xml").getElementsByTagName(this.xmlPostsTag).length > 0;
+
+		var jsonPosts;
+
+		try
+		{
+			jsonPosts = JSON.parse(responseText);
+		}
+		catch(e)
+		{
+			console.log("JSON failed to parse.");
+			console.log(e);
+			return false;
+		}
+
+		if (jsonPosts != null && this.jsonPostsKey)
+			jsonPosts = jsonPosts[this.jsonPostsKey];
+
+		return jsonPosts != null && jsonPosts.length > 0;
 	}
 
 	performSearch(searchText, doneSearchingSiteCallback)
@@ -174,7 +195,10 @@ class SiteManager
 
 	addSlides(responseText)
 	{
-		console.log('addSlides() was not implemented.');
+		if (this.xmlPostsTag)
+			this.addXmlSlides(responseText);
+		else
+			this.addJsonSlides(responseText);
 	}
 
 	addXmlSlides(xmlResponseText)

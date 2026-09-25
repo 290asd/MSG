@@ -115,6 +115,19 @@
         chrome.storage.sync.set({ [key]: settings[key] });
     }
 
+    // A checkbox in `root` that saves its setting under `key` and then runs `after`.
+    function bindCheckbox(root, id, key, after) {
+        let box = root.querySelector('#' + id);
+
+        if (box)
+            box.addEventListener('change', function (e) {
+                settings[key] = e.target.checked;
+                save(key);
+                if (after)
+                    after();
+            });
+    }
+
     function controller() {
         if (typeof slideshowController !== 'undefined' && slideshowController)
             return slideshowController;
@@ -654,6 +667,25 @@
         document.getElementById(isFavoritesPage ? 'filter-button' : 'search-button').click();
     }
 
+    // The slideshow page: puts the text in the search box and searches.
+    function runSearch(text) {
+        let searchText = document.getElementById('search-text');
+        searchText.value = text;
+        searchText.dispatchEvent(new CustomEvent('change'));
+        document.getElementById('search-button').click();
+    }
+
+    // Runs `then` once `ready()` is true (a site has answered its status check), or after 15 seconds anyway.
+    function whenReady(ready, then) {
+        let tries = 0;
+        let check = function () {
+            if (!ready() && tries++ < 60)
+                return setTimeout(check, 250);
+            then();
+        };
+        check();
+    }
+
     function setShowTags(show) {
         settings.showTags = show;
         save('showTags');
@@ -1055,15 +1087,8 @@
                     '<input type="checkbox" id="video-auto-mute"' + (settings.videoAutoMute ? ' checked' : '') + '></label></li>' +
             '</ul>';
 
-        box.querySelector('#video-autoplay').addEventListener('change', function (e) {
-            settings.videoAutoplay = e.target.checked;
-            save('videoAutoplay');
-        });
-
-        box.querySelector('#video-auto-mute').addEventListener('change', function (e) {
-            settings.videoAutoMute = e.target.checked;
-            save('videoAutoMute');
-        });
+        bindCheckbox(box, 'video-autoplay', 'videoAutoplay');
+        bindCheckbox(box, 'video-auto-mute', 'videoAutoMute');
     }
 
     // ---------- Folders: your own folders and the download folder ----------
@@ -1698,41 +1723,15 @@
         setupBlurSlider(section, 'refract-tint', 'refractTint', 'Refract tint', applyRefract, false, ' %');
         setupBlurSlider(section, 'background-blur', 'backgroundBlur', 'Background blur', applyBackgroundBlur, true);
 
-        section.querySelector('#search-sort-menu').addEventListener('change', function (e) {
-            settings.searchSortMenu = e.target.checked;
-            save('searchSortMenu');
-            updateSearchSortMenu();
-        });
-
-        let cardsToggle = section.querySelector('#quick-cards-toggle');
-        if (cardsToggle) {
-            cardsToggle.addEventListener('change', function (e) {
-                settings.quickCards = e.target.checked;
-                save('quickCards');
-                renderQuickCards();
-            });
-        }
-
-        section.querySelector('#show-download-button').addEventListener('change', function (e) {
-            settings.showDownloadButton = e.target.checked;
-            save('showDownloadButton');
-            updateDownloadButton();
-        });
-
-        section.querySelector('#app-show-tips').addEventListener('change', function (e) {
-            settings.showTips = e.target.checked;
-            save('showTips');
-        });
+        bindCheckbox(section, 'search-sort-menu', 'searchSortMenu', updateSearchSortMenu);
+        bindCheckbox(section, 'quick-cards-toggle', 'quickCards', renderQuickCards); // not on the favorites page
+        bindCheckbox(section, 'show-download-button', 'showDownloadButton', updateDownloadButton);
+        bindCheckbox(section, 'app-show-tips', 'showTips');
 
         paintBackground(section.querySelector('#background-preview'), settings.backgroundImage);
 
-        ['Favorite', 'Gifs', 'Videos'].forEach(function (name) {
-            section.querySelector('#background-random-' + name.toLowerCase()).addEventListener('change', function (e) {
-                settings['backgroundRandom' + name] = e.target.checked;
-                save('backgroundRandom' + name);
-                applyRandomBackground(section);
-            });
-        });
+        for (let name of ['Favorite', 'Gifs', 'Videos'])
+            bindCheckbox(section, 'background-random-' + name.toLowerCase(), 'backgroundRandom' + name, () => applyRandomBackground(section));
 
         section.querySelector('#choose-background').addEventListener('click', async function () {
             let url = await window.appInfo.chooseBackground();
@@ -1784,10 +1783,7 @@
             setShowTags(e.target.checked);
         });
 
-        section.querySelector('#app-click-opens-post')?.addEventListener('change', function (e) {
-            settings.clickOpensPost = e.target.checked;
-            save('clickOpensPost');
-        });
+        bindCheckbox(section, 'app-click-opens-post', 'clickOpensPost');
     }
 
     function applyRefract() {
@@ -1832,11 +1828,7 @@
                 ? 'Double-tapping faves an image on the slideshow page. Here everything is already a favorite, so double-tap does nothing.'
                 : '<b>Double-tap</b> anywhere on the image to fave or unfave it.') + '</p>';
 
-        section.querySelector('#app-touch-mode').addEventListener('change', function (e) {
-            settings.touchMode = e.target.checked;
-            save('touchMode');
-            applyLayoutSettings();
-        });
+        bindCheckbox(section, 'app-touch-mode', 'touchMode', applyLayoutSettings);
     }
 
     function renderHotkeys(message) {
@@ -1904,13 +1896,9 @@
                     '<input type="checkbox" id="joi-how"' + (settings.joiHow ? ' checked' : '') + '></label></li>' +
             '</ul>';
 
-        setupSyncToggles();
+        bindCheckbox(section, 'sync-e621-favorites', 'syncE621Favorites');
 
-        section.querySelector('#joi-how').addEventListener('change', function (e) {
-            settings.joiHow = e.target.checked;
-            save('joiHow');
-            updateJoiButton();
-        });
+        bindCheckbox(section, 'joi-how', 'joiHow', updateJoiButton);
 
         let downloadButton = section.querySelector('#download-favorites-button');
         if (downloadButton) {
@@ -2075,14 +2063,9 @@
                 '<li class="row"><span class="muted" id="auto-download-status">Not running.</span></li>' +
             '</ul>';
 
-        for (let [id, key] of [['auto-download-favorites', 'autoDownloadFavorites'], ['auto-download-pools', 'autoDownloadPools'], ['use-local-copies', 'useLocalCopies']]) {
-            section.querySelector('#' + id).addEventListener('change', function (e) {
-                settings[key] = e.target.checked;
-                save(key);
-                if (key == 'useLocalCopies')
-                    loadLocalCopies();
-            });
-        }
+        bindCheckbox(section, 'auto-download-favorites', 'autoDownloadFavorites');
+        bindCheckbox(section, 'auto-download-pools', 'autoDownloadPools');
+        bindCheckbox(section, 'use-local-copies', 'useLocalCopies', loadLocalCopies);
 
         // Everything (sites, search, the favorites list) starts differently offline: the page reloads.
         section.querySelector('#offline-mode').addEventListener('change', async function (e) {
@@ -2298,10 +2281,7 @@
                 location.href = 'slideshow.html#search=' + encodeURIComponent(query());
                 return;
             }
-            let searchText = document.getElementById('search-text');
-            searchText.value = query();
-            searchText.dispatchEvent(new CustomEvent('change'));
-            document.getElementById('search-button').click();
+            runSearch(query());
         });
 
         let filterButton = dialog.querySelector('#analysis-filter');
@@ -2317,18 +2297,10 @@
         if (match) {
             history.replaceState(null, '', location.pathname);
             let text = decodeURIComponent(match[1]);
-            let tries = 0;
-            let run = function () {
+            whenReady(function () {
                 let model = controller()._model;
-                let ready = offlineMode || model.sitesManager.siteManagers.some(m => m.isOnline && model.sitesToSearch[m.id]);
-                if (!ready && tries++ < 60)
-                    return setTimeout(run, 250);
-                let searchText = document.getElementById('search-text');
-                searchText.value = text;
-                searchText.dispatchEvent(new CustomEvent('change'));
-                document.getElementById('search-button').click();
-            };
-            run();
+                return offlineMode || model.sitesManager.siteManagers.some(m => m.isOnline && model.sitesToSearch[m.id]);
+            }, () => runSearch(text));
         }
 
         updateAnalysisButtons();
@@ -2436,17 +2408,10 @@
 
     // Searches for a pool, once e621 has answered its status check.
     function openPool(id) {
-        let tries = 0;
-        let open = function () {
+        whenReady(function () {
             let e621 = controller()._model.sitesManager.siteManagers.find(m => m.id == SITE_E621);
-            if (!(e621 && e621.isOnline) && tries++ < 60)
-                return setTimeout(open, 250);
-            let searchText = document.getElementById('search-text');
-            searchText.value = 'pool:' + id;
-            searchText.dispatchEvent(new CustomEvent('change'));
-            document.getElementById('search-button').click();
-        };
-        open();
+            return e621 && e621.isOnline;
+        }, () => runSearch('pool:' + id));
     }
 
     // Slideshow page: the saved pools as covers, in a window opened from the Pools button.
@@ -2612,17 +2577,6 @@
         return { checked: favorites.length, found: poolIds.size, added: added.length };
     }
 
-    // "Also fave on e621" in Settings → Favorites.
-    function setupSyncToggles() {
-        let toggle = document.getElementById('sync-e621-favorites');
-
-        toggle.checked = settings.syncE621Favorites;
-        toggle.addEventListener('change', function () {
-            settings.syncE621Favorites = toggle.checked;
-            save('syncE621Favorites');
-        });
-    }
-
     async function renderAbout() {
         let section = document.querySelector('.settings-section[data-section="about"]');
         let version = await window.appInfo.getVersion();
@@ -2771,35 +2725,28 @@
     }
 
     // The box in the top right corner: FPS and the background download's progress.
-    let downloadText = '';
-    let downloadClearTimer = null;
+    // A line of it shows progress as long as the text matches `isProgress`; anything else is a result that goes away.
+    function hudLine(isProgress) {
+        let line = { text: '', timer: null };
 
-    function setDownloadText(text) {
-        downloadText = text || '';
-        clearTimeout(downloadClearTimer);
-        // Progress reads "favorites: 120 / 4000"; anything else is a result that goes away.
-        if (!/ \/ \d+/.test(downloadText))
-            downloadClearTimer = setTimeout(function () {
-                downloadText = '';
-                updateHud();
-            }, 8000);
-        updateHud();
+        line.set = function (text) {
+            line.text = text || '';
+            clearTimeout(line.timer);
+            if (!isProgress.test(line.text))
+                line.timer = setTimeout(function () {
+                    line.text = '';
+                    updateHud();
+                }, 8000);
+            updateHud();
+        };
+
+        return line;
     }
 
-    // A single download (the button or L): "Downloading name: 45%", then a result that goes away.
-    let singleText = '';
-    let singleClearTimer = null;
-
-    function setSingleText(text) {
-        singleText = text || '';
-        clearTimeout(singleClearTimer);
-        if (!/^Downloading /.test(singleText))
-            singleClearTimer = setTimeout(function () {
-                singleText = '';
-                updateHud();
-            }, 8000);
-        updateHud();
-    }
+    // The background download: "favorites: 120 / 4000".
+    const downloadLine = hudLine(/ \/ \d+/);
+    // A single download (the button or L): "Downloading name: 45%".
+    const singleLine = hudLine(/^Downloading /);
 
     function updateHud() {
         let hud = document.getElementById('dev-hud');
@@ -2815,10 +2762,10 @@
         let lines = [];
         if (settings.showFps)
             lines.push(fpsText());
-        if (settings.showDownloadProgress && downloadText)
-            lines.push(downloadText);
-        if (settings.showDownloadProgress && singleText)
-            lines.push(singleText);
+        if (settings.showDownloadProgress && downloadLine.text)
+            lines.push(downloadLine.text);
+        if (settings.showDownloadProgress && singleLine.text)
+            lines.push(singleLine.text);
 
         hud.replaceChildren(...lines.map(function (line) {
             let div = document.createElement('div');
@@ -3019,9 +2966,9 @@
         });
 
         window.appInfo.getVersion().then(v => appVersion = v);
-        window.appInfo.autoDownloadStatus().then(setDownloadText);
-        window.appInfo.onAutoDownloadStatus(setDownloadText);
-        window.appInfo.onDownloadProgress(setSingleText);
+        window.appInfo.autoDownloadStatus().then(downloadLine.set);
+        window.appInfo.onAutoDownloadStatus(downloadLine.set);
+        window.appInfo.onDownloadProgress(singleLine.set);
 
         updateDeveloperTab();
         updateHud();

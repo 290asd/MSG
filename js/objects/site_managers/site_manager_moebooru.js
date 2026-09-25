@@ -1,10 +1,6 @@
-class SiteManagerYandere extends SiteManager
+// Konachan and yande.re run the same software (Moebooru), so they share this manager.
+class SiteManagerMoebooru extends SiteManager
 {
-    constructor(sitesManager, pageLimit)
-    {
-		super(sitesManager, SITE_YANDERE, 'https://yande.re', pageLimit);
-    }
-    
     buildPingRequestUrl()
 	{
 		return this.url + '/post.json?limit=1';
@@ -15,32 +11,6 @@ class SiteManagerYandere extends SiteManager
 		var query = this.buildSiteSpecificQuery(searchText);
 		
 		return this.url + '/post.json?tags=' + query + '&page=' + pageNumber + '&limit=' + this.pageLimit;
-	}
-
-	doesResponseTextIndicateOnline(responseText)
-	{
-		var jsonPosts;
-		
-		try
-		{
-			jsonPosts = JSON.parse(responseText);
-		}
-		catch(e)
-		{
-			console.log("JSON failed to parse.");
-			console.log(e);
-			return false;
-		}
-		
-		if (jsonPosts == null)
-			return false;
-		
-		return (jsonPosts.length > 0);
-	}
-
-	addSlides(responseText)
-	{
-		this.addJsonSlides(responseText);
 	}
 
 	addSlide(jsonPost)
@@ -66,12 +36,7 @@ class SiteManagerYandere extends SiteManager
 			return;
 		
 		var postUrl = this.url + '/post/show/' + jsonPost.id;
-		
-		var urlPrefix = '';
-		
-		if (postUrl.substring(0, 4) != 'http')
-			urlPrefix = 'https://';
-		
+
 		var date;
 		
 		if (jsonPost.created_at.s != null)
@@ -80,10 +45,10 @@ class SiteManagerYandere extends SiteManager
 			date = this.convertSDateToDate(jsonPost.created_at)
 		
 		var newSlide = new Slide(
-			SITE_YANDERE,
+			this.id,
 			jsonPost.id,
-			urlPrefix + jsonPost.file_url,
-			urlPrefix + jsonPost.preview_url,
+			jsonPost.file_url,
+			jsonPost.preview_url,
 			postUrl,
 			jsonPost.width,
 			jsonPost.height,

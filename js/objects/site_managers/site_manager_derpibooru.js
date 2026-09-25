@@ -3,6 +3,7 @@ class SiteManagerDerpibooru extends SiteManager
     constructor(sitesManager, pageLimit)
     {
 		super(sitesManager, SITE_DERPIBOORU, 'https://derpibooru.org', pageLimit);
+		this.jsonPostsKey = 'posts';
     }
     
     buildPingRequestUrl()
@@ -62,35 +63,6 @@ class SiteManagerDerpibooru extends SiteManager
 	startWith(text, term)
 	{
 		return (text.substring(0,term.length) == term);
-	}
-
-	doesResponseTextIndicateOnline(responseText)
-	{
-		var jsonPosts;
-		
-		try
-		{
-			jsonPosts = JSON.parse(responseText);
-		}
-		catch(e)
-		{
-			console.log("JSON failed to parse.");
-			console.log(e);
-			return false;
-		}
-		
-		// Derpibooru-only line
-		jsonPosts = jsonPosts["posts"];
-		
-		if (jsonPosts == null)
-			return false;
-		
-		return (jsonPosts.length > 0);
-	}
-
-	addSlides(responseText)
-	{
-		this.addJsonSlides(responseText);
 	}
 
 	addSlide(jsonPost)

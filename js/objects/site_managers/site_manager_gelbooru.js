@@ -3,6 +3,7 @@ class SiteManagerGelbooru extends SiteManager
     constructor(sitesManager, pageLimit)
     {
 		super(sitesManager, SITE_GELBOORU, 'https://gelbooru.com', pageLimit);
+		this.xmlPostsTag = 'posts';
     }
 
 	buildUserIdAndApiKeyString()
@@ -19,22 +20,6 @@ class SiteManagerGelbooru extends SiteManager
 	{
 		var query = this.buildSiteSpecificQuery(searchText);
 		return this.url + '/index.php?page=dapi&s=post&q=index&tags=' + query + '&pid=' + (pageNumber - 1) + '&limit=' + this.pageLimit + this.buildUserIdAndApiKeyString();
-	}
-
-	doesResponseTextIndicateOnline(responseText)
-	{
-		var parser = new DOMParser();
-		var xml = parser.parseFromString(responseText, "text/xml");
-		
-		var xmlPosts = xml.getElementsByTagName("posts");
-		
-		return (xmlPosts.length > 0);
-	}
-
-	addSlides(responseText)
-	{
-		// https://gelbooru.com/index.php?page=dapi&s=post&q=index&tags=cat&pid=16&limit=100
-		this.addXmlSlides(responseText);
 	}
 
 	addSlide(xmlPost)

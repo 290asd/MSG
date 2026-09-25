@@ -3,6 +3,7 @@ class SiteManagerE621 extends SiteManager
     constructor(sitesManager, pageLimit)
     {
 		super(sitesManager, SITE_E621, 'https://e621.net', pageLimit);
+		this.jsonPostsKey = 'posts';
     }
     
     buildPingRequestUrl()
@@ -97,32 +98,6 @@ class SiteManagerE621 extends SiteManager
 				this.handleGeneralError(url, hide);
 				doneSearchingSiteCallback(this);
 			});
-	}
-
-	doesResponseTextIndicateOnline(responseText)
-	{
-		var jsonPosts;
-		
-		try
-		{
-			jsonPosts = JSON.parse(responseText);
-		}
-		catch(e)
-		{
-			console.log("JSON failed to parse.");
-			console.log(e);
-			return false;
-		}
-		
-		if (jsonPosts == null)
-			return false;
-		
-		return (jsonPosts.posts.length > 0);
-	}
-
-	addSlides(responseText)
-	{
-		this.addJsonSlides(responseText);
 	}
 
 	condenseTags(jsonPostTags)

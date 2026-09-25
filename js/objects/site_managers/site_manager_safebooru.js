@@ -3,6 +3,7 @@ class SiteManagerSafebooru extends SiteManager
     constructor(sitesManager, pageLimit)
     {
 		super(sitesManager, SITE_SAFEBOORU, 'https://safebooru.org', pageLimit);
+		this.xmlPostsTag = 'post';
     }
     
     buildPingRequestUrl()
@@ -15,21 +16,6 @@ class SiteManagerSafebooru extends SiteManager
 		var query = this.buildSiteSpecificQuery(searchText);
 		
 		return this.url + '/index.php?page=dapi&s=post&q=index&tags=' + query + '&pid=' + (pageNumber - 1) + '&limit=' + this.pageLimit;
-	}
-
-	doesResponseTextIndicateOnline(responseText)
-	{
-		var parser = new DOMParser();
-		var xml = parser.parseFromString(responseText, "text/xml");
-		
-		var xmlPosts = xml.getElementsByTagName("post");
-		
-		return (xmlPosts.length > 0);
-	}
-
-	addSlides(responseText)
-	{
-		this.addXmlSlides(responseText);
 	}
 
 	addSlide(xmlPost)

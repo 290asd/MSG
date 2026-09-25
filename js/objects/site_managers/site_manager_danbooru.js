@@ -17,32 +17,6 @@ class SiteManagerDanbooru extends SiteManager
 		return this.url + '/posts.json?tags=' + query + '&page=' + pageNumber + '&limit=' + this.pageLimit;
 	}
 
-	doesResponseTextIndicateOnline(responseText)
-	{
-		var jsonPosts;
-		
-		try
-		{
-			jsonPosts = JSON.parse(responseText);
-		}
-		catch(e)
-		{
-			console.log("JSON failed to parse.");
-			console.log(e);
-			return false;
-		}
-		
-		if (jsonPosts == null)
-			return false;
-		
-		return (jsonPosts.length > 0);
-	}
-
-	addSlides(responseText)
-	{
-		this.addJsonSlides(responseText);
-	}
-
 	addSlide(jsonPost)
 	{
 		// console.log(jsonPost)

@@ -13,15 +13,15 @@ class SiteManagerFactory
 			case SITE_GELBOORU:
 				return new SiteManagerGelbooru(sitesManager, pageLimit);
 			case SITE_KONACHAN:
-				return new SiteManagerKonachan(sitesManager, pageLimit);
+				return new SiteManagerMoebooru(sitesManager, id, 'https://konachan.com', pageLimit);
 			case SITE_RULE34:
 				return new SiteManagerRule34(sitesManager, pageLimit);
 			case SITE_SAFEBOORU:
 				return new SiteManagerSafebooru(sitesManager, pageLimit);
 			case SITE_XBOORU:
 				return new SiteManagerXbooru(sitesManager, pageLimit);
-				case SITE_YANDERE:
-				return new SiteManagerYandere(sitesManager, pageLimit);
+			case SITE_YANDERE:
+				return new SiteManagerMoebooru(sitesManager, id, 'https://yande.re', pageLimit);
 			case SITE_LOCAL:
 				return new SiteManagerLocal(sitesManager, pageLimit);
 			default:
