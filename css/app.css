@@ -1543,6 +1543,48 @@ li.account-fields a {
 	color: var(--muted);
 }
 
+/* Developer: the report and the box in the top right corner (FPS, download progress). */
+.dev-table {
+	width: 100%;
+	margin-bottom: 8px;
+	border-collapse: collapse;
+}
+
+.dev-table td {
+	padding: 5px 8px;
+	border-bottom: 1px solid var(--field-border);
+	vertical-align: top;
+}
+
+.dev-table td:first-child {
+	width: 38%;
+	white-space: nowrap;
+	color: var(--muted);
+}
+
+.dev-table td:last-child {
+	font-family: "Cascadia Code", Consolas, monospace;
+	font-size: 0.85em;
+	overflow-wrap: anywhere;
+	user-select: text;
+}
+
+#dev-hud {
+	position: fixed;
+	top: 12px;
+	right: 12px;
+	z-index: 45;
+	padding: 8px 12px;
+	border-radius: 12px;
+	font-family: "Cascadia Code", Consolas, monospace;
+	font-size: 0.8em;
+	pointer-events: none;
+}
+
+#dev-hud[hidden] {
+	display: none;
+}
+
 .touch-guide {
 	display: grid;
 	grid-template-columns: 30% 1fr 30%;

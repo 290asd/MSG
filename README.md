@@ -36,6 +36,7 @@ A background image for the start screen, and how much it is blurred, can be chos
 - Touch screen mode: tap the left or right edge for previous/next, the middle to jump between the image and the controls, double-tap to fave.
 - Play videos to the end before moving to the next slide, play videos automatically, start them muted (Settings → Slideshow).
 - **Your folders** (Settings → Folders): browse your own images and videos as a site ("Your folders" in Sites & accounts). The search words filter by folder and file name (`-word` leaves out); an empty search shows everything. Subfolders are included. The same tab sets the download folder (default `Downloads/MSG`).
+- Developer settings: click the logo in Settings → About five times. A live report of the image or video on the screen (site, file name, format, file size, source, natural and displayed frame size, video state), the window and the session, with a copy button, plus an FPS counter and the background download's progress in the top right corner, and logging to the console.
 - Effects: Glass, or Solid, which turns off the blur and the animations (the loading orb keeps turning).
 - The search bar on the start page has a rainbow border beam until the first search; an image that is a favorite gets the same beam around it.
 - Quick searches on keys 1–0 (Settings → Quick searches): each keeps sites and, if wanted, tags; pressing the key selects those sites and searches (for its tags, or for what is in the search box).

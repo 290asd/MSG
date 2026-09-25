@@ -71,6 +71,10 @@
         // A sort menu in the search bar instead of typing order: terms.
         searchSortMenu: false,
         showDownloadButton: true,
+        // Settings → Developer, revealed by clicking the logo in About.
+        developerMode: false,
+        showFps: false,
+        showDownloadProgress: false,
         searchSort: '',
         // Settings → Data usage: nothing from the internet, only your folders and the downloads.
         offlineMode: false,
@@ -2412,6 +2416,351 @@
 
             '<h4 class="subheading">Content</h4>' +
             '<p class="section-intro">Images, videos and tags come from the sites you search and belong to their artists and sites. The tag panel follows e621\'s tag categories and colors.</p>';
+
+        setupDeveloperUnlock();
+    }
+
+    // ---------- Developer settings ----------
+
+    // Five quick clicks on the logo in About reveal the Developer section, like Android's build number.
+    function setupDeveloperUnlock() {
+        let clicks = 0;
+        let timer = null;
+
+        document.querySelector('.about-header .logo').addEventListener('click', function () {
+            clearTimeout(timer);
+            timer = setTimeout(() => clicks = 0, 2000);
+            if (++clicks < 5)
+                return;
+
+            clicks = 0;
+            if (settings.developerMode)
+                return showToast('Developer settings are already on.');
+
+            settings.developerMode = true;
+            save('developerMode');
+            updateDeveloperTab();
+            showToast('Developer settings unlocked: Settings → Developer.');
+        });
+    }
+
+    function updateDeveloperTab() {
+        document.querySelector('.settings-tab[data-section="developer"]').hidden = !settings.developerMode;
+    }
+
+    function formatBytes(bytes) {
+        return bytes >= 1048576 ? (bytes / 1048576).toFixed(2) + ' MB' : Math.round(bytes / 1024) + ' kB';
+    }
+
+    // The size of a file from its Content-Length, fetched once per file, and never offline.
+    // ponytail: files on the disk show —; add a stat call in main.js if their size is wanted.
+    const fileSizes = new Map();
+
+    function fileSize(url) {
+        if (!fileSizes.has(url)) {
+            fileSizes.set(url, '…');
+            if (offlineMode || !/^https?:/i.test(url))
+                fileSizes.set(url, '—');
+            else
+                fetch(url, { method: 'HEAD' })
+                    .then(r => fileSizes.set(url, Number(r.headers.get('content-length')) ? formatBytes(Number(r.headers.get('content-length'))) : '—'))
+                    .catch(() => fileSizes.set(url, '—'));
+        }
+        return fileSizes.get(url);
+    }
+
+    // Frames per second of the page and of the video on the screen, from a requestAnimationFrame
+    // loop that only runs while something shows the numbers.
+    const fps = { raf: 0, frames: 0, last: 0, page: null, video: null, videoFrames: 0, videoDropped: 0 };
+
+    function fpsLoop(now) {
+        fps.frames++;
+
+        if (now - fps.last >= 1000) {
+            let seconds = (now - fps.last) / 1000;
+            let video = document.getElementById('current-video');
+            let quality = video && video.readyState > 0 && !video.paused && video.getVideoPlaybackQuality();
+
+            fps.page = Math.round(fps.frames / seconds);
+            fps.video = null;
+            // The first second has nothing to compare with, and a new video starts its counters again.
+            if (quality && fps.videoFrames != null && quality.totalVideoFrames >= fps.videoFrames)
+                fps.video = { fps: Math.round((quality.totalVideoFrames - fps.videoFrames) / seconds), dropped: quality.droppedVideoFrames - fps.videoDropped };
+            fps.videoFrames = quality ? quality.totalVideoFrames : null;
+            fps.videoDropped = quality ? quality.droppedVideoFrames : 0;
+            fps.frames = 0;
+            fps.last = now;
+            updateHud();
+        }
+
+        fps.raf = requestAnimationFrame(fpsLoop);
+    }
+
+    function updateFpsLoop() {
+        let wanted = settings.showFps || developerVisible();
+
+        if (wanted && !fps.raf) {
+            fps.frames = 0;
+            fps.videoFrames = null;
+            fps.last = performance.now();
+            fps.raf = requestAnimationFrame(fpsLoop);
+        } else if (!wanted && fps.raf) {
+            cancelAnimationFrame(fps.raf);
+            fps.raf = 0;
+            fps.page = fps.video = null;
+        }
+    }
+
+    function fpsText() {
+        if (fps.page == null)
+            return 'FPS …';
+        return 'FPS ' + fps.page + (fps.video ? ' · video ' + fps.video.fps + ' fps, ' + fps.video.dropped + ' dropped' : '');
+    }
+
+    // The box in the top right corner: FPS and the background download's progress.
+    let downloadText = '';
+    let downloadClearTimer = null;
+
+    function setDownloadText(text) {
+        downloadText = text || '';
+        clearTimeout(downloadClearTimer);
+        // Progress reads "favorites: 120 / 4000"; anything else is a result that goes away.
+        if (!/ \/ \d+/.test(downloadText))
+            downloadClearTimer = setTimeout(function () {
+                downloadText = '';
+                updateHud();
+            }, 8000);
+        updateHud();
+    }
+
+    function updateHud() {
+        let hud = document.getElementById('dev-hud');
+
+        if (!hud) {
+            hud = document.createElement('div');
+            hud.id = 'dev-hud';
+            hud.className = 'glass';
+            hud.hidden = true;
+            document.body.appendChild(hud);
+        }
+
+        let lines = [];
+        if (settings.showFps)
+            lines.push(fpsText());
+        if (settings.showDownloadProgress && downloadText)
+            lines.push(downloadText);
+
+        hud.replaceChildren(...lines.map(function (line) {
+            let div = document.createElement('div');
+            div.textContent = line;
+            return div;
+        }));
+        hud.hidden = lines.length == 0;
+    }
+
+    function developerVisible() {
+        let dialog = document.getElementById('settings-dialog');
+        return settings.developerMode && dialog.open && currentSettingsSection == 'developer' && !dialog.querySelector('.settings-content.searching');
+    }
+
+    let appVersion = '';
+
+    // The report: groups of [label, value]. Site data goes in as text only.
+    function buildReport() {
+        let model = controller() && controller()._model;
+        let slide = currentSlide();
+        let image = document.getElementById('current-image');
+        let video = document.getElementById('current-video');
+        let size = (w, h) => w && h ? w + ' × ' + h : '—';
+        let seconds = s => Number.isFinite(s) ? s.toFixed(1) + ' s' : '—';
+        let safe = fn => { try { return fn(); } catch (e) { return undefined; } };
+        let groups = [];
+
+        if (!slide) {
+            groups.push({ title: 'Slide', rows: [['Slide', 'none on the screen']] });
+        } else {
+            let url = slide.fileUrl || '';
+            let shown = displayUrl(url);
+            let name = url.split(/[?#]/)[0].split('/').pop();
+            let extension = (name.match(/\.(\w+)$/) || [])[1];
+            let isVideo = slide.isVideo();
+            let element = isVideo ? video : image;
+            let site = slide.siteId == SITE_LOCAL ? 'Your folders' :
+                safe(() => model.sitesManager.siteManagers.find(m => m.id == slide.siteId).url.replace(/^https?:\/\//, '')) || slide.siteId;
+
+            try {
+                name = decodeURIComponent(name);
+            } catch (e) {}
+
+            let rows = [
+                ['Site', site],
+                ['Post id', slide.id],
+                ['File name', name],
+                ['Format', (extension ? extension.toUpperCase() : '?') + ' (' + slide.mediaType + ')'],
+                ['File size', fileSize(shown)],
+                ['Loaded from', /^file:/i.test(shown) ? 'disk' : 'internet'],
+                ['Source resolution', size(slide.width, slide.height)],
+                ['Frame, natural', isVideo ? size(video.videoWidth, video.videoHeight) : size(image.naturalWidth, image.naturalHeight)],
+                ['Frame, displayed', size(element.clientWidth, element.clientHeight)],
+                ['MD5', slide.md5 || '—'],
+                // e621's score is {up, down, total}, and the date a Date.
+                ['Score', (slide.score && slide.score.total != null ? slide.score.total : slide.score) ?? '—'],
+                ['Date', slide.date instanceof Date ? slide.date.toLocaleString() : slide.date || '—'],
+                ['Tags', slide.tags ? String(slide.tags).split(/\s+/).filter(Boolean).length : 0]
+            ];
+
+            if (isVideo) {
+                let quality = safe(() => video.getVideoPlaybackQuality());
+                rows.push(
+                    ['Video position', seconds(video.currentTime) + ' / ' + seconds(video.duration)],
+                    ['Video state', (video.paused ? 'paused' : 'playing') + (video.muted ? ', muted' : '') + ', volume ' + Math.round(video.volume * 100) + ' %, ready state ' + video.readyState],
+                    ['Video frames', quality ? quality.totalVideoFrames + ' shown, ' + quality.droppedVideoFrames + ' dropped' : '—']
+                );
+            }
+
+            groups.push({ title: 'Slide', rows });
+        }
+
+        groups.push({
+            title: 'Performance',
+            rows: [
+                ['Page FPS', fps.page != null ? fps.page : '…'],
+                ['Video FPS', fps.video ? fps.video.fps + ' (' + fps.video.dropped + ' dropped)' : '—'],
+                ['JS heap', performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) + ' MB' : '—']
+            ]
+        });
+
+        let slideCount = safe(() => model.getSlideCount());
+        let enabled = safe(() => model.sitesManager.siteManagers.filter(m => m.isEnabled).map(m => m.id == SITE_LOCAL ? 'folders' : m.url.replace(/^https?:\/\//, '')).join(', '));
+
+        groups.push({
+            title: 'Window',
+            rows: [
+                ['Window, inner', size(innerWidth, innerHeight)],
+                ['Window, outer', size(outerWidth, outerHeight)],
+                ['Screen', size(screen.width, screen.height)],
+                ['Pixel ratio', devicePixelRatio],
+                ['Fullscreen', innerWidth == screen.width && innerHeight == screen.height ? 'yes' : 'no'],
+                ['Theme', document.documentElement.dataset.theme + ', effects ' + settings.effectsStyle],
+                ['Touch mode', settings.touchMode ? 'on' : 'off'],
+                ['Auto-fit', safe(() => model.autoFitSlide) ? 'on' : 'off, max ' + safe(() => size(model.maxWidth, model.maxHeight))]
+            ]
+        });
+
+        groups.push({
+            title: 'Session',
+            rows: [
+                ['Page', isFavoritesPage ? 'Favorites' : 'Slideshow'],
+                ['Slide', slideCount != null ? safe(() => model.getCurrentSlideNumber()) + ' / ' + slideCount : '—'],
+                ['Sites', enabled || '—'],
+                ['Offline mode', offlineMode ? 'on' : 'off'],
+                ['Downloaded copies', localCopies.size],
+                ['MSG', appVersion + ' · Electron ' + window.appInfo.electronVersion + ' · Chromium ' + window.appInfo.chromeVersion],
+                ['Platform', navigator.platform]
+            ]
+        });
+
+        return groups;
+    }
+
+    let reportSignature = '';
+    let reportText = '';
+
+    // Updates the values in place, so text selected in the report stays selected.
+    function refreshDeveloper() {
+        if (!developerVisible())
+            return;
+
+        let groups = buildReport();
+        let box = document.getElementById('dev-report');
+        let signature = groups.map(g => g.title + g.rows.map(r => r[0]).join()).join('|');
+
+        reportText = groups.map(g => g.title + '\n' + g.rows.map(r => r[0] + ': ' + r[1]).join('\n')).join('\n\n');
+
+        if (signature != reportSignature) {
+            reportSignature = signature;
+            box.replaceChildren(...groups.flatMap(function (group) {
+                let heading = document.createElement('h4');
+                heading.className = 'subheading';
+                heading.textContent = group.title;
+
+                let table = document.createElement('table');
+                table.className = 'dev-table';
+                for (let row of group.rows) {
+                    let tr = table.insertRow();
+                    tr.insertCell().textContent = row[0];
+                    tr.insertCell();
+                }
+                return [heading, table];
+            }));
+        }
+
+        let cells = box.querySelectorAll('tr > td:last-child');
+        groups.flatMap(g => g.rows).forEach(function (row, i) {
+            if (cells[i].textContent != String(row[1]))
+                cells[i].textContent = row[1];
+        });
+    }
+
+    function renderDeveloper() {
+        let section = document.querySelector('.settings-section[data-section="developer"]');
+
+        section.innerHTML =
+            '<p class="section-intro">Numbers for debugging and for watching performance. They update while this page is open.</p>' +
+            '<ul class="settings-list">' +
+                '<li><label class="row"><span>Show FPS<small>The frame rate of the page and of the video, in the top right corner.</small></span>' +
+                    '<input type="checkbox" id="dev-fps"' + (settings.showFps ? ' checked' : '') + '></label></li>' +
+                '<li><label class="row"><span>Show download progress<small>The background download of favorites and pools (Settings → Data usage), in the top right corner.</small></span>' +
+                    '<input type="checkbox" id="dev-downloads"' + (settings.showDownloadProgress ? ' checked' : '') + '></label></li>' +
+                '<li><label class="row"><span>Log to the console<small>Slide addresses and other messages in the developer tools (F12). Until the app is restarted.</small></span>' +
+                    '<input type="checkbox" id="dev-log"' + (LOGGING_MODE == LOGGING_MODE_DEV ? ' checked' : '') + '></label></li>' +
+            '</ul>' +
+            '<div id="dev-report"></div>' +
+            '<p><button id="dev-copy">Copy the report</button> <button id="dev-hide" class="danger">Hide developer settings</button></p>';
+
+        for (let [id, key] of [['dev-fps', 'showFps'], ['dev-downloads', 'showDownloadProgress']]) {
+            section.querySelector('#' + id).addEventListener('change', function (e) {
+                settings[key] = e.target.checked;
+                save(key);
+                updateHud();
+                updateFpsLoop();
+            });
+        }
+
+        section.querySelector('#dev-log').addEventListener('change', e => e.target.checked ? enableDevMode() : disableDevMode());
+
+        section.querySelector('#dev-copy').addEventListener('click', function () {
+            navigator.clipboard.writeText(reportText).then(() => showToast('Report copied.'), () => showToast('Copying failed.'));
+        });
+
+        section.querySelector('#dev-hide').addEventListener('click', function () {
+            // The corner box goes too, so nothing is left on that can't be turned off.
+            for (let key of ['developerMode', 'showFps', 'showDownloadProgress']) {
+                settings[key] = false;
+                save(key);
+            }
+            disableDevMode();
+            for (let id of ['dev-fps', 'dev-downloads', 'dev-log'])
+                section.querySelector('#' + id).checked = false;
+            updateDeveloperTab();
+            updateHud();
+            updateFpsLoop();
+            showSettingsSection('about');
+        });
+
+        window.appInfo.getVersion().then(v => appVersion = v);
+        window.appInfo.autoDownloadStatus().then(setDownloadText);
+        window.appInfo.onAutoDownloadStatus(setDownloadText);
+
+        setInterval(function () {
+            updateFpsLoop();
+            refreshDeveloper();
+        }, 500);
+
+        updateDeveloperTab();
+        updateHud();
+        updateFpsLoop();
+        refreshDeveloper();
     }
 
     let currentSettingsSection = 'appearance';
@@ -2436,6 +2785,9 @@
         document.getElementById('settings-section-title').textContent = section.dataset.title;
         dialog.querySelector('.settings-scroll').scrollTop = 0;
 
+        updateFpsLoop();
+        refreshDeveloper();
+
         try {
             localStorage.setItem('settingsSection', name);
         } catch (e) {}
@@ -2457,6 +2809,12 @@
         dialog.querySelectorAll('.settings-tab').forEach(function (tab) { tab.classList.remove('active'); });
 
         dialog.querySelectorAll('.settings-section').forEach(function (section) {
+            // The developer settings stay out of the results until they are unlocked.
+            if (section.dataset.section == 'developer' && !settings.developerMode) {
+                section.classList.add('search-miss');
+                return;
+            }
+
             let showAll = matches(section.dataset.title);
             let any = false;
 
@@ -2562,7 +2920,7 @@
         try {
             lastSection = localStorage.getItem('settingsSection');
         } catch (e) {}
-        showSettingsSection(lastSection || 'appearance');
+        showSettingsSection(lastSection == 'developer' && !settings.developerMode ? 'appearance' : lastSection || 'appearance');
 
         // Opened from the favorites page's settings with #settings=<section>.
         let requested = !isFavoritesPage && location.hash.match(/^#settings=(\w+)$/);
@@ -2641,6 +2999,7 @@
         setupRule34Account();
         setupGelbooruAccount();
         renderAbout();
+        renderDeveloper();
         setupSettingsWindow();
         setupThumbnailCount();
         setupLoadingTips();
