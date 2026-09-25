@@ -16,7 +16,6 @@ document.addEventListener('DOMContentLoaded', function () {
         'siteFilterSelect': document.getElementById('filter-site'),
         'filterButton': document.getElementById('filter-button'),
         'randomizeButton': document.getElementById('randomize-button'),
-        'downloadFavoritesButton': document.getElementById('download-favorites-button'),
         'firstNavButton': document.getElementById('first-button'),
         'previousNavButton': document.getElementById('previous-button'),
         'nextNavButton': document.getElementById('next-button'),

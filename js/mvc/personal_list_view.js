@@ -10,7 +10,6 @@ class PersonalListView
         this.filterButtonClickedEvent = new Event(this);
         this.randomizeButtonClickedEvent = new Event(this);
         this.siteFilterChangedEvent = new Event(this);
-        this.downloadFavoritesButtonClickedEvent = new Event(this);
         this.firstNavButtonClickedEvent = new Event(this);
         this.previousNavButtonClickedEvent = new Event(this);
         this.nextNavButtonClickedEvent = new Event(this);
@@ -251,11 +250,7 @@ class PersonalListView
             _this.randomizeButtonClickedEvent.notify();
         });
 
-        this.uiElements.downloadFavoritesButton.addEventListener('click', function () {
-            _this.uiElements.downloadFavoritesButton.blur();
-            _this.downloadFavoritesButtonClickedEvent.notify();
-        });
-    
+
         this.uiElements.secondsPerSlideTextBox.addEventListener('change', function () {
             _this.secondsPerSlideChangedEvent.notify();
         });
@@ -746,10 +741,6 @@ class PersonalListView
 
     removeFocusFromFilterButton() {
         this.uiElements.filterButton.blur();
-    }
-
-    setDownloadFavoritesButtonDownloading(downloading) {
-        this.uiElements.downloadFavoritesButton.innerHTML = downloading ? '&#10005; Cancel download' : '&#128190; Download';
     }
 
     updateOptions() {

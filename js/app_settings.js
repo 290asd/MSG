@@ -346,7 +346,7 @@
             'Settings → Touch screen: tap the edges to change slides, double-tap to fave.',
             'Settings → Appearance: dark or light theme, glass blur and a background image.',
             'Settings → Favorites imports your favorites from e621, Derpibooru and Gelbooru.',
-            'On the favorites page, Random shuffles them and Download saves them all.',
+            'On the favorites page, Random shuffles them, and Settings → Favorites can download them all.',
             'Tags from e621 and Danbooru are grouped by category, in e621\'s colors.',
             '<kbd>F11</kbd> toggles full screen.',
             k('showInterface') + ' brings up the search and the controls; again takes you back to the image.',
@@ -1069,7 +1069,7 @@
 
             '<h4 class="subheading">Downloads</h4>' +
             '<ul class="settings-list">' +
-                '<li class="row stacked"><span>Download folder<small>Where ' + keyName(keyOf('download', 0)) + ' and the favorites page\'s Download save files. Favorites go into a "favorites" folder in it.</small>' +
+                '<li class="row stacked"><span>Download folder<small>Where ' + keyName(keyOf('download', 0)) + ' and the Download button save files. Favorites go into a "favorites" folder in it.</small>' +
                     '<span class="folder-path">' + escapeHtml(settings.downloadFolder || 'Downloads\\MSG (default)') + '</span></span>' +
                     '<div class="key-buttons"><button id="choose-download-folder">Choose…</button>' +
                     (settings.downloadFolder ? '<button id="reset-download-folder">Use default</button>' : '') + '</div></li>' +
@@ -1646,6 +1646,12 @@
             '<p class="section-intro">Favorites already in the list are skipped, so this can be run again to pick up new ones.</p>' +
             '<div class="section-footer"><button id="import-favorites-button" class="primary">&#8615; Import site favorites</button></div>' +
             '<p id="import-favorites-status" class="hotkey-message" hidden></p>' +
+            (isFavoritesPage
+                ? '<h4 class="subheading">Download</h4>' +
+                  '<p class="section-intro">Saves the favorites shown on the page (all, filtered or random) to the "favorites" folder in the download folder, 3 at a time. Files already there are skipped, so a cancelled download can be resumed.</p>' +
+                  '<div class="section-footer"><button id="download-favorites-button" class="primary">&#128190; Download all favorites</button></div>' +
+                  '<p id="download-favorites-status" class="hotkey-message" hidden></p>'
+                : '') +
             '<h4 class="subheading">Test</h4>' +
             '<ul class="settings-list">' +
                 '<li><label class="row"><span>joi.how (test)<small>Adds a ♥ joi button to the search bar and the favorites page: it opens the settings of <a href="https://github.com/clynamic/joi.how" target="_blank">joi.how</a> ' +
@@ -1660,6 +1666,19 @@
             save('joiHow');
             updateJoiButton();
         });
+
+        let downloadButton = section.querySelector('#download-favorites-button');
+        if (downloadButton) {
+            let downloadStatus = section.querySelector('#download-favorites-status');
+            downloadButton.addEventListener('click', async function () {
+                let running = controller().isDownloadingFavorites;
+                downloadStatus.hidden = false;
+                downloadButton.innerHTML = '&#10005; Cancel download';
+                await controller().downloadFavoritesButtonClicked(message => downloadStatus.textContent = message);
+                if (!running)
+                    downloadButton.innerHTML = '&#128190; Download all favorites';
+            });
+        }
 
         let button = section.querySelector('#import-favorites-button');
         let status = section.querySelector('#import-favorites-status');

@@ -257,7 +257,7 @@ ipcMain.handle('download', (event, options) => {
   event.sender.downloadURL(options.url)
 })
 
-// Bulk download (the favorites page's Download button): 3 files at a time into
+// Bulk download (Download all favorites in the favorites page's settings): 3 files at a time into
 // downloadPath(<folder>), skipping files that already exist so a rerun resumes.
 let bulkDownloadCancelled = false
 

@@ -91,10 +91,6 @@ class PersonalListController
             _this.randomizeButtonClicked();
         });
 
-        this._view.downloadFavoritesButtonClickedEvent.attach(function () {
-            _this.downloadFavoritesButtonClicked();
-        });
-
         this._view.secondsPerSlideChangedEvent.attach(function () {
             _this.secondsPerSlideChanged();
         });
@@ -238,8 +234,8 @@ class PersonalListController
     }
 
     // Saves the favorites being shown (all, filtered or random) to Downloads/MSG/favorites.
-    // Clicking again while downloading cancels.
-    async downloadFavoritesButtonClicked()
+    // Called again while downloading, it cancels. Progress goes to report (the settings window's status line).
+    async downloadFavoritesButtonClicked(report)
     {
         if (this.isDownloadingFavorites)
         {
@@ -252,26 +248,23 @@ class PersonalListController
 
         if (urls.length == 0)
         {
-            this._view.displayWarningMessage('There are no favorites to download.');
+            report('There are no favorites to download.');
             return;
         }
 
         this.isDownloadingFavorites = true;
-        this._view.setDownloadFavoritesButtonDownloading(true);
-        this._view.clearWarningMessage();
 
         let describe = (p) => (p.downloaded + p.skipped + p.failed) + ' / ' + p.total + ' (' +
             p.downloaded + ' downloaded, ' + p.skipped + ' already saved' + (p.failed ? ', ' + p.failed + ' failed' : '') + ')';
 
-        this._view.displayInfoMessage('Downloading favorites: 0 / ' + urls.length);
+        report('Downloading favorites: 0 / ' + urls.length);
 
         let result = await chrome.downloads.downloadMany(urls, 'MSG/favorites', (progress) => {
-            this._view.displayInfoMessage('Downloading favorites: ' + describe(progress));
+            report('Downloading favorites: ' + describe(progress));
         });
 
         this.isDownloadingFavorites = false;
-        this._view.setDownloadFavoritesButtonDownloading(false);
-        this._view.displayInfoMessage((result.cancelled ? 'Download cancelled: ' : 'Download finished: ') + describe(result) + '. Saved to ' + result.folder);
+        report((result.cancelled ? 'Download cancelled: ' : 'Download finished: ') + describe(result) + '. Saved to ' + result.folder);
     }
 
     secondsPerSlideChanged()
