@@ -297,7 +297,8 @@ class SiteManager
 		
 		return (rating == "e" && this.sitesManager.model.includeExplicit) || 
 			(rating == "q" && this.sitesManager.model.includeQuestionable) ||
-			(rating == "s" && this.sitesManager.model.includeSafe);
+			// Danbooru's "g" (general) is safe.
+			((rating == "s" || rating == "g") && this.sitesManager.model.includeSafe);
 	}
 
 	areSomeTagsAreBlacklisted(tags)
