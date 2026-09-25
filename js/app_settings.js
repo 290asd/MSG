@@ -2091,7 +2091,7 @@
 
     // ---------- e621 pools ----------
 
-    // Slideshow page: "Save pool" while a pool is shown, and opening a pool from the favorites page (#pool=<id>).
+    // Slideshow page: "Save pool" while a pool is shown.
     function setupPoolSaving() {
         let button = document.getElementById('save-pool-button');
         if (!button)
@@ -2129,39 +2129,38 @@
             button.blur();
             if (settings.savedPools.some(p => p.id == pool.id)) {
                 settings.savedPools = settings.savedPools.filter(p => p.id != pool.id);
-                showToast('Removed the pool from the favorites page.');
+                showToast('Removed from Pools.');
             } else {
                 let first = controller()._model.sitesManager.allSortedSlides[0];
                 settings.savedPools = settings.savedPools.concat({ id: pool.id, name: pool.name, count: pool.count, cover: first ? first.previewFileUrl : '' });
-                showToast('Saved. The pool is on the favorites page.');
+                showToast('Saved to Pools.');
             }
             save('savedPools');
             update();
         });
 
-        // Opened from the favorites page: search for it once e621 has answered its status check.
-        let match = location.hash.match(/^#pool=(\d+)$/);
-        if (match) {
-            history.replaceState(null, '', location.pathname);
-            let tries = 0;
-            let open = function () {
-                let e621 = controller()._model.sitesManager.siteManagers.find(m => m.id == SITE_E621);
-                if (!(e621 && e621.isOnline) && tries++ < 60)
-                    return setTimeout(open, 250);
-                let searchText = document.getElementById('search-text');
-                searchText.value = 'pool:' + match[1];
-                searchText.dispatchEvent(new CustomEvent('change'));
-                document.getElementById('search-button').click();
-            };
-            open();
-        }
     }
 
-    // Favorites page: the saved pools as covers, in a window opened from the search pill.
+    // Searches for a pool, once e621 has answered its status check.
+    function openPool(id) {
+        let tries = 0;
+        let open = function () {
+            let e621 = controller()._model.sitesManager.siteManagers.find(m => m.id == SITE_E621);
+            if (!(e621 && e621.isOnline) && tries++ < 60)
+                return setTimeout(open, 250);
+            let searchText = document.getElementById('search-text');
+            searchText.value = 'pool:' + id;
+            searchText.dispatchEvent(new CustomEvent('change'));
+            document.getElementById('search-button').click();
+        };
+        open();
+    }
+
+    // Slideshow page: the saved pools as covers, in a window opened from the Pools button.
     function setupPoolsBrowser() {
         let dialog = document.getElementById('pools-dialog');
         if (!dialog)
-            return; // slideshow page
+            return; // favorites page
 
         let filter = document.getElementById('pools-filter');
         let status = document.getElementById('pools-status');
@@ -2220,7 +2219,7 @@
             empty.className = 'muted';
             empty.textContent = settings.savedPools.length
                 ? 'No pools match.'
-                : 'No pools yet. Search for pool:<number> or paste a pool link on the slideshow page and press Save pool, or use Find pools in favorites.';
+                : 'No pools yet. Search for pool:<number> or paste a pool link and press Save pool, or use Find pools in favorites.';
             list.appendChild(empty);
             return;
         }
@@ -2228,8 +2227,13 @@
         for (let pool of pools) {
             let tile = document.createElement('a');
             tile.className = 'pool-tile';
-            tile.href = 'slideshow.html#pool=' + pool.id;
+            tile.href = '#pool=' + pool.id;
             tile.title = pool.name;
+            tile.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.getElementById('pools-dialog').close();
+                openPool(pool.id);
+            });
 
             let cover = document.createElement('img');
             cover.src = thumbnailUrl(pool.cover || '');

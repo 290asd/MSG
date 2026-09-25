@@ -44,10 +44,11 @@
 					</select>
 					<input id="search-text" type="search" placeholder="Search tags…" />
 					<button id="search-button" class="primary">Search</button>
-					<button id="save-pool-button" class="glass-button" hidden title="Keep this e621 pool on the favorites page">&#9734; Save pool</button>
+					<button id="save-pool-button" class="glass-button" hidden title="Keep this e621 pool in Pools">&#9734; Save pool</button>
 					<datalist id="search-history"></datalist>
 					<ul id="search-history-menu" class="glass menu" popover="manual"></ul>
 					<span class="toolbar-divider"></span>
+					<button id="pools-button" class="glass-button" title="Saved e621 pools (comics)">&#128218; Pools</button>
 					<button id="joi-button" class="glass-button" hidden title="Play the search results loaded so far in joi.how">&#9829; joi</button>
 					<a class="glass-button" href="personal_list.html" title="Favorites (Ctrl+F)">&#9829; Favorites</a>
 					<button id="settings-button" class="glass-button icon-button gear-button" title="Slideshow settings (Ctrl+S)">&#9881;<svg class="gear-badge" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.6" /><path d="M4 18l5.5-6.5 4 4.5 2.5-2.5L20.5 18z" /></svg></button>
@@ -83,6 +84,23 @@
 				</div>
 			</section>
 		</main>
+
+		<!-- Saved e621 pools (comics); a click searches for the pool, in its page order (app_settings.js). -->
+		<dialog id="pools-dialog" class="glass">
+			<header class="pools-header">
+				<h3>Pools <small id="pools-count"></small></h3>
+				<select id="pools-sort" title="Sort the pools">
+					<option value="added">Recently added</option>
+					<option value="name">Name</option>
+					<option value="pages">Most pages</option>
+				</select>
+				<input id="pools-filter" type="search" placeholder="Filter pools…" />
+				<button id="find-pools-button" title="Adds the e621 pools that your e621 favorites are in">Find pools in favorites</button>
+				<button id="pools-close" class="icon-button" title="Close (Esc)">&times;</button>
+			</header>
+			<p id="pools-status" hidden></p>
+			<div id="pool-list"></div>
+		</dialog>
 
 		<dialog id="settings-dialog" class="glass">
 			<div class="settings-shell">

@@ -38,7 +38,6 @@
 					<button id="filter-button" class="primary">Filter</button>
 					<button id="randomize-button" title="Show the favorites in random order. Filter with an empty box to restore the order.">&#128256; Random</button>
 					<span class="toolbar-divider"></span>
-					<button id="pools-button" class="glass-button" title="Saved e621 pools (comics)">&#128218; Pools</button>
 					<button id="joi-button" class="glass-button" hidden title="Play the favorites shown (all, filtered or random) in joi.how">&#9829; joi</button>
 					<button id="download-favorites-button" class="glass-button" title="Save the favorites shown (all, filtered or random) to Downloads/MSG/favorites. Files already there are skipped.">&#128190; Download</button>
 					<button id="settings-button" class="glass-button icon-button gear-button" title="Favorites settings (Ctrl+S)">&#9881;<svg class="gear-badge" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.5C5 15.5 2 12 2 8.4 2 5.4 4.3 3.2 7 3.2c2 0 3.9 1.1 5 3 1.1-1.9 3-3 5-3 2.7 0 5 2.2 5 5.2 0 3.6-3 7.1-10 13.1z" /></svg></button>
@@ -70,23 +69,6 @@
 				</div>
 			</section>
 		</main>
-
-		<!-- Saved e621 pools (comics); a click opens one on the slideshow page in its page order (app_settings.js). -->
-		<dialog id="pools-dialog" class="glass">
-			<header class="pools-header">
-				<h3>Pools <small id="pools-count"></small></h3>
-				<select id="pools-sort" title="Sort the pools">
-					<option value="added">Recently added</option>
-					<option value="name">Name</option>
-					<option value="pages">Most pages</option>
-				</select>
-				<input id="pools-filter" type="search" placeholder="Filter pools…" />
-				<button id="find-pools-button" title="Adds the e621 pools that your e621 favorites are in">Find pools in favorites</button>
-				<button id="pools-close" class="icon-button" title="Close (Esc)">&times;</button>
-			</header>
-			<p id="pools-status" hidden></p>
-			<div id="pool-list"></div>
-		</dialog>
 
 		<dialog id="settings-dialog" class="glass">
 			<div class="settings-shell">
