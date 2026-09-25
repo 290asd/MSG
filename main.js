@@ -130,37 +130,44 @@ ipcMain.handle('choose-folder', async (event, title) => {
 const MEDIA_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.avif', '.webm', '.mp4', '.m4v', '.mov', '.ogv'])
 const MAX_LOCAL_FILES = 50000 // per folder, so a big one doesn't crowd out the others
 
-ipcMain.handle('list-local-media', (event, folders) => {
+// Asynchronous, so a big folder doesn't freeze the window; the files of a folder are stat'ed together.
+ipcMain.handle('list-local-media', async (event, folders) => {
   const files = []
 
   let start = 0
-  const walk = (dir, root) => {
+  const walk = async (dir, root) => {
     let entries
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true })
+      entries = await fs.promises.readdir(dir, { withFileTypes: true })
     } catch (e) {
       return // unreadable or removed folder
     }
+
+    let pending = [] // media files waiting for their modification time, in the folder's order
+    const flush = async () => {
+      const stats = await Promise.all(pending.map(full => fs.promises.stat(full).catch(() => null)))
+      pending.forEach((full, i) => {
+        if (stats[i]) files.push({ url: pathToFileURL(full).href, path: path.relative(path.dirname(root), full), modified: stats[i].mtimeMs })
+      })
+      pending = []
+    }
+
     for (const entry of entries) {
-      if (files.length - start >= MAX_LOCAL_FILES || entry.name.startsWith('.')) continue
+      if (files.length + pending.length - start >= MAX_LOCAL_FILES || entry.name.startsWith('.')) continue
       const full = path.join(dir, entry.name)
       if (entry.isDirectory()) {
-        walk(full, root)
+        await flush()
+        await walk(full, root)
       } else if (MEDIA_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
-        try {
-          files.push({
-            url: pathToFileURL(full).href,
-            path: path.relative(path.dirname(root), full),
-            modified: fs.statSync(full).mtimeMs
-          })
-        } catch (e) {}
+        pending.push(full)
       }
     }
+    await flush()
   }
 
   for (const folder of folders) {
     start = files.length
-    walk(folder, folder)
+    await walk(folder, folder)
   }
   return files
 })
@@ -180,20 +187,20 @@ ipcMain.handle('background-from-url', async (event, url) => {
   const urlExt = path.extname(new URL(url).pathname).toLowerCase()
   const ext = IMAGE_EXTENSIONS.has(urlExt) || VIDEO_EXTENSIONS.has(urlExt) ? urlExt : '.jpg'
   const target = path.join(app.getPath('userData'), 'background-' + Date.now() + ext)
-  fs.writeFileSync(target, data)
+  await fs.promises.writeFile(target, data)
   return pathToFileURL(target).href
 })
 
 // Settings → Appearance: a random image among the downloaded favorites, as the background at start.
 // Still images always; GIFs and videos (.webm, .mp4) only when asked for.
-ipcMain.handle('random-favorite-image', (event, gifs, videos) => {
+ipcMain.handle('random-favorite-image', async (event, gifs, videos) => {
   const dir = downloadPath('MSG/favorites')
   const allowed = new Set([...IMAGE_EXTENSIONS].filter(ext => ext !== '.gif'))
   if (gifs) allowed.add('.gif')
   if (videos) VIDEO_EXTENSIONS.forEach(ext => allowed.add(ext))
   let images
   try {
-    images = fs.readdirSync(dir).filter(file => allowed.has(path.extname(file).toLowerCase()))
+    images = (await fs.promises.readdir(dir)).filter(file => allowed.has(path.extname(file).toLowerCase()))
   } catch (e) {
     return null // no favorites folder yet
   }
@@ -281,8 +288,8 @@ async function downloadFile (url, filePath) {
   const response = await net.fetch(url, { headers: referer ? { Referer: referer } : {} })
   if (!response.ok) throw new Error('HTTP ' + response.status)
   const partPath = filePath + '.part'
-  fs.writeFileSync(partPath, Buffer.from(await response.arrayBuffer()))
-  fs.renameSync(partPath, filePath)
+  await fs.promises.writeFile(partPath, Buffer.from(await response.arrayBuffer()))
+  await fs.promises.rename(partPath, filePath)
   return 'downloaded'
 }
 
@@ -434,24 +441,24 @@ ipcMain.handle('auto-download-status', () => autoDownload.status)
 ipcMain.handle('offline-folders', () => ['MSG/favorites', 'MSG/pools'].map(folder => downloadPath(folder)).filter(dir => fs.existsSync(dir)))
 
 // Downloaded copies, by the name of the file on the site: pool pages have their page number in front.
-ipcMain.handle('list-local-copies', () => {
+ipcMain.handle('list-local-copies', async () => {
   const copies = {}
   const base = downloadPath('MSG/')
-  const add = (dir) => {
+  const add = async (dir) => {
     let entries
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true })
+      entries = await fs.promises.readdir(dir, { withFileTypes: true })
     } catch (e) {
       return
     }
     for (const entry of entries) {
       const full = path.join(dir, entry.name)
-      if (entry.isDirectory()) add(full)
+      if (entry.isDirectory()) await add(full)
       else if (MEDIA_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) copies[entry.name.replace(/^\d+ /, '')] = pathToFileURL(full).href
     }
   }
-  add(path.join(base, 'favorites'))
-  add(path.join(base, 'pools'))
+  await add(path.join(base, 'favorites'))
+  await add(path.join(base, 'pools'))
   return copies
 })
 

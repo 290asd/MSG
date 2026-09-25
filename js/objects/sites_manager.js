@@ -167,12 +167,12 @@ class SitesManager{
 	buildSortedSlideList()
 	{
 		var slidesFromAllSitesToSort = [];
-		var md5Hashes = [];
-		
+		var md5Hashes = new Set();
+
 		for (var i = 0; i < this.siteManagers.length; i++)
 		{
 			var siteManager = this.siteManagers[i];
-			
+
 			if (siteManager.isEnabled)
 			{
 				Array.prototype.push.apply(slidesFromAllSitesToSort, siteManager.allUnsortedSlides);
@@ -180,52 +180,42 @@ class SitesManager{
 			}
 		}
 
-		var _this = this;
+		var includeDupes = this.model.view.getIncludeDupes();
 
 		slidesFromAllSitesToSort = slidesFromAllSitesToSort.filter(function(slide){
-			if (slide.md5 === null)
+			if (slide.md5 === null || includeDupes)
 				return true; //Err on the side of inclusion.
-			
-			if (_this.model.view.getIncludeDupes())
-			{
-				return true;
-			}
-			else
-			{
-				if(md5Hashes.includes(slide.md5))
-				{
-					return false;
-				}
-				else
-				{
-					md5Hashes.push(slide.md5);
-					return true;
-				}
-			}
+
+			if (md5Hashes.has(slide.md5))
+				return false;
+
+			md5Hashes.add(slide.md5);
+			return true;
 		});
 
 		// A pool is shown in its own order (e621's manager sorts each page).
 		if (poolIdFromSearch(this.searchText) == null)
-		slidesFromAllSitesToSort.sort(function(a,b) {
-			var sortingMethod = _this.getSortingMethod();
-			
-			switch (sortingMethod)
-			{
-				case _this.sortingTypeDateDesc:
-					return b.date.getTime() - a.date.getTime();
-				case _this.sortingTypeDateAsc:
-					return a.date.getTime() - b.date.getTime();
-				case _this.sortingTypeScoreDesc:
-					return b.score - a.score;
-				case _this.sortingTypeScoreAsc:
-					return a.score - b.score;
-				default:
-					console.log('Sort error. Sorting method not in the list: ' + sortingMethod);
-			}
-			
-			return b.date.getTime() - a.date.getTime();
-		});
-		
+		{
+			var sortingMethod = this.getSortingMethod();
+			var sortingTypeDateAsc = this.sortingTypeDateAsc;
+			var sortingTypeScoreDesc = this.sortingTypeScoreDesc;
+			var sortingTypeScoreAsc = this.sortingTypeScoreAsc;
+
+			slidesFromAllSitesToSort.sort(function(a,b) {
+				switch (sortingMethod)
+				{
+					case sortingTypeDateAsc:
+						return a.date.getTime() - b.date.getTime();
+					case sortingTypeScoreDesc:
+						return b.score - a.score;
+					case sortingTypeScoreAsc:
+						return a.score - b.score;
+				}
+
+				return b.date.getTime() - a.date.getTime();
+			});
+		}
+
 		Array.prototype.push.apply(this.allSortedSlides, slidesFromAllSitesToSort);
 	}
 

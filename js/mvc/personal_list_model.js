@@ -62,6 +62,10 @@ class PersonalListModel{
         var notRegex = new RegExp("\\s" + notTags.join("\\s|\\s"));
         notRegex = new RegExp(notRegex.toString().replace(/-/g, "").slice(1, -1) + "\\s", "gi");
         
+        var noOrNotWildTags = filterWordsAsArray.filter(tag => !tag.startsWith("-") && !tag.startsWith("~") && !tag.endsWith("*"));
+        var noOrNotWildRegex = new RegExp("\\s" + noOrNotWildTags.join("\\s|\\s"));
+        noOrNotWildRegex = new RegExp(noOrNotWildRegex.toString().slice(1, -1) + "\\s", "gi");
+
         this.filtered = true;
 
         var siteItems = this.personalList.personalListItems.filter(item =>
@@ -104,10 +108,6 @@ class PersonalListModel{
                 }
             }
 
-            let noOrNotWildTags = filterWordsAsArray.filter(tag => !tag.startsWith("-") && !tag.startsWith("~") && !tag.endsWith("*"));
-            let noOrNotWildRegex = new RegExp("\\s" + noOrNotWildTags.join("\\s|\\s"));
-            noOrNotWildRegex = new RegExp(noOrNotWildRegex.toString().slice(1, -1) + "\\s", "gi");
-            
             let matched = tags.match(noOrNotWildRegex);
             
             return (noOrNotWildTags.length == 0 || (matched != null && matched.length == noOrNotWildTags.length)) &&

@@ -853,6 +853,19 @@
         }
     }
 
+    // The beam's endless animation stands still while the window is in the background.
+    function pauseSearchBeam() {
+        let search = document.querySelector('#search[data-beam]');
+
+        if (search)
+            search.toggleAttribute('data-paused', document.hidden || !document.hasFocus());
+    }
+
+    window.addEventListener('focus', pauseSearchBeam);
+    window.addEventListener('blur', pauseSearchBeam);
+    document.addEventListener('visibilitychange', pauseSearchBeam);
+    pauseSearchBeam();
+
     // ---------- Search history menu ----------
 
     // A glass menu in place of the browser's datalist popup, which can't be styled.
@@ -2671,8 +2684,21 @@
         });
     }
 
+    // The report is refreshed twice a second, but only while the developer settings are on.
+    let developerTimer = 0;
+
     function updateDeveloperTab() {
         document.querySelector('.settings-tab[data-section="developer"]').hidden = !settings.developerMode;
+
+        if (settings.developerMode && !developerTimer) {
+            developerTimer = setInterval(function () {
+                updateFpsLoop();
+                refreshDeveloper();
+            }, 500);
+        } else if (!settings.developerMode && developerTimer) {
+            clearInterval(developerTimer);
+            developerTimer = 0;
+        }
     }
 
     function formatBytes(bytes) {
@@ -2996,11 +3022,6 @@
         window.appInfo.autoDownloadStatus().then(setDownloadText);
         window.appInfo.onAutoDownloadStatus(setDownloadText);
         window.appInfo.onDownloadProgress(setSingleText);
-
-        setInterval(function () {
-            updateFpsLoop();
-            refreshDeveloper();
-        }, 500);
 
         updateDeveloperTab();
         updateHud();

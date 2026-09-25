@@ -1,5 +1,7 @@
 class Slide
 {
+	static retained = [];
+
 	constructor(siteId, id, fileUrl, previewFileUrl, viewableWebsitePostUrl, width, height, date, score, mediaType, md5, tags)
 	{
 		this.siteId = siteId;
@@ -23,28 +25,53 @@ class Slide
 		this.callbackToRunAfterPreloadingFinishes = null;
 	}
 
+	// The part of the slide that is saved as a favorite (PersonalList.get() builds a Slide from it again).
 	clone()
 	{
-		let copy = new Slide(
-			this.siteId,
-			this.id,
-			this.fileUrl,
-			this.previewFileUrl,
-			this.viewableWebsitePostUrl,
-			this.width,
-			this.height,
-			this.date,
-			this.score,
-			this.mediaType,
-			this.md5,
-			this.tags
-		);
+		let copy = {
+			siteId: this.siteId,
+			id: this.id,
+			fileUrl: this.fileUrl,
+			previewFileUrl: this.previewFileUrl,
+			viewableWebsitePostUrl: this.viewableWebsitePostUrl,
+			width: this.width,
+			height: this.height,
+			date: this.date,
+			score: this.score,
+			mediaType: this.mediaType,
+			md5: this.md5,
+			tags: this.tags
+		};
 
 		// Tags by category (e621, Danbooru), shown in the tag panel.
 		if (this.tagGroups)
 			copy.tagGroups = this.tagGroups;
 
 		return copy;
+	}
+
+	// The preloading elements of the newest slides are kept (they hold the picture in memory so it shows at once);
+	// older ones are let go, otherwise every slide ever viewed keeps its picture until the page closes.
+	retainPreload()
+	{
+		let retained = Slide.retained;
+		retained.push(this);
+
+		if (retained.length > 30)
+		{
+			let old = retained.shift();
+
+			// Still loading: it stays in line and is let go at a later turn.
+			if (old.isPreloading)
+			{
+				retained.push(old);
+			}
+			else
+			{
+				old.preloadingImage = null;
+				old.preloadingVideo = null;
+			}
+		}
 	}
 
 	preload()
@@ -68,7 +95,8 @@ class Slide
 	preloadImage()
 	{
 		this.preloadingImage = new Image();
-		
+		this.retainPreload();
+
 		var slide = this;
 		
 		this.preloadingImage.onload = function(){
@@ -97,8 +125,8 @@ class Slide
 	preloadVideo()
 	{
 		this.preloadingVideo = document.createElement('video');
-		// are these being made and not garbage collected maybe? could be why the limit seems consistent.
-		
+		this.retainPreload();
+
 		var slide = this;
 
 		logForDev('this.preloadingVideo = ' + slide.fileUrl);

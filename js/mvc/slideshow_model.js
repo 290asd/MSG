@@ -167,24 +167,14 @@ class SlideshowModel{
 	
     areSomeTagsAreBlacklisted(tags)
     {
-        var postTags = tags.trim().split(" ");
-        var blacklistTags = this.blacklist.trim().replace(/(\r\n|\n|\r)/gm," ").split(" ");
-        
-        if (postTags.length == 0 || blacklistTags.length == 0)
-            return false;
-        
-        for (let blacklistTag of blacklistTags)
+        // Split once per blacklist, not once per post.
+        if (this.blacklistSet == null || this.blacklistSetSource !== this.blacklist)
         {
-            for (let postTag of postTags)
-            {
-                if (blacklistTag == postTag)
-                {
-                    return true;
-                }
-            }
+            this.blacklistSetSource = this.blacklist;
+            this.blacklistSet = new Set(this.blacklist.trim().replace(/(\r\n|\n|\r)/gm," ").split(" "));
         }
-        
-        return false;
+
+        return tags.trim().split(" ").some(postTag => this.blacklistSet.has(postTag));
 	}
 
     setSlideNumberToFirst()
