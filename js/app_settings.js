@@ -479,6 +479,7 @@
     function updateForCurrentSlide() {
         let slide = hasSlide() ? currentSlide() : null;
         updateAnalysisButtons();
+        updateDownloadButton();
 
         // Before there is anything to show, the page content starts at the top instead of below the image.
         document.body.classList.toggle('has-slide', slide != null);
@@ -1725,8 +1726,10 @@
 
     // ---------- Download button ----------
 
+    // Only something from the internet can be downloaded: not the front page, not a file from disk.
     function updateDownloadButton() {
-        document.getElementById('download-button').hidden = !settings.showDownloadButton;
+        let slide = hasSlide() ? currentSlide() : null;
+        document.getElementById('download-button').hidden = !settings.showDownloadButton || !slide || !/^https?:/i.test(slide.fileUrl);
     }
 
     // Saves the image or video on the screen, like the download hotkey.
