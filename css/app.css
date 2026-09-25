@@ -884,6 +884,20 @@ kbd {
 	animation: beam-fade-out-msg-fave 0.5s ease forwards;
 }
 
+/* A steady rainbow ring, so a favorite can be told at a glance also when the image fills the screen
+   (the vendor beam is a 1 px comet that ends up as a short arc). Drawn once, nothing animates. */
+#fave-beam[data-active]::before,
+#fave-beam[data-fading]::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	padding: 3px;
+	background: conic-gradient(#ff3264, #ff7828, #ffd23c, #32c850, #288cff, #6446ff, #b428f0, #ff3264);
+	mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+	mask-composite: exclude;
+	opacity: calc(var(--beam-opacity-msg-fave) * 0.9);
+}
+
 /* Solid effects (Settings → Appearance): no blur and no animations; the loading orb is drawn by
    script and keeps turning. */
 :root,
