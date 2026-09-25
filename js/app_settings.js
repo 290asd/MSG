@@ -91,6 +91,7 @@
         videoAutoplay: true,
         videoAutoMute: false,
         localFolders: [],
+        localFoldersOff: [],
         downloadFolder: '',
         rule34UserId: '',
         rule34ApiKey: '',
@@ -495,7 +496,7 @@
     // An image as the element's background; a video (only from the random favorite) as a muted, looping <video> in it.
     function paintBackground(element, url) {
         let video = element.querySelector('video');
-        if (url && /\.(mp4|webm)$/i.test(url)) {
+        if (url && /\.(mp4|webm|m4v|mov|ogv)$/i.test(url)) {
             element.style.backgroundImage = 'none';
             if (!video) {
                 video = document.createElement('video');
@@ -1064,12 +1065,13 @@
         section.innerHTML =
             '<p class="section-intro">Browse your own images and videos: add folders here, then turn on <b>Your folders</b> in Sites &amp; accounts' +
                 (isFavoritesPage ? ' (on the slideshow page)' : '') +
-                ' and search by folder or file name, or leave the search empty to see everything. Subfolders are included.</p>' +
+                ' and search by folder or file name, or leave the search empty to see everything. Subfolders are included. Untick a folder to leave it out of the search.</p>' +
             '<ul class="settings-list">' +
                 (folders.length == 0
                     ? '<li class="row"><span class="muted">No folders yet</span></li>'
                     : folders.map((folder, i) =>
-                        '<li class="row"><span class="folder-path">' + escapeHtml(folder) + '</span><button data-remove-folder="' + i + '">Remove</button></li>').join('')) +
+                        '<li class="row"><input type="checkbox" data-folder-on="' + i + '" title="Include in the search"' + (settings.localFoldersOff.includes(folder) ? '' : ' checked') + '>' +
+                        '<span class="folder-path">' + escapeHtml(folder) + '</span><button data-remove-folder="' + i + '">Remove</button></li>').join('')) +
             '</ul>' +
             '<div class="section-footer"><button id="add-local-folder" class="primary">+ Add folder…</button></div>' +
 
@@ -1089,6 +1091,16 @@
                 save('localFolders');
                 renderFolders();
             }
+        });
+
+        section.querySelectorAll('[data-folder-on]').forEach(function (box) {
+            box.addEventListener('change', function () {
+                let folder = settings.localFolders[+box.dataset.folderOn];
+                settings.localFoldersOff = settings.localFoldersOff.filter(f => f != folder);
+                if (!box.checked)
+                    settings.localFoldersOff.push(folder);
+                save('localFoldersOff');
+            });
         });
 
         section.querySelectorAll('[data-remove-folder]').forEach(function (button) {

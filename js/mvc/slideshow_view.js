@@ -830,10 +830,16 @@ class SlideshowView
             _this._model.moveToThumbnailSlide(thumbnailSlideId);
         };
 
-        var newThumbnailImage = document.createElement("img");
+        // A video from your own folders has no preview picture: show its first frame.
+        var isLocalVideo = /^file:.*\.(mp4|webm|m4v|mov|ogv)$/i.test(thumbnailImageUrl);
+        var newThumbnailImage = document.createElement(isLocalVideo ? "video" : "img");
         newThumbnailImage.id = 'thumbnail-image-' + thumbnailSlideId;
         newThumbnailImage.classList.add("thumbnail-image");
-        newThumbnailImage.src = thumbnailImageUrl;
+        if (isLocalVideo) {
+            newThumbnailImage.muted = true;
+            newThumbnailImage.preload = "metadata";
+        }
+        newThumbnailImage.src = isLocalVideo ? thumbnailImageUrl + '#t=0.1' : thumbnailImageUrl;
 
         if (showGreyedOut) {
             newThumbnailImage.classList.add("thumbnail-image-greyed-out");

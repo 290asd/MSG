@@ -127,12 +127,13 @@ ipcMain.handle('choose-folder', async (event, title) => {
 
 // The "Your folders" site: the images and videos in the chosen folders and their subfolders.
 // `path` starts with the chosen folder's own name, so folder names can be searched and shown as tags.
-const MEDIA_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.avif', '.webm', '.mp4'])
-const MAX_LOCAL_FILES = 50000
+const MEDIA_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.avif', '.webm', '.mp4', '.m4v', '.mov', '.ogv'])
+const MAX_LOCAL_FILES = 50000 // per folder, so a big one doesn't crowd out the others
 
 ipcMain.handle('list-local-media', (event, folders) => {
   const files = []
 
+  let start = 0
   const walk = (dir, root) => {
     let entries
     try {
@@ -141,7 +142,7 @@ ipcMain.handle('list-local-media', (event, folders) => {
       return // unreadable or removed folder
     }
     for (const entry of entries) {
-      if (files.length >= MAX_LOCAL_FILES || entry.name.startsWith('.')) continue
+      if (files.length - start >= MAX_LOCAL_FILES || entry.name.startsWith('.')) continue
       const full = path.join(dir, entry.name)
       if (entry.isDirectory()) {
         walk(full, root)
@@ -157,7 +158,10 @@ ipcMain.handle('list-local-media', (event, folders) => {
     }
   }
 
-  for (const folder of folders) walk(folder, folder)
+  for (const folder of folders) {
+    start = files.length
+    walk(folder, folder)
+  }
   return files
 })
 

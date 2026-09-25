@@ -19,7 +19,9 @@ class SiteManagerLocal extends SiteManager
     {
         this.ranIntoErrorWhileSearching = false;
 
-        let folders = (await chrome.storage.sync.get('localFolders')).localFolders || [];
+        // Folders unticked in Settings → Folders are left out.
+        let stored = await chrome.storage.sync.get(['localFolders', 'localFoldersOff']);
+        let folders = (stored.localFolders || []).filter(folder => !(stored.localFoldersOff || []).includes(folder));
 
         // Offline mode: the downloaded favorites (with their tags from the favorites list) and pools too.
         let favoriteTags = new Map();

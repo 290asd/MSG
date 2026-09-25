@@ -269,6 +269,9 @@ class SiteManager
 		{
 			case 'webm':
 			case '.mp4':
+			case '.m4v':
+			case '.mov':
+			case '.ogv':
 				return MEDIA_TYPE_VIDEO;
 			case '.gif':
 				return MEDIA_TYPE_GIF;
