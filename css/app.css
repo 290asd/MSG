@@ -892,6 +892,27 @@ kbd {
 	display: block;
 }
 
+/* Cheap on a full-size overlay: no bloom, no inner glow, no hue-rotate animation; the beam goes
+   around once and then stays still (an endless repaint of the whole image cost a lot of FPS). */
+#fave-beam [data-beam-bloom],
+#fave-beam[data-active]::before,
+#fave-beam[data-fading]::before {
+	display: none !important;
+}
+
+#fave-beam[data-active]::after,
+#fave-beam[data-fading]::after {
+	animation: none;
+}
+
+#fave-beam[data-active] {
+	animation: beam-spin-msg-fave 3.2s linear 1 forwards, beam-fade-in-msg-fave 0.6s ease forwards;
+}
+
+#fave-beam[data-fading] {
+	animation: beam-fade-out-msg-fave 0.5s ease forwards;
+}
+
 /* Solid effects (Settings → Appearance): no blur and no animations; the loading orb is drawn by
    script and keeps turning. */
 :root,
