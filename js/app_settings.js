@@ -1212,8 +1212,8 @@
             if (!login)
                 return false;
             if (login.userId)
-                model.setGelbUserId(login.userId);
-            model.setGelbApiKey(login.apiKey);
+                model.setSetting('gelbUserId', login.userId);
+            model.setSetting('gelbApiKey', login.apiKey);
             return true;
         };
 

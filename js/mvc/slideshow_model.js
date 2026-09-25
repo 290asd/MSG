@@ -1,13 +1,11 @@
-class SlideshowModel{
+class SlideshowModel extends MediaModel
+{
     constructor()
     {
-        this.view = null;
-        
-        this.videoVolume = 0;
-        this.videoMuted = false;
-        
+        super(SLIDE_SETTINGS.concat(SEARCH_SETTINGS));
+
         this.searchText = "";
-        
+
         this.sitesToSearch = {
             [SITE_DANBOORU]: false,
             [SITE_DERPIBOORU]: false,
@@ -21,62 +19,31 @@ class SlideshowModel{
             [SITE_LOCAL]: false
         };
 
-        this.secondsPerSlide = 6;
-        this.maxWidth = null;
-        this.maxHeight = null;
-        this.autoFitSlide = true;
-        this.playVideosToEnd = false;
         this.includeImages = true;
         this.includeGifs = true;
         this.includeWebms = true;
         this.includeExplicit = false;
         this.includeQuestionable = false;
         this.includeSafe = true;
+        this.includeDupes = false;
         this.hideBlacklist = false;
         this.blacklist = '';
         this.derpibooruApiKey = '';
-        this.e621Login = ''
-        this.e621ApiKey = ''
-        this.gelbUserId = ''
-        this.gelbApiKey = ''
+        this.e621Login = '';
+        this.e621ApiKey = '';
+        this.gelbUserId = '';
+        this.gelbApiKey = '';
+        // Saved by the Rule34 fields in Settings → Sites & accounts (app_settings.js).
+        this.rule34UserId = '';
+        this.rule34ApiKey = '';
         this.storeHistory = true;
         this.searchHistory = [];
 
-        this.isPlaying = false;
-        this.timer = null;
-
         this.sitesManager = null;
 
-        this.personalList = new PersonalList();
-
-        this.currentSlideChangedEvent = new Event(this);
-        this.playingChangedEvent = new Event(this);
-        this.videoVolumeUpdatedEvent = new Event(this);
         this.sitesToSearchUpdatedEvent = new Event(this);
-        this.secondsPerSlideUpdatedEvent = new Event(this);
-        this.maxWidthUpdatedEvent = new Event(this);
-        this.maxHeightUpdatedEvent = new Event(this);
-        this.autoFitSlideUpdatedEvent = new Event(this);
-        this.playVideosToEndUpdatedEvent = new Event(this);
-        this.includeImagesUpdatedEvent = new Event(this);
-        this.includeGifsUpdatedEvent = new Event(this);
-        this.includeWebmsUpdatedEvent = new Event(this);
-        this.includeExplicitUpdatedEvent = new Event(this);
-        this.includeQuestionableUpdatedEvent = new Event(this);
-        this.includeSafeUpdatedEvent = new Event(this);
-        this.hideBlacklistUpdatedEvent = new Event(this);
-        this.blacklistUpdatedEvent = new Event(this);
-        this.derpibooruApiKeyUpdatedEvent = new Event(this);
-        this.e621LoginUpdatedEvent = new Event(this);
-        this.e621ApiKeyUpdatedEvent = new Event(this);
-        this.gelbUserIdUpdatedEvent = new Event(this);
-        this.gelbApiKeyUpdatedEvent = new Event(this);
-        this.storeHistoryUpdatedEvent = new Event(this);
         this.searchHistoryUpdatedEvent = new Event(this);
         this.favoriteButtonUpdatedEvent = new Event(this);
-        this.includeDupesUpdatedEvent = new Event(this);
-
-        this.dataLoader = new DataLoader(this);
 
         this.initialize();
     }
@@ -87,9 +54,9 @@ class SlideshowModel{
         var maxNumberOfThumbnails = 10;
 
         this.sitesManager = new SitesManager(this, numberOfSlidesToAlwaysHaveReadyToDisplay, maxNumberOfThumbnails);
-		
+
 		var standardPageLimit = 100;
-		
+
         this.sitesManager.addSite(SITE_DANBOORU, standardPageLimit);
         this.sitesManager.addSite(SITE_DERPIBOORU, 50);
         this.sitesManager.addSite(SITE_E621, standardPageLimit);
@@ -102,12 +69,40 @@ class SlideshowModel{
         this.sitesManager.addSite(SITE_LOCAL, standardPageLimit);
     }
 
-    async loadUserSettings()
+    storageKeys()
     {
-        //console.log("SlideshowModel.loadUserSettings")
-        let result = await this.dataLoader.loadUserSettings();
+        return super.storageKeys().concat(['sitesToSearch', 'searchHistory', 'rule34UserId', 'rule34ApiKey']);
     }
-	
+
+    applyStoredSettings(stored)
+    {
+        super.applyStoredSettings(stored);
+
+        if (stored.sitesToSearch != null)
+        {
+            // Only the sites this version knows.
+            let cleanSitesToSearch = {};
+
+            for (let site of Object.keys(this.sitesToSearch))
+            {
+                if (stored.sitesToSearch.hasOwnProperty(site))
+                {
+                    cleanSitesToSearch[site] = stored.sitesToSearch[site];
+                }
+            }
+
+            this.setSitesToSearch(cleanSitesToSearch);
+        }
+
+        this.rule34UserId = stored.rule34UserId || '';
+        this.rule34ApiKey = stored.rule34ApiKey || '';
+
+        if (stored.searchHistory != null)
+        {
+            this.setSearchHistory(stored.searchHistory);
+        }
+    }
+
     pingSites()
     {
         console.log("Checking status of sites...");
@@ -140,10 +135,10 @@ class SlideshowModel{
     {
         if (!this.storeHistory)
             return;
-            
+
         if (searchText == null || searchText.length == 0)
             return;
-        
+
         if (this.searchHistory.includes(searchText))
         {
             var index = this.searchHistory.indexOf(searchText)
@@ -160,11 +155,11 @@ class SlideshowModel{
             this.searchHistory = this.searchHistory.slice(0, 100);
         }
 
-        this.dataLoader.saveSearchHistory();
+        this.dataLoader.save('searchHistory');
 
         this.searchHistoryUpdatedEvent.notify();
     }
-	
+
     areSomeTagsAreBlacklisted(tags)
     {
         // Split once per blacklist, not once per post.
@@ -208,20 +203,20 @@ class SlideshowModel{
 
         this.restartSlideshowIfOn();
     }
-	
+
     decreaseCurrentSlideNumberByTen()
     {
         if (!this.sitesManager.canDecreaseCurrentSlideNumber())
         {
             return;
         }
-        
+
         this.sitesManager.decreaseCurrentSlideNumberByTen();
         this.currentSlideChangedEvent.notify();
 
         this.restartSlideshowIfOn();
     }
-	
+
     increaseCurrentSlideNumberByTen()
     {
         var _this = this;
@@ -249,7 +244,6 @@ class SlideshowModel{
         if (this.sitesManager.moveToThumbnailSlide(id))
         {
             this.currentSlideChangedEvent.notify();
-            //restartSlideshowIfOn();
         }
     }
 
@@ -297,7 +291,7 @@ class SlideshowModel{
     startCountdown()
     {
         var millisecondsPerSlide = this.secondsPerSlide * 1000;
-	    
+
         var _this = this;
 
         this.timer = setTimeout(function() { _this.waitForVideoToEndIfNeeded(function() {
@@ -322,17 +316,8 @@ class SlideshowModel{
         }); }, millisecondsPerSlide);
     }
 
-    waitForVideoToEndIfNeeded(callback)
-    {
-        if (this.playVideosToEnd && this.view != null)
-            this.view.runWhenCurrentVideoEnds(callback);
-        else
-            callback();
-    }
-
     restartSlideshowIfOn()
     {
-
         if (this.isPlaying)
         {
             clearTimeout(this.timer);
@@ -420,34 +405,11 @@ class SlideshowModel{
         return selectedSitesToSearch;
     }
 
-    areMaxWithAndHeightEnabled()
-    {
-        return !this.autoFitSlide;
-    }
-	
-    setVideoVolume(volume)
-    {
-        this.videoVolume = volume;
-
-        this.dataLoader.saveVideoVolume();
-
-        this.videoVolumeUpdatedEvent.notify();
-    }
-	
-    setVideoMuted(muted)
-    {
-        this.videoMuted = muted;
-
-        this.dataLoader.saveVideoMuted();
-
-        this.videoVolumeUpdatedEvent.notify();
-    }
-
     setSitesToSearch(sitesToSearch)
     {
         this.sitesToSearch = sitesToSearch;
 
-        this.dataLoader.saveSitesToSearch();
+        this.dataLoader.save('sitesToSearch');
 
         this.sitesToSearchUpdatedEvent.notify();
     }
@@ -456,215 +418,18 @@ class SlideshowModel{
     {
         this.sitesToSearch[site] = checked;
 
-        this.dataLoader.saveSitesToSearch();
+        this.dataLoader.save('sitesToSearch');
 
         this.sitesToSearchUpdatedEvent.notify();
-    }
-	
-    setSecondsPerSlide(secondsPerSlide)
-    {
-        this.secondsPerSlide = secondsPerSlide;
-
-        this.dataLoader.saveSecondsPerSlide();
-
-        this.secondsPerSlideUpdatedEvent.notify();
-    }
-	
-    setSecondsPerSlideIfValid(secondsPerSlide)
-    {
-		if (secondsPerSlide == '')
-            return;
-
-        if (isNaN(secondsPerSlide))
-            return;
-
-        if (secondsPerSlide < 1)
-            return;
-
-        this.setSecondsPerSlide(secondsPerSlide);
-	}
-
-    setMaxWidth(maxWidth)
-    {
-        this.maxWidth = maxWidth;
-
-        this.dataLoader.saveMaxWidth();
-
-        this.maxWidthUpdatedEvent.notify();
-    }
-
-    setMaxHeight(maxHeight)
-    {
-        this.maxHeight = maxHeight;
-
-        this.dataLoader.saveMaxHeight();
-
-        this.maxHeightUpdatedEvent.notify();
-    }
-
-    setAutoFitSlide(onOrOff)
-    {
-        this.autoFitSlide = onOrOff;
-
-        this.dataLoader.saveAutoFitSlide();
-
-        this.autoFitSlideUpdatedEvent.notify();
-    }
-
-    setPlayVideosToEnd(onOrOff)
-    {
-        this.playVideosToEnd = onOrOff;
-
-        this.dataLoader.savePlayVideosToEnd();
-
-        this.playVideosToEndUpdatedEvent.notify();
-    }
-	
-    setIncludeImages(onOrOff)
-    {
-        this.includeImages = onOrOff;
-
-        this.dataLoader.saveIncludeImages();
-
-        this.includeImagesUpdatedEvent.notify();
-    }
-	
-    setIncludeGifs(onOrOff)
-    {
-        this.includeGifs = onOrOff;
-
-        this.dataLoader.saveIncludeGifs();
-
-        this.includeGifsUpdatedEvent.notify();
-    }
-	
-    setIncludeWebms(onOrOff)
-    {
-        this.includeWebms = onOrOff;
-
-        this.dataLoader.saveIncludeWebms();
-
-        this.includeWebmsUpdatedEvent.notify();
-    }
-
-    setIncludeExplicit(onOrOff){
-        this.includeExplicit = onOrOff;
-
-        this.dataLoader.saveIncludeExplicit();
-
-        this.includeExplicitUpdatedEvent.notify();
-    }
-
-    setIncludeQuestionable(onOrOff){
-        this.includeQuestionable = onOrOff;
-
-        this.dataLoader.saveIncludeQuestionable();
-
-        this.includeQuestionableUpdatedEvent.notify();
-    }
-
-    setIncludeSafe(onOrOff){
-        this.includeSafe = onOrOff;
-
-        this.dataLoader.saveIncludeSafe();
-
-        this.includeSafeUpdatedEvent.notify();
-    }
-
-    setIncludeDupes(onOrOff){
-        this.includeDupes = onOrOff;
-
-        this.dataLoader.saveIncludeDupes();
-
-        this.includeDupesUpdatedEvent.notify();
-    }
-	
-    setHideBlacklist(onOrOff)
-    {
-        this.hideBlacklist = onOrOff;
-
-        this.dataLoader.saveHideBlacklist();
-
-        this.hideBlacklistUpdatedEvent.notify();
-    }
-
-    setBlacklist(blacklist)
-    {
-        this.blacklist = blacklist;
-
-        this.dataLoader.saveBlacklist();
-
-        this.blacklistUpdatedEvent.notify();
-    }
-	
-    setDerpibooruApiKey(derpibooruApiKey)
-    {
-        this.derpibooruApiKey = derpibooruApiKey;
-
-        this.dataLoader.saveDerpibooruApiKey();
-
-        this.derpibooruApiKeyUpdatedEvent.notify();
-    }
-
-    setE621Login(e621Login)
-    {
-        this.e621Login = e621Login;
-
-        this.dataLoader.saveE621Login();
-
-        this.e621LoginUpdatedEvent.notify();
-    }
-
-    setE621ApiKey(e621ApiKey)
-    {
-        this.e621ApiKey = e621ApiKey;
-
-        this.dataLoader.saveE621ApiKey();
-
-        this.e621ApiKeyUpdatedEvent.notify();
-    }
-
-    setGelbUserId(gelbUserId)
-    {
-        this.gelbUserId = gelbUserId;
-
-        this.dataLoader.saveGelbUserId();
-
-        this.gelbUserIdUpdatedEvent.notify();
-    }
-
-    setGelbApiKey(gelbApiKey)
-    {
-        this.gelbApiKey = gelbApiKey;
-
-        this.dataLoader.saveGelbApiKey();
-
-        this.gelbApiKeyUpdatedEvent.notify();
-    }
-
-    setStoreHistory(onOrOff)
-    {
-        this.storeHistory = onOrOff;
-
-        this.dataLoader.saveStoreHistory();
-
-        this.storeHistoryUpdatedEvent.notify();
     }
 
     setSearchHistory(searchHistory)
     {
         this.searchHistory = searchHistory;
 
-        this.dataLoader.saveSearchHistory();
+        this.dataLoader.save('searchHistory');
 
         this.searchHistoryUpdatedEvent.notify();
-    }
-
-    setPersonalList(personalList)
-    {
-        this.personalList = personalList;
-
-        this.dataLoader.savePersonalList();
     }
 
     toggleSlideFave()

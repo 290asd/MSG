@@ -1,39 +1,17 @@
-class PersonalListModel{
+class PersonalListModel extends MediaModel
+{
     constructor()
     {
-        this.view = null;
-        
-        this.videoVolume = 0;
-        this.videoMuted = false;
-        
+        super(SLIDE_SETTINGS);
+
         this.filterText = "";
         // Site ID to show only that site's favorites; "" shows every site.
         this.siteFilter = "";
 
-        this.secondsPerSlide = 6;
-        this.maxWidth = null;
-        this.maxHeight = null;
-        this.autoFitSlide = true;
-        this.playVideosToEnd = false;
-
-        this.isPlaying = false;
-        this.timer = null;
-
-        this.personalList = new PersonalList();
         this.filtered = false;
         this.filteredPersonalList = null;
 
-        this.currentSlideChangedEvent = new Event(this);
-        this.playingChangedEvent = new Event(this);
-        this.videoVolumeUpdatedEvent = new Event(this);
-        this.secondsPerSlideUpdatedEvent = new Event(this);
-        this.maxWidthUpdatedEvent = new Event(this);
-        this.maxHeightUpdatedEvent = new Event(this);
-        this.autoFitSlideUpdatedEvent = new Event(this);
-        this.playVideosToEndUpdatedEvent = new Event(this);
         this.personalListLoadedEvent = new Event(this);
-
-        this.dataLoader = new DataLoader(this);
 
         this.currentListItem = 0;
 
@@ -45,11 +23,6 @@ class PersonalListModel{
         this.personalListLoadedEvent.attach(() => this.preloadCurrentAndNextSlides());
     }
 
-    loadUserSettings()
-    {
-        this.dataLoader.loadUserSettings();
-    }
-
     performFilter(filterText)
     {
         var filterWordsAsArray = filterText.split(" ");
@@ -57,11 +30,11 @@ class PersonalListModel{
         var orTags = filterWordsAsArray.filter(tag => tag.startsWith("~"));
         var orRegex = new RegExp("\\s" + orTags.join("\\s|\\s"));
         orRegex = new RegExp(orRegex.toString().replace(/~/g, "").slice(1, -1) + "\\s", "gi");
-        
+
         var notTags = filterWordsAsArray.filter(tag => tag.startsWith("-"));
         var notRegex = new RegExp("\\s" + notTags.join("\\s|\\s"));
         notRegex = new RegExp(notRegex.toString().replace(/-/g, "").slice(1, -1) + "\\s", "gi");
-        
+
         var noOrNotWildTags = filterWordsAsArray.filter(tag => !tag.startsWith("-") && !tag.startsWith("~") && !tag.endsWith("*"));
         var noOrNotWildRegex = new RegExp("\\s" + noOrNotWildTags.join("\\s|\\s"));
         noOrNotWildRegex = new RegExp(noOrNotWildRegex.toString().slice(1, -1) + "\\s", "gi");
@@ -80,9 +53,9 @@ class PersonalListModel{
                 typeof item.tags != "string" ||
                 item.tags == "")
                 return false;
-            
+
             let tags = " " + item.tags.split(" ").join("  ") + " ";
-            
+
             for(let i = 0; i < filterWordsAsArray.length; i++){
                 let filterWord = filterWordsAsArray[i];
 
@@ -99,7 +72,7 @@ class PersonalListModel{
                 else if (filterWord.startsWith("~"))
                 {
                     let matched = tags.match(orRegex);
-                    
+
                     passedOr = matched && matched.length > 0;
                 }
                 else if (filterWord.endsWith("*") && !filterWord.startsWith("-"))
@@ -109,17 +82,24 @@ class PersonalListModel{
             }
 
             let matched = tags.match(noOrNotWildRegex);
-            
+
             return (noOrNotWildTags.length == 0 || (matched != null && matched.length == noOrNotWildTags.length)) &&
                 passedOr &&
                 passedWild;
         });
 
-        // Created empty so the filtered copy doesn't start its own tagging of untagged items.
+        this.showList(items, 1);
+        this.currentSlideChangedEvent.notify();
+    }
+
+    // Shows these favorites, without changing the saved list. Created empty so the copy doesn't
+    // start its own tagging of untagged items.
+    showList(items, currentListItem)
+    {
+        this.filtered = true;
         this.filteredPersonalList = new PersonalList();
         this.filteredPersonalList.personalListItems = items;
-        this.currentListItem = 1
-        this.currentSlideChangedEvent.notify()
+        this.currentListItem = currentListItem;
     }
 
     // Shows the current (possibly filtered) favorites in a new random order without changing the saved order.
@@ -133,11 +113,7 @@ class PersonalListModel{
             [items[i], items[j]] = [items[j], items[i]];
         }
 
-        // Created empty so the copy doesn't start its own tagging of untagged items.
-        this.filtered = true;
-        this.filteredPersonalList = new PersonalList();
-        this.filteredPersonalList.personalListItems = items;
-        this.currentListItem = items.length > 0 ? 1 : 0;
+        this.showList(items, items.length > 0 ? 1 : 0);
         this.currentSlideChangedEvent.notify();
         this.restartSlideshowIfOn();
     }
@@ -178,7 +154,7 @@ class PersonalListModel{
 
     increaseCurrentSlideNumber()
     {
-        let listItemCount = this.filtered ? this.filteredPersonalList.count() : this.personalList.count();
+        let listItemCount = this.getSlideCount();
 
         if (this.currentListItem < listItemCount)
         {
@@ -187,7 +163,7 @@ class PersonalListModel{
             this.restartSlideshowIfOn();
         }
     }
-	
+
     decreaseCurrentSlideNumberByTen()
     {
         if (this.currentListItem > 1)
@@ -201,11 +177,11 @@ class PersonalListModel{
             this.restartSlideshowIfOn();
         }
     }
-	
+
     increaseCurrentSlideNumberByTen()
     {
-        let listItemCount = this.filtered ? this.filteredPersonalList.count() : this.personalList.count();
-        
+        let listItemCount = this.getSlideCount();
+
         if (this.currentListItem < listItemCount)
         {
             this.currentListItem += 10;
@@ -220,7 +196,7 @@ class PersonalListModel{
 
     setSlideNumberToLast()
     {
-        let listItemCount = this.filtered ? this.filteredPersonalList.count() : this.personalList.count();
+        let listItemCount = this.getSlideCount();
 
         if (this.currentListItem != listItemCount)
         {
@@ -243,7 +219,7 @@ class PersonalListModel{
     }
 
     // Loads the current slide and starts preloading the upcoming ones one at a time
-    // (each finished thumbnail triggers the next, see PersonalListView.showThumbnails).
+    // (each finished thumbnail triggers the next, see MediaView.showThumbnails).
     preloadCurrentAndNextSlides()
     {
         let currentSlide = this.getCurrentSlide();
@@ -257,7 +233,7 @@ class PersonalListModel{
 
     preloadNextUnpreloadedSlideAfterThisOneIfInRange(slide)
     {
-        let nextSlides = this.getNextListItemsForThumbnails();
+        let nextSlides = this.getNextSlidesForThumbnails();
         let nextUnpreloadedSlide = nextSlides.slice(nextSlides.indexOf(slide) + 1).find(s => !s.isPreloaded);
 
         if (nextUnpreloadedSlide)
@@ -331,14 +307,6 @@ class PersonalListModel{
         }); }, millisecondsPerSlide);
     }
 
-    waitForVideoToEndIfNeeded(callback)
-    {
-        if (this.playVideosToEnd && this.view != null)
-            this.view.runWhenCurrentVideoEnds(callback);
-        else
-            callback();
-    }
-
     clearCallbackForCurrentSlide()
     {
         let currentSlide = this.getCurrentSlide();
@@ -349,7 +317,6 @@ class PersonalListModel{
 
     restartSlideshowIfOn()
     {
-
         if (this.isPlaying)
         {
             clearTimeout(this.timer);
@@ -371,26 +338,26 @@ class PersonalListModel{
         this.playingChangedEvent.notify();
     }
 
-    getPersonalListItemCount()
+    getSlideCount()
     {
-        return this.filtered ? this.filteredPersonalList.count() : this.personalList.count();
+        return (this.filtered ? this.filteredPersonalList : this.personalList).count();
     }
 
     hasPersonalListItems()
     {
-        return (this.filtered ? this.filteredPersonalList.count() : this.personalList.count()) > 0;
+        return this.getSlideCount() > 0;
     }
 
     hasNextSlide()
     {
-        return (this.filtered ? this.filteredPersonalList.count() : this.personalList.count()) > this.getCurrentSlideNumber();
+        return this.getSlideCount() > this.getCurrentSlideNumber();
     }
 
     getCurrentSlide()
     {
         if (this.currentListItem == 0)
             return null;
-        
+
         return this.filtered ? this.filteredPersonalList.get(this.currentListItem - 1) : this.personalList.get(this.currentListItem - 1);
     }
 
@@ -399,16 +366,11 @@ class PersonalListModel{
         return this.currentListItem;
     }
 
-    getNextListItemsForThumbnails()
+    getNextSlidesForThumbnails()
     {
         let list = this.filtered ? this.filteredPersonalList : this.personalList;
 
         return list.getNextItemsForThumbnails(this.currentListItem - 1, this.maxNumberOfThumbnails);
-    }
-
-    areMaxWithAndHeightEnabled()
-    {
-        return !this.autoFitSlide;
     }
 
     removeCurrentImageFromFaves()
@@ -430,94 +392,15 @@ class PersonalListModel{
 
         this.dataLoader.savePersonalList();
 
-        if (this.currentListItem > (this.filtered ? this.filteredPersonalList.count() : this.personalList.count()))
-            this.currentListItem = this.filtered ? this.filteredPersonalList.count() : this.personalList.count();
+        if (this.currentListItem > this.getSlideCount())
+            this.currentListItem = this.getSlideCount();
 
         this.personalListLoadedEvent.notify();
     }
-	
-    setVideoVolume(volume)
-    {
-        this.videoVolume = volume;
 
-        this.dataLoader.saveVideoVolume();
-
-        this.videoVolumeUpdatedEvent.notify();
-    }
-	
-    setVideoMuted(muted)
-    {
-        this.videoMuted = muted;
-
-        this.dataLoader.saveVideoMuted();
-
-        this.videoVolumeUpdatedEvent.notify();
-    }
-
-    setSecondsPerSlide(secondsPerSlide)
-    {
-        this.secondsPerSlide = secondsPerSlide;
-
-        this.dataLoader.saveSecondsPerSlide();
-
-        this.secondsPerSlideUpdatedEvent.notify();
-    }
-	
-    setSecondsPerSlideIfValid(secondsPerSlide)
-    {
-		if (secondsPerSlide == '')
-            return;
-
-        if (isNaN(secondsPerSlide))
-            return;
-
-        if (secondsPerSlide < 1)
-            return;
-
-        this.setSecondsPerSlide(secondsPerSlide);
-	}
-
-    setMaxWidth(maxWidth)
-    {
-        this.maxWidth = maxWidth;
-
-        this.dataLoader.saveMaxWidth();
-
-        this.maxWidthUpdatedEvent.notify();
-    }
-
-    setMaxHeight(maxHeight)
-    {
-        this.maxHeight = maxHeight;
-
-        this.dataLoader.saveMaxHeight();
-
-        this.maxHeightUpdatedEvent.notify();
-    }
-
-    setAutoFitSlide(onOrOff)
-    {
-        this.autoFitSlide = onOrOff;
-
-        this.dataLoader.saveAutoFitSlide();
-
-        this.autoFitSlideUpdatedEvent.notify();
-    }
-
-    setPlayVideosToEnd(onOrOff)
-    {
-        this.playVideosToEnd = onOrOff;
-
-        this.dataLoader.savePlayVideosToEnd();
-
-        this.playVideosToEndUpdatedEvent.notify();
-    }
-	
     setPersonalList(personalList)
     {
-        this.personalList = personalList;
-
-        this.dataLoader.savePersonalList();
+        super.setPersonalList(personalList);
 
         if (this.hasPersonalListItems() && this.currentListItem == 0)
             this.currentListItem = 1;

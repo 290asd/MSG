@@ -180,7 +180,7 @@ class SitesManager{
 			}
 		}
 
-		var includeDupes = this.model.view.getIncludeDupes();
+		var includeDupes = this.model.includeDupes;
 
 		slidesFromAllSitesToSort = slidesFromAllSitesToSort.filter(function(slide){
 			if (slide.md5 === null || includeDupes)
