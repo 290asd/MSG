@@ -14,7 +14,7 @@ The extension's logic (`js/`) comes from the original. `preload.js` provides the
 | Extension API | Electron replacement |
 |---|---|
 | `chrome.storage.sync` / `local` | `settings.json` in the app's user data folder |
-| `chrome.downloads.download` | Saved to the download folder (Settings → Folders, default `Downloads/MSG/`) |
+| `chrome.downloads.download` | Saved to the download folder (Settings → Folders, default `Downloads/MSG/downloads/`) |
 | `rules_header_referer.json` (Gelbooru Referer) | `session.webRequest` in `main.js`, which also sets the Referer that e621's image server requires |
 | host permissions | `webSecurity: false` (the page reaches booru APIs without CORS) |
 | `window.open` / external links | Open in your default browser |

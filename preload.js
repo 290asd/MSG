@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('appInfo', {
   offlineFolders: () => ipcRenderer.invoke('offline-folders'),
   autoDownloadStatus: () => ipcRenderer.invoke('auto-download-status'),
   onAutoDownloadStatus: (callback) => ipcRenderer.on('auto-download-status', (event, text) => callback(text)),
+  onDownloadProgress: (callback) => ipcRenderer.on('download-progress', (event, text) => callback(text)),
   onLocalCopiesChanged: (callback) => ipcRenderer.on('local-copies-changed', () => callback()),
   // Switches the window icon between the white (dark theme) and black logo.
   themeChanged: (dark) => ipcRenderer.send('theme-changed', dark),

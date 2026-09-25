@@ -25,7 +25,7 @@
         { id: 'playPause', label: 'Play / pause', defaults: [32], slots: 1, note: 'Enter also works' },
         { id: 'autoFit', label: 'Toggle auto-fit', defaults: [70], slots: 1 },
         { id: 'openSource', label: 'Open post in browser', defaults: [69], slots: 1 },
-        { id: 'download', label: 'Download the image', note: 'To the folder in Settings → Folders', defaults: [76], slots: 1 },
+        { id: 'download', label: 'Download the image', note: 'To the "downloads" folder in Settings → Folders', defaults: [76], slots: 1 },
         { id: 'favorite', label: isFavoritesPage ? 'Unfave' : 'Fave / unfave', defaults: [71], slots: 1 },
         { id: 'toggleTags', label: 'Show / hide tags', defaults: [82], slots: 1, app: true },
         { id: 'openFavorites', label: isFavoritesPage ? 'Back to the slideshow' : 'Open favorites', note: 'Favorites ⇄ slideshow', defaults: [CTRL + 70], slots: 1, app: true },
@@ -341,7 +341,7 @@
             k('openFavorites') + ' opens your favorites, ' + k('openSettings') + ' the settings.',
             k('setBackground') + ' makes the image the background of the start screen.',
             k('favorite') + (isFavoritesPage ? ' unfaves the image.' : ' faves the image' + (settings.syncE621Favorites ? ', on e621 too when your API key is set.' : '.')),
-            k('download') + ' saves the image to Downloads/MSG.',
+            k('download') + ' saves the image to Downloads/MSG/downloads.',
             k('playPause') + ' or <kbd>Enter</kbd> plays the slideshow. Settings → Slideshow can let videos play to the end.',
             k('back10') + ' and ' + k('forward10') + ' jump 10 slides at a time.',
             k('previous') + ' and ' + k('next') + ' go to the previous and next slide.',
@@ -1074,7 +1074,7 @@
 
             '<h4 class="subheading">Downloads</h4>' +
             '<ul class="settings-list">' +
-                '<li class="row stacked"><span>Download folder<small>Where ' + keyName(keyOf('download', 0)) + ' and the Download button save files. Favorites go into a "favorites" folder in it.</small>' +
+                '<li class="row stacked"><span>Download folder<small>Where ' + keyName(keyOf('download', 0)) + ' and the Download button save files. They go into a "downloads" folder in it; favorites go into "favorites".</small>' +
                     '<span class="folder-path">' + escapeHtml(settings.downloadFolder || 'Downloads\\MSG (default)') + '</span></span>' +
                     '<div class="key-buttons"><button id="choose-download-folder">Choose…</button>' +
                     (settings.downloadFolder ? '<button id="reset-download-folder">Use default</button>' : '') + '</div></li>' +
@@ -2533,6 +2533,21 @@
         updateHud();
     }
 
+    // A single download (the button or L): "Downloading name: 45%", then a result that goes away.
+    let singleText = '';
+    let singleClearTimer = null;
+
+    function setSingleText(text) {
+        singleText = text || '';
+        clearTimeout(singleClearTimer);
+        if (!/^Downloading /.test(singleText))
+            singleClearTimer = setTimeout(function () {
+                singleText = '';
+                updateHud();
+            }, 8000);
+        updateHud();
+    }
+
     function updateHud() {
         let hud = document.getElementById('dev-hud');
 
@@ -2549,6 +2564,8 @@
             lines.push(fpsText());
         if (settings.showDownloadProgress && downloadText)
             lines.push(downloadText);
+        if (settings.showDownloadProgress && singleText)
+            lines.push(singleText);
 
         hud.replaceChildren(...lines.map(function (line) {
             let div = document.createElement('div');
@@ -2710,7 +2727,7 @@
             '<ul class="settings-list">' +
                 '<li><label class="row"><span>Show FPS<small>The frame rate of the page and of the video, in the top right corner.</small></span>' +
                     '<input type="checkbox" id="dev-fps"' + (settings.showFps ? ' checked' : '') + '></label></li>' +
-                '<li><label class="row"><span>Show download progress<small>The background download of favorites and pools (Settings → Data usage), in the top right corner.</small></span>' +
+                '<li><label class="row"><span>Show download progress<small>The background download of favorites and pools (Settings → Data usage) and downloads made with the button or the hotkey, in the top right corner.</small></span>' +
                     '<input type="checkbox" id="dev-downloads"' + (settings.showDownloadProgress ? ' checked' : '') + '></label></li>' +
                 '<li><label class="row"><span>Log to the console<small>Slide addresses and other messages in the developer tools (F12). Until the app is restarted.</small></span>' +
                     '<input type="checkbox" id="dev-log"' + (LOGGING_MODE == LOGGING_MODE_DEV ? ' checked' : '') + '></label></li>' +
@@ -2751,6 +2768,7 @@
         window.appInfo.getVersion().then(v => appVersion = v);
         window.appInfo.autoDownloadStatus().then(setDownloadText);
         window.appInfo.onAutoDownloadStatus(setDownloadText);
+        window.appInfo.onDownloadProgress(setSingleText);
 
         setInterval(function () {
             updateFpsLoop();

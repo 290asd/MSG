@@ -253,7 +253,8 @@ function cleanFileName (name) {
 
 ipcMain.handle('download', (event, options) => {
   if (!/^https?:/i.test(options.url)) return
-  pendingDownloads.set(options.url, options.filename)
+  // Downloads made with the button or L go to <folder>/downloads; favorites have their own folder.
+  pendingDownloads.set(options.url, 'downloads/' + safeFileName(options.url))
   event.sender.downloadURL(options.url)
 })
 
@@ -530,13 +531,24 @@ app.whenReady().then(() => {
 
   session.defaultSession.on('will-download', (event, item) => {
     const url = item.getURLChain()[0]
-    const filename = pendingDownloads.get(url) || item.getFilename()
+    const filename = pendingDownloads.get(url) || 'downloads/' + (cleanFileName(item.getFilename()) || 'file-' + Date.now())
     pendingDownloads.delete(url)
     try {
       item.setSavePath(downloadPath(filename))
     } catch (e) {
       item.cancel()
+      return
     }
+
+    // Progress for the corner box (Settings → Developer): its own channel, so it doesn't
+    // overwrite the background download's status.
+    const name = path.basename(filename)
+    const report = text => { for (const win of BrowserWindow.getAllWindows()) win.webContents.send('download-progress', text) }
+    item.on('updated', () => {
+      const total = item.getTotalBytes()
+      report('Downloading ' + name + (total > 0 ? ': ' + Math.floor(item.getReceivedBytes() / total * 100) + '%' : ''))
+    })
+    item.once('done', (e, state) => report(state === 'completed' ? 'Saved ' + name : 'Download failed: ' + name))
   })
 
   createWindow()
