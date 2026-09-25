@@ -904,6 +904,9 @@ kbd {
 }
 
 body.solid-style .glass,
+body.solid-style #settings-dialog,
+body.solid-style #pools-dialog,
+body.solid-style #analysis-dialog,
 body.solid-style #warning-message,
 body.solid-style #info-message,
 body.solid-style #loading-animation {
