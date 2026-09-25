@@ -61,9 +61,6 @@ class SiteManagerGelbooru extends SiteManager
 				getXmlElementStringValueSafe(xmlPost, 'md5'),
 				getXmlElementStringValueSafe(xmlPost, 'tags')
 			);
-			
-			console.log(this.reformatFileUrl(getXmlElementStringValueSafe(xmlPost, 'file_url')));
-			console.log(this.reformatFileUrl(getXmlElementStringValueSafe(xmlPost, 'preview_url')));
 
 			this.allUnsortedSlides.push(newSlide);
 		}

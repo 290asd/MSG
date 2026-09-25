@@ -18,9 +18,6 @@ class PersonalListModel{
 
         this.isPlaying = false;
         this.timer = null;
-        this.timerMs = 0;
-
-        this.sitesManager = null;
 
         this.personalList = new PersonalList();
         this.filtered = false;
@@ -118,7 +115,9 @@ class PersonalListModel{
                 passedWild;
         });
 
-        this.filteredPersonalList = new PersonalList(items)
+        // Created empty so the filtered copy doesn't start its own tagging of untagged items.
+        this.filteredPersonalList = new PersonalList();
+        this.filteredPersonalList.personalListItems = items;
         this.currentListItem = 1
         this.currentSlideChangedEvent.notify()
     }
@@ -455,15 +454,6 @@ class PersonalListModel{
         this.videoVolumeUpdatedEvent.notify();
     }
 
-    setSiteToSearch(site, checked)
-    {
-        this.sitesToSearch[site] = checked;
-
-        this.dataLoader.saveSitesToSearch();
-
-        this.sitesToSearchUpdatedEvent.notify();
-    }
-	
     setSecondsPerSlide(secondsPerSlide)
     {
         this.secondsPerSlide = secondsPerSlide;
@@ -523,60 +513,6 @@ class PersonalListModel{
         this.playVideosToEndUpdatedEvent.notify();
     }
 	
-    setIncludeImages(onOrOff)
-    {
-        this.includeImages = onOrOff;
-
-        this.dataLoader.saveIncludeImages();
-
-        this.includeImagesUpdatedEvent.notify();
-    }
-	
-    setIncludeGifs(onOrOff)
-    {
-        this.includeGifs = onOrOff;
-
-        this.dataLoader.saveIncludeGifs();
-
-        this.includeGifsUpdatedEvent.notify();
-    }
-	
-    setIncludeWebms(onOrOff)
-    {
-        this.includeWebms = onOrOff;
-
-        this.dataLoader.saveIncludeWebms();
-
-        this.includeWebmsUpdatedEvent.notify();
-    }
-	
-    setHideBlacklist(onOrOff)
-    {
-        this.hideBlacklist = onOrOff;
-
-        this.dataLoader.saveHideBlacklist();
-
-        this.hideBlacklistUpdatedEvent.notify();
-    }
-
-    setBlacklist(blacklist)
-    {
-        this.blacklist = blacklist;
-
-        this.dataLoader.saveBlacklist();
-
-        this.blacklistUpdatedEvent.notify();
-    }
-	
-    setDerpibooruApiKey(derpibooruApiKey)
-    {
-        this.derpibooruApiKey = derpibooruApiKey;
-
-        this.dataLoader.saveDerpibooruApiKey();
-
-        this.derpibooruApiKeyUpdatedEvent.notify();
-    }
-
     setPersonalList(personalList)
     {
         this.personalList = personalList;

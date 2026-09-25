@@ -74,16 +74,6 @@ let R_KEY_ID = 82;
 
 let SITE_QUERY_TERM_ASSOCIATIONS = {};
 
-/* Leaving in for reference till this stuff is reworked.
-SITE_QUERY_TERM_ASSOCIATIONS[SITE_ATFBOORU] = {
-	"sort:id" : "order:id",
-	"sort:id_asc" : "order:id_asc",
-	"sort:id_desc" : "order:id_desc",
-	"sort:score" : "order:score",
-	"sort:score_asc" : "order:score_asc",
-	"sort:score_desc" : "order:score_desc",
-	"sort:-upload" : ""
-};*/
 SITE_QUERY_TERM_ASSOCIATIONS[SITE_DANBOORU] = {
 	"sort:id" : "order:id",
 	"sort:id_asc" : "order:id_asc",

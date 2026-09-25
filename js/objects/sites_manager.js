@@ -22,10 +22,6 @@ class SitesManager{
 		this.sortingQueryTerms["(?:order|sort):id_desc\\b"] = this.sortingTypeDateDesc;
 		this.sortingQueryTerms["(?:order|sort):(?:score|score_desc)\\b"] = this.sortingTypeScoreDesc;
 		this.sortingQueryTerms["(?:order|sort):score_asc\\b"] = this.sortingTypeScoreAsc;
-		
-		// Doesn't seem that this is needed right now.
-		// Investigate later.
-		//this.setupRequestHeaders();
 	}
 
 	displayWarningMessage(message)
@@ -35,53 +31,6 @@ class SitesManager{
 		{
 			this.model.view.displayWarningMessage(message);
 		}
-	}
-
-	displayInfoMessage(message)
-	{
-		if (this.model.view != null)
-		{
-			this.model.view.displayInfoMessage(message);
-		}
-	}
-
-	clearInfoMessage()
-	{
-		if (this.model.view != null)
-		{
-			this.model.view.clearInfoMessage();
-		}
-	}
-
-	setupRequestHeaders()
-	{
-		// Only needed for Gelbooru at the moment
-		/* From manifest v2 (blocking)
-		var listener = function(details) {
-			details.requestHeaders.push({
-				'name': 'Referer',
-				'value': 'https://gelbooru.com'
-			});
-			return {requestHeaders: details.requestHeaders};
-		};
-		
-		var requestFilter = {
-			urls: [
-				"https://*.gelbooru.com/*"
-			],
-			types: ["image", "other"]//object?
-		};
-		
-		var extraInfoSpec = [
-			"blocking",
-			"requestHeaders"
-		];
-
-		chrome.webRequest.onBeforeSendHeaders.addListener(
-			listener,
-			requestFilter,
-			extraInfoSpec
-		);*/
 	}
 
 	addSite(id, pageLimit)
@@ -112,23 +61,6 @@ class SitesManager{
 				return;
 			}
 		}
-	}
-
-	getCountOfActiveSiteManagers()
-	{
-		var count = 0;
-		
-		for (var i = 0; i < this.siteManagers.length; i++)
-		{
-			var siteManager = this.siteManagers[i];
-			
-			if (siteManager.isEnabled)
-			{
-				count++;
-			}
-		}
-		
-		return count;
 	}
 
 	getCountOfActiveSiteManagersThatHaventExhaustedSearches()

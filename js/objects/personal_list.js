@@ -122,21 +122,6 @@ class PersonalList
         })
     }
 
-    // This is inefficient, but I'm lazy
-    getImageTagsATF(id, webRequester)
-    {
-        return new Promise((resolve) => {
-            webRequester.makeWebsiteRequest(`https://booru.allthefallen.moe/posts.json?tags=id%3A${id}`, () => {
-                var data = JSON.parse(arguments[1].xhr.responseText)[0]
-                if(!data){ 
-                    resolve("")
-                    return
-                }
-                resolve(data.tag_string)
-            })
-        })
-    }
-
     getImageTagsYand(id, webRequester)
     {
         return new Promise((resolve) => {

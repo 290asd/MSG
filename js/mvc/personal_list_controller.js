@@ -295,7 +295,7 @@ class PersonalListController
         var maxHeightText = this._view.getMaxHeight();
         
         if (maxHeightText == '') {
-            maxHeight = null;
+            maxHeightText = null;
         }
         else if (isNaN(maxHeightText))
             return;

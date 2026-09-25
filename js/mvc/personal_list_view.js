@@ -29,8 +29,7 @@ class PersonalListView
         this.removeCurrentImageFromFavesPressedEvent = new Event(this);
 
         this.isSettingVolume = false;
-        this.isSettingMute = false;
-    
+
         var _this = this;
         
         this.attachModelListeners();
@@ -184,9 +183,7 @@ class PersonalListView
             if (document.activeElement !== _this.uiElements.filterTextBox &&
                 document.activeElement !== _this.uiElements.secondsPerSlideTextBox &&
                 document.activeElement !== _this.uiElements.maxWidthTextBox &&
-                document.activeElement !== _this.uiElements.maxHeightTextBox &&
-                document.activeElement !== _this.uiElements.blacklist &&
-                document.activeElement !== _this.uiElements.derpibooruApiKey) {
+                document.activeElement !== _this.uiElements.maxHeightTextBox) {
                 
                 if (key == LEFT_ARROW_KEY_ID || key == A_KEY_ID)
                     _this.previousNavButtonClickedEvent.notify();
@@ -556,9 +553,7 @@ class PersonalListView
     }
 	
 	updateVideoMuted() {
-		this.isSettingMute = true;
         this.uiElements.currentVideo.muted = this._model.videoMuted;
-		this.isSettingMute = false;
     }
 
     showLoadingAnimation() {

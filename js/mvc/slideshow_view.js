@@ -4,8 +4,6 @@ class SlideshowView
         this._model = slideshowModel;
         this.uiElements = uiElements;
         
-        this.currentImageClickedEvent = new Event(this);
-        this.currentVideoClickedEvent = new Event(this);
         this.currentVideoVolumeChangedEvent = new Event(this);
         this.searchButtonClickedEvent = new Event(this);
         this.firstNavButtonClickedEvent = new Event(this);
@@ -45,8 +43,7 @@ class SlideshowView
         this.favoriteButtonClickedEvent = new Event(this);
         
         this.isSettingVolume = false;
-        this.isSettingMute = false;
-    
+
         var _this = this;
         
         this.attachModelListeners();
@@ -177,27 +174,7 @@ class SlideshowView
             _this.windowResized();
         });
     
-        this.uiElements.currentImage.addEventListener('click', function() {
-            _this.currentImageClickedEvent.notify();
-        });
-        
-        this.uiElements.currentVideo.addEventListener('click', function() {
-            _this.currentVideoClickedEvent.notify();
-        });
-        
         this.uiElements.currentVideo.addEventListener('volumechange', function() {
-            /*if (_this.isSettingVolume)
-            {
-                _this.isSettingVolume = false;
-                return;
-            }
-            
-            if (_this.isSettingMute)
-            {
-                _this.isSettingMute = false;
-                return;
-            }*/
-            
             if (_this.isSettingVolume)
             {
                 return;
@@ -553,14 +530,11 @@ class SlideshowView
 	
 	displayVideo(currentSlide) {
         var currentVideo = this.uiElements.currentVideo;
-        //var currentVideoSource = this.uiElements.currentVideoSourceWebm;
 
         logForDev('video = ' + currentSlide.fileUrl);
 
-        //currentVideoSource.src = currentSlide.fileUrl;
         currentVideo.src = displayUrl(currentSlide.fileUrl);
         currentVideo.style.display = 'inline';
-        //currentVideo.load(); // Firefox workaround to it sometimes not loading videos
 
 		this.clearImage();
         this.updateSlideSize();
@@ -693,11 +667,7 @@ class SlideshowView
 	
 	clearVideo() {
         var currentVideo = this.uiElements.currentVideo;
-        //var currentVideoSource = this.uiElements.currentVideoSourceWebm;
 
-        //logForDev('video cleared');
-
-        //currentVideoSource.src = '';
         currentVideo.src = '';
         currentVideo.style.display = 'none';
     }
@@ -709,9 +679,7 @@ class SlideshowView
     }
 	
 	updateVideoMuted() {
-		this.isSettingMute = true;
         this.uiElements.currentVideo.muted = this._model.videoMuted;
-		this.isSettingMute = false;
     }
 
     showLoadingAnimation() {
@@ -1122,16 +1090,8 @@ class SlideshowView
 
     updateBlacklist() {
         this.uiElements.blacklist.value = this._model.blacklist.trim();
-		//this.validateBlacklist();
     }
-	
-	/*validateBlacklist() {
-        var blacklist = this.uiElements.blacklist.value;
-		
-		var pattern = new RegExp(/[^\s]+/i);
-		console.log(pattern.test(blacklist));
-    }*/
-	
+
 	getDerpibooruApiKey() {
         return this.uiElements.derpibooruApiKey.value.trim();
     }

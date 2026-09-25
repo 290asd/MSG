@@ -37,14 +37,13 @@ class SlideshowModel{
         this.derpibooruApiKey = '';
         this.e621Login = ''
         this.e621ApiKey = ''
-        this.gelbLoginId = ''
+        this.gelbUserId = ''
         this.gelbApiKey = ''
         this.storeHistory = true;
         this.searchHistory = [];
 
         this.isPlaying = false;
         this.timer = null;
-        this.timerMs = 0;
 
         this.sitesManager = null;
 

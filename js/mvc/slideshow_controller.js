@@ -12,14 +12,6 @@ class SlideshowController
         var _this = this;
 
         // Attach view listeners
-        this._view.currentImageClickedEvent.attach(function() {
-            _this.currentSlideClicked();
-        });
-        
-        this._view.currentVideoClickedEvent.attach(function() {
-            _this.currentSlideClicked();
-        });
-        
         this._view.currentVideoVolumeChangedEvent.attach(function() {
             _this.videoVolumeChanged();
         });
@@ -176,14 +168,6 @@ class SlideshowController
         this._model.pingSites();
     }
 
-    currentSlideClicked()
-    {
-        /* temp disable. may be moving down to its own section instead of messing with the clicking
-        this._view.openCurrentSlideSource();
-
-        this._model.pauseSlideshow();*/
-    }
-	
     videoVolumeChanged()
     {
         var videoVolume = this._view.getVideoVolume();
@@ -319,9 +303,6 @@ class SlideshowController
         if (maxWidthText == '')
         {
 			maxWidthText = null;
-            //this._model.maxWidth = null;
-            //return;
-				
         }
 		else if (isNaN(maxWidthText))
 			return;
@@ -336,7 +317,7 @@ class SlideshowController
         var maxHeightText = this._view.getMaxHeight();
         
         if (maxHeightText == '') {
-            maxHeight = null;
+            maxHeightText = null;
         }
         else if (isNaN(maxHeightText))
             return;

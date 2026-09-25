@@ -1319,7 +1319,7 @@
             '<p class="section-intro">Keys 1–0 on the slideshow page select the sites saved here and search. ' +
                 'Tags are optional: without them the key searches for what is in the search box. ' +
                 '"Use current" saves the sites selected now and the search box.</p>' +
-            '<ul class="settings-list quick-list">' +
+            '<ul class="settings-list">' +
                 settings.quickSearches.map(function (quick, i) {
                     return '<li class="quick-row" data-quick="' + i + '">' +
                         '<kbd>' + ((i + 1) % 10) + '</kbd>' +
@@ -2088,7 +2088,7 @@
     function showOfflineFavorites() {
         controller().filterButtonClicked();
         if (localCopies.size == 0)
-            showToast('Offline: none of the favorites are downloaded to ' + (settings.downloadFolder || 'Downloads\MSG') + ' yet.');
+            showToast('Offline: none of the favorites are downloaded to ' + (settings.downloadFolder || 'Downloads\\MSG') + ' yet.');
     }
 
     async function loadLocalCopies() {

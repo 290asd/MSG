@@ -123,8 +123,6 @@ class Slide
 				slide.preloadingVideo.pause();
 				slide.preloadingVideo.src = '';
 			}
-			//slide.preloadingVideo.load();
-			//slide.preloadingVideo.remove();
 		}
 
 		let errored = function() {
@@ -137,22 +135,6 @@ class Slide
 			{
 				slide.callbackToRunAfterPreloadingFinishes.call(slide);
 			}
-			/*slide.preloadingVideo.removeEventListener('loadeddata', preloaded, false);
-			slide.preloadingVideo.removeEventListener('error', errored), true;
-
-			console.log("errored");
-			console.log(slide.preloadingVideo);
-
-			// Unload resources
-			if (slide.preloadingVideo.src.length > 0)
-			{
-				console.log('aaaa');
-				slide.preloadingVideo.pause();
-				slide.preloadingVideo.src = '';
-			}
-			
-			//slide.preloadingVideo.load();
-			//slide.preloadingVideo.remove();*/
 		};
 		
 		this.preloadingVideo.addEventListener('loadeddata', preloaded, false);
@@ -180,10 +162,5 @@ class Slide
 	isVideo()
 	{
 		return this.mediaType == MEDIA_TYPE_VIDEO;
-	}
-
-	toString()
-	{
-		return 'Slide ' + this.id + ' ' + this.fileUrl + ' ' + this.fileUrl + ' ' + this.previewFileUrl + ' ' + this.width + ' ' + this.height;
 	}
 }

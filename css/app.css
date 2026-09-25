@@ -99,14 +99,9 @@ ul {
 	scrollbar-width: none;
 }
 
-::-webkit-scrollbar {
-	display: none;
-}
-
 /* The liquid glass material. */
 .glass {
 	background: var(--glass);
-	-webkit-backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
 	backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
 	border: 1px solid var(--glass-border);
 	box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight), inset 0 -1px 0 rgba(255, 255, 255, 0.04);
@@ -221,8 +216,7 @@ textarea {
 	resize: vertical;
 }
 
-.muted,
-.note {
+.muted {
 	color: var(--muted);
 }
 
@@ -282,7 +276,6 @@ body:not(.has-slide) #ambient {
 	padding: 14px;
 	border-radius: 50%;
 	background: var(--glass-strong);
-	-webkit-backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
 	backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
 	border: 1px solid var(--glass-border);
 	box-shadow: var(--glass-shadow);
@@ -329,6 +322,8 @@ body.has-slide #content {
 	flex-direction: column;
 	align-items: center;
 	gap: 14px;
+	position: relative;
+	transition: border-color 0.25s, box-shadow 0.25s;
 }
 
 body.has-slide #player {
@@ -336,11 +331,6 @@ body.has-slide #player {
 }
 
 /* Whether the image being shown is a favorite (slideshow page). */
-#player {
-	position: relative;
-	transition: border-color 0.25s, box-shadow 0.25s;
-}
-
 #fave-badge {
 	display: none;
 	position: absolute;
@@ -471,9 +461,6 @@ body.current-faved #player {
 
 .thumbnail {
 	flex: none;
-}
-
-.thumbnail {
 	width: 104px;
 	height: 104px;
 	border-radius: 14px;
@@ -520,7 +507,6 @@ body.current-faved #player {
 	padding: 10px 18px;
 	border-radius: 16px;
 	text-align: center;
-	-webkit-backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
 	backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
 	border: 1px solid var(--glass-border);
 	box-shadow: var(--glass-shadow);
@@ -595,7 +581,6 @@ select:open::picker-icon {
 .menu {
 	color: var(--text);
 	background: var(--glass);
-	-webkit-backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
 	backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
 	border: 1px solid var(--glass-border);
 	box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
@@ -644,7 +629,6 @@ select option:checked {
 body.solid-style ::picker(select),
 body.solid-style .menu {
 	background: var(--glass-solid);
-	-webkit-backdrop-filter: none;
 	backdrop-filter: none;
 }
 
@@ -819,7 +803,6 @@ body.settings-peek #settings-dialog {
 
 body.settings-peek #settings-dialog::backdrop {
 	background: transparent;
-	-webkit-backdrop-filter: none;
 	backdrop-filter: none;
 }
 
@@ -932,13 +915,11 @@ body.solid-style #warning-message,
 body.solid-style #info-message,
 body.solid-style #loading-animation {
 	background: var(--glass-solid);
-	-webkit-backdrop-filter: none;
 	backdrop-filter: none;
 }
 
 body.solid-style #settings-dialog::backdrop {
 	background: rgba(0, 0, 0, 0.55);
-	-webkit-backdrop-filter: none;
 	backdrop-filter: none;
 }
 
@@ -1053,7 +1034,6 @@ body.touch-mode #slide-wrapper {
 
 #settings-dialog::backdrop {
 	background: rgba(0, 0, 0, 0.3);
-	-webkit-backdrop-filter: blur(6px);
 	backdrop-filter: blur(6px);
 }
 
@@ -1214,10 +1194,6 @@ body.touch-mode #slide-wrapper {
 .settings-header h3 {
 	margin: 0;
 	font-size: 1.4em;
-}
-
-.settings-section[hidden] {
-	display: none;
 }
 
 .section-intro {
@@ -1609,10 +1585,6 @@ li.account-fields a {
 	pointer-events: none;
 }
 
-#dev-hud[hidden] {
-	display: none;
-}
-
 .touch-guide {
 	display: grid;
 	grid-template-columns: 30% 1fr 30%;
@@ -1689,7 +1661,6 @@ li.account-fields a {
 
 body.refract-style .glass.lg-drawn {
 	background: transparent;
-	-webkit-backdrop-filter: none;
 	backdrop-filter: none;
 	box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25), inset 0 1px 0 var(--glass-highlight);
 }
@@ -1701,12 +1672,7 @@ body.refract-style .glass.lg-drawn {
 	inset: 0;
 	z-index: 60;
 	background: color-mix(in srgb, var(--bg) 35%, transparent);
-	-webkit-backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
 	backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
-}
-
-#joi-panel[hidden] {
-	display: none;
 }
 
 #joi-frame {
@@ -1745,7 +1711,6 @@ body.refract-style .glass.lg-drawn {
 
 #pools-dialog::backdrop {
 	background: rgba(0, 0, 0, 0.3);
-	-webkit-backdrop-filter: blur(6px);
 	backdrop-filter: blur(6px);
 }
 
@@ -1842,7 +1807,6 @@ body.refract-style .glass.lg-drawn {
 
 /* ---------- Quick search cards (front page) ---------- */
 /* Only on the front page: gone while a slide is showing. */
-#quick-cards[hidden],
 body.has-slide #quick-cards {
 	display: none;
 }
@@ -1885,7 +1849,6 @@ body.has-slide #quick-cards {
 	text-align: left;
 	cursor: pointer;
 	background: var(--glass);
-	-webkit-backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
 	backdrop-filter: blur(var(--glass-blur, 28px)) saturate(170%);
 	border: 1px solid var(--glass-border);
 	box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
@@ -1996,7 +1959,6 @@ body.has-slide #quick-cards {
 
 #analysis-dialog::backdrop {
 	background: rgba(0, 0, 0, 0.3);
-	-webkit-backdrop-filter: blur(6px);
 	backdrop-filter: blur(6px);
 }
 
