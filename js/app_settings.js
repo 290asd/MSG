@@ -96,9 +96,8 @@
         rule34UserId: '',
         rule34ApiKey: '',
         quickSearches: Array.from({ length: 10 }, () => ({ sites: [], tags: '' })),
-        // The quick searches as cards with the first picture, on the front page. Layout: 'grid' or 'wide'.
-        quickCards: true,
-        quickCardLayout: 'grid'
+        // The quick searches as cards with the first picture, on the front page, two to a row.
+        quickCards: true
     };
 
     let settings = JSON.parse(JSON.stringify(DEFAULTS));
@@ -1437,7 +1436,6 @@
 
         let run = ++quickCardRun;
         let cards = settings.quickSearches.map((quick, index) => ({ quick, index })).filter(card => card.quick.sites.length);
-        let wide = settings.quickCardLayout == 'wide';
 
         section.hidden = !settings.quickCards || cards.length == 0;
         section.replaceChildren();
@@ -1448,17 +1446,8 @@
         let header = document.createElement('div');
         header.className = 'quick-cards-header';
         header.innerHTML = '<h3>Quick searches</h3>' +
-            segmented('quick-card-layout', [['grid', 'Pictures'], ['wide', 'With tags']], settings.quickCardLayout) +
             '<button class="glass-button icon-button" id="quick-cards-refresh" title="Load the pictures again">&#8635;</button>';
         section.append(header);
-
-        header.querySelectorAll('input[name="quick-card-layout"]').forEach(function (radio) {
-            radio.addEventListener('change', function () {
-                settings.quickCardLayout = radio.value;
-                save('quickCardLayout');
-                renderQuickCards();
-            });
-        });
 
         header.querySelector('#quick-cards-refresh').addEventListener('click', function () {
             quickCardCache.clear();
@@ -1466,7 +1455,7 @@
         });
 
         let grid = document.createElement('div');
-        grid.className = 'quick-cards-grid' + (wide ? ' wide' : '');
+        grid.className = 'quick-cards-grid';
         section.append(grid);
 
         for (let { quick, index } of cards) {
@@ -1510,18 +1499,16 @@
                     picture.prepend(image);
                 }
 
-                if (wide) {
-                    let tagList = document.createElement('div');
-                    tagList.className = 'quick-card-tags';
-                    for (let [category, name] of quickCardTags(slide)) {
-                        let tag = document.createElement('span');
-                        tag.className = 'quick-tag tag-' + category;
-                        tag.textContent = name.replace(/_/g, ' ');
-                        tagList.append(tag);
-                    }
-                    if (tagList.childElementCount)
-                        info.append(tagList);
+                let tagList = document.createElement('div');
+                tagList.className = 'quick-card-tags';
+                for (let [category, name] of quickCardTags(slide)) {
+                    let tag = document.createElement('span');
+                    tag.className = 'quick-tag tag-' + category;
+                    tag.textContent = name.replace(/_/g, ' ');
+                    tagList.append(tag);
                 }
+                if (tagList.childElementCount)
+                    info.append(tagList);
             });
         }
     }

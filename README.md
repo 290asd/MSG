@@ -40,7 +40,7 @@ A background image for the start screen, and how much it is blurred, can be chos
 - Effects: Glass, or Solid, which turns off the blur and the animations (the loading orb keeps turning).
 - The search bar on the start page has a rainbow border beam until the first search; an image that is a favorite gets the same beam around it.
 - Quick searches on keys 1–0 (Settings → Quick searches): each keeps sites and, if wanted, tags; pressing the key selects those sites and searches (for its tags, or for what is in the search box).
-- Quick search cards on the front page: each quick search as a card with the first picture of its results. Two across with only pictures, or one wide column that also shows the main tags (artist, character, series: e621 and Danbooru only). Click a card to run the search. Turn them off in Settings → Appearance.
+- Quick search cards on the front page: each quick search is a card of its own, two to a row, with the first picture of its results, the search and the main tags (artist, character, series: e621 and Danbooru only). Click a card to run the search. Turn them off in Settings → Appearance.
 - U brings up the controls (the search at the top of the window); again goes back to the image. No scrollbars.
 - Rule34 works again through its new API, with the user ID and API key under Sites & accounts (rule34.xxx → My Account → Options).
 
