@@ -1217,6 +1217,10 @@ body.touch-mode #slide-wrapper {
 	overflow: hidden;
 }
 
+.settings-list + .settings-list {
+	margin-top: 12px;
+}
+
 .settings-list > li {
 	border-top: 1px solid var(--separator);
 }
