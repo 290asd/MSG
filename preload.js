@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('appInfo', {
   chooseBackground: () => ipcRenderer.invoke('choose-background'),
   clearBackground: () => ipcRenderer.invoke('clear-background'),
   backgroundFromUrl: (url) => ipcRenderer.invoke('background-from-url', url),
+  randomFavoriteImage: (gifs, videos) => ipcRenderer.invoke('random-favorite-image', gifs, videos),
   // Settings → Folders: a folder picker, and the media files in the chosen folders.
   chooseFolder: (title) => ipcRenderer.invoke('choose-folder', title),
   listLocalMedia: (folders) => ipcRenderer.invoke('list-local-media', folders),

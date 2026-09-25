@@ -102,8 +102,8 @@ function removeBackgroundImages () {
 
 ipcMain.handle('choose-background', async (event) => {
   const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
-    title: 'Choose a background image',
-    filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif'] }],
+    title: 'Choose a background image or video',
+    filters: [{ name: 'Images and videos', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif', 'webm', 'mp4'] }],
     properties: ['openFile']
   })
   if (result.canceled || result.filePaths.length === 0) return null
@@ -163,6 +163,7 @@ ipcMain.handle('list-local-media', (event, folders) => {
 
 // Ctrl+L: the image being shown becomes the background image.
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif'])
+const VIDEO_EXTENSIONS = new Set(['.webm', '.mp4'])
 
 ipcMain.handle('background-from-url', async (event, url) => {
   if (!/^https?:/i.test(url)) throw new Error('Not a web image')
@@ -173,10 +174,26 @@ ipcMain.handle('background-from-url', async (event, url) => {
 
   removeBackgroundImages()
   const urlExt = path.extname(new URL(url).pathname).toLowerCase()
-  const ext = IMAGE_EXTENSIONS.has(urlExt) ? urlExt : '.jpg'
+  const ext = IMAGE_EXTENSIONS.has(urlExt) || VIDEO_EXTENSIONS.has(urlExt) ? urlExt : '.jpg'
   const target = path.join(app.getPath('userData'), 'background-' + Date.now() + ext)
   fs.writeFileSync(target, data)
   return pathToFileURL(target).href
+})
+
+// Settings → Appearance: a random image among the downloaded favorites, as the background at start.
+// Still images always; GIFs and videos (.webm, .mp4) only when asked for.
+ipcMain.handle('random-favorite-image', (event, gifs, videos) => {
+  const dir = downloadPath('MSG/favorites')
+  const allowed = new Set([...IMAGE_EXTENSIONS].filter(ext => ext !== '.gif'))
+  if (gifs) allowed.add('.gif')
+  if (videos) VIDEO_EXTENSIONS.forEach(ext => allowed.add(ext))
+  let images
+  try {
+    images = fs.readdirSync(dir).filter(file => allowed.has(path.extname(file).toLowerCase()))
+  } catch (e) {
+    return null // no favorites folder yet
+  }
+  return images.length ? pathToFileURL(path.join(dir, images[Math.floor(Math.random() * images.length)])).href : null
 })
 
 ipcMain.handle('storage-get', (event, keys) => {

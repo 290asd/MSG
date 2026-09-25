@@ -52,6 +52,10 @@
         showTags: false,
         touchMode: false,
         backgroundImage: '',
+        // A random downloaded favorite as the background at each start (instead of backgroundImage).
+        backgroundRandomFavorite: false,
+        backgroundRandomGifs: false,
+        backgroundRandomVideos: false,
         backgroundBlur: 60,
         glassBlur: 28,
         showTips: true,
@@ -89,11 +93,11 @@
     };
 
     let settings = JSON.parse(JSON.stringify(DEFAULTS));
+    window.clickOpensPost = () => settings.clickOpensPost;
     let hotkeyBeingRecorded = null;
 
     function defaultHotkeys() {
         let hotkeys = {};
-    window.clickOpensPost = () => settings.clickOpensPost;
         for (let action of HOTKEY_ACTIONS)
             hotkeys[action.id] = action.defaults.slice();
         return hotkeys;
@@ -413,10 +417,8 @@
         showToast('Setting the background image…');
 
         try {
-            // For a video, its preview picture.
-            let source = slide.isVideo() ? slide.previewFileUrl : slide.fileUrl;
-            setBackgroundImage(await window.appInfo.backgroundFromUrl(source));
-            showToast('This image is now the background image.');
+            setBackgroundImage(await window.appInfo.backgroundFromUrl(slide.fileUrl));
+            showToast('This is now the background.');
         } catch (e) {
             showToast('Couldn\'t set the background image: ' + e.message);
         }
@@ -479,11 +481,28 @@
 
         // Blurred, darkened copy of the current slide behind everything, for the glass to pick up.
         // Before there is a slide (e.g. at start), the background image from the settings instead.
-        let ambient = document.getElementById('ambient');
-        let ambientUrl = slide ? thumbnailUrl(slide.previewFileUrl || slide.fileUrl) : settings.backgroundImage;
-        ambient.style.backgroundImage = ambientUrl ? 'url("' + ambientUrl.replace(/"/g, '%22') + '")' : 'none';
+        paintBackground(document.getElementById('ambient'), slide ? thumbnailUrl(slide.previewFileUrl || slide.fileUrl) : settings.backgroundImage);
 
         renderTags(slide);
+    }
+
+    // An image as the element's background; a video (only from the random favorite) as a muted, looping <video> in it.
+    function paintBackground(element, url) {
+        let video = element.querySelector('video');
+        if (url && /\.(mp4|webm)$/i.test(url)) {
+            element.style.backgroundImage = 'none';
+            if (!video) {
+                video = document.createElement('video');
+                video.muted = video.loop = video.autoplay = true;
+                element.appendChild(video);
+            }
+            if (video.getAttribute('src') !== url)
+                video.src = url;
+        } else {
+            if (video)
+                video.remove();
+            element.style.backgroundImage = url ? 'url("' + url.replace(/"/g, '%22') + '")' : 'none';
+        }
     }
 
     // Tag categories in e621's order, with e621's headings (colors are in app.css).
@@ -1379,7 +1398,7 @@
         document.body.classList.toggle('background-preview', on);
 
         if (on)
-            document.getElementById('ambient').style.backgroundImage = settings.backgroundImage ? 'url("' + settings.backgroundImage + '")' : 'none';
+            paintBackground(document.getElementById('ambient'), settings.backgroundImage);
         else
             updateForCurrentSlide();
     }
@@ -1409,6 +1428,9 @@
                     '<input type="checkbox" id="search-sort-menu"' + (settings.searchSortMenu ? ' checked' : '') + '></label></li>' +
                 '<li><label class="row"><span>Show tips while loading<small>Tips about the app\'s features, shown while an image is loading.</small></span>' +
                     '<input type="checkbox" id="app-show-tips"' + (settings.showTips ? ' checked' : '') + '></label></li>' +
+                (isFavoritesPage ?
+                    '<li><label class="row"><span>Click the image to open its post<small>Opens the post on the site in your browser.</small></span>' +
+                        '<input type="checkbox" id="app-click-opens-post"' + (settings.clickOpensPost ? ' checked' : '') + '></label></li>' : '') +
             '</ul>' +
 
             '<h4 class="subheading">Tags</h4>' +
@@ -1426,13 +1448,16 @@
                 '<li class="row stacked"><span>Image<small>Shown when the app opens, before there is a slide, blurred and darkened like the background behind the slides. ' +
                     keyName(keyOf('setBackground', 0)) + ' uses the image being shown.</small></span>' +
                     '<div class="background-picker">' +
-                        '<div id="background-preview"' + (settings.backgroundImage ? ' style="background-image: url(\'' + settings.backgroundImage + '\')"' : '') + '>' + (settings.backgroundImage ? '' : 'None') + '</div>' +
+                        '<div id="background-preview">' + (settings.backgroundImage ? '' : 'None') + '</div>' +
                         '<button id="choose-background">Choose image…</button>' +
-                (isFavoritesPage ?
-                    '<li><label class="row"><span>Click the image to open its post<small>Opens the post on the site in your browser.</small></span>' +
-                        '<input type="checkbox" id="app-click-opens-post"' + (settings.clickOpensPost ? ' checked' : '') + '></label></li>' : '') +
                         (settings.backgroundImage ? '<button id="remove-background">Remove</button>' : '') +
                     '</div></li>' +
+                '<li><label class="row"><span>Random favorite at every start<small>Uses a different downloaded favorite (Settings → Favorites → Download favorites automatically) as the background each time the app opens. Without downloaded favorites, the image above is used.</small></span>' +
+                    '<input type="checkbox" id="background-random-favorite"' + (settings.backgroundRandomFavorite ? ' checked' : '') + '></label></li>' +
+                '<li><label class="row"><span>Include GIFs<small>In the random pick. Otherwise only still images.</small></span>' +
+                    '<input type="checkbox" id="background-random-gifs"' + (settings.backgroundRandomGifs ? ' checked' : '') + '></label></li>' +
+                '<li><label class="row"><span>Include videos<small>In the random pick (.webm and .mp4), played muted in a loop.</small></span>' +
+                    '<input type="checkbox" id="background-random-videos"' + (settings.backgroundRandomVideos ? ' checked' : '') + '></label></li>' +
                 sliderRow('background-blur', 'Blur', 'How blurred the background image is. 0 is sharp.', settings.backgroundBlur, 120) +
             '</ul>';
 
@@ -1453,6 +1478,15 @@
         section.querySelector('#app-show-tips').addEventListener('change', function (e) {
             settings.showTips = e.target.checked;
             save('showTips');
+        });
+
+        paintBackground(section.querySelector('#background-preview'), settings.backgroundImage);
+
+        ['Favorite', 'Gifs', 'Videos'].forEach(function (name) {
+            section.querySelector('#background-random-' + name.toLowerCase()).addEventListener('change', function (e) {
+                settings['backgroundRandom' + name] = e.target.checked;
+                save('backgroundRandom' + name);
+            });
         });
 
         section.querySelector('#choose-background').addEventListener('click', async function () {
@@ -1504,6 +1538,11 @@
         section.querySelector('#app-show-tags').addEventListener('change', function (e) {
             setShowTags(e.target.checked);
         });
+
+        section.querySelector('#app-click-opens-post')?.addEventListener('change', function (e) {
+            settings.clickOpensPost = e.target.checked;
+            save('clickOpensPost');
+        });
     }
 
     function applyRefract() {
@@ -1538,11 +1577,6 @@
             '<ul class="settings-list">' +
                 '<li><label class="row"><span>Touch screen mode<small>Larger buttons, and tap gestures on the image.</small></span>' +
                     '<input type="checkbox" id="app-touch-mode"' + (settings.touchMode ? ' checked' : '') + '></label></li>' +
-
-        section.querySelector('#app-click-opens-post')?.addEventListener('change', function (e) {
-            settings.clickOpensPost = e.target.checked;
-            save('clickOpensPost');
-        });
             '</ul>' +
             '<div class="touch-guide">' +
                 '<div><b>Tap left edge</b><span>Previous</span></div>' +
@@ -2395,6 +2429,10 @@
         settings.appHotkeys = hotkeys;
 
         offlineMode = settings.offlineMode;
+
+        // Only for this run: the saved backgroundImage stays as it is.
+        if (settings.backgroundRandomFavorite)
+            settings.backgroundImage = await window.appInfo.randomFavoriteImage(settings.backgroundRandomGifs, settings.backgroundRandomVideos) || settings.backgroundImage;
 
         applyTheme();
         applyHotkeys();
