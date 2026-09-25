@@ -6,9 +6,10 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-packager . MSG --overwrite --icon=img/msg_icon_black.ico --ignore=\"^/MSG-\" --ignore=\"^/release\"",
-    "build:linux": "electron-packager . MSG --platform=linux --arch=x64 --overwrite --ignore=\"^/MSG-\" --ignore=\"^/release\"",
-    "build:mac": "electron-packager . MSG --platform=darwin --arch=x64,arm64 --overwrite --icon=img/msg_icon.icns --app-bundle-id=fi.msg.app --ignore=\"^/MSG-\" --ignore=\"^/release\""
+    "pack": "electron-packager . MSG --overwrite --ignore=\"^/(MSG-|release|\\.claude|\\.github|\\.gitignore|CLAUDE\\.md|claude-kayttoohje\\.html|changelog\\.txt|README\\.md|package-lock\\.json|node_modules|joi/(README\\.md|msg-changes\\.patch)|img/(msg_icon_app|msg_logo_small|msg_icon_(black|white)_(16|32|48|128|512)\\.png|.*\\.(ico|icns)))\"",
+    "build": "npm run pack -- --icon=img/msg_icon_black.ico",
+    "build:linux": "npm run pack -- --platform=linux --arch=x64",
+    "build:mac": "npm run pack -- --platform=darwin --arch=x64,arm64 --icon=img/msg_icon.icns --app-bundle-id=fi.msg.app"
   },
   "license": "SEE LICENSE IN LICENSE",
   "devDependencies": {
