@@ -58,6 +58,7 @@ SOFTWARE.
     uniform vec3 u_topTint;
     uniform vec3 u_bottomTint;
     uniform float u_opacity;
+    uniform float u_alpha;
     varying vec2 v_texcoord;
 
     float roundedRectDistance(vec2 coord, vec2 size, float radius) {
@@ -148,7 +149,7 @@ SOFTWARE.
 
       float maskDistance = pill ? pillDistance(coord, u_resolution, u_borderRadius) : roundedRectDistance(coord, u_resolution, u_borderRadius);
       float mask = 1.0 - smoothstep(-1.0, 1.0, maskDistance);
-      mask *= u_opacity;
+      mask *= u_opacity * u_alpha;
       gl_FragColor = vec4(color.rgb * mask, mask);
     }`;
 
@@ -157,6 +158,8 @@ SOFTWARE.
     const bctx = backdrop.getContext('2d');
     const ambientImage = new Image();
     let lastBackdrop = '', lastRects = '';
+    // Nothing but the plain theme color behind the cards: nothing to refract, so they are translucent instead.
+    let backdropIsFlat = true;
     // A cached image can be "complete" before its size is known, so a load always draws the backdrop again.
     ambientImage.onload = () => lastBackdrop = '';
     let options = { blur: 5, strength: 1, ripple: 1, corner: 1, tint: 0.35 };
@@ -215,8 +218,10 @@ SOFTWARE.
         bctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
         bctx.fillStyle = root.getPropertyValue('--bg') || '#000';
         bctx.fillRect(0, 0, w, h);
+        backdropIsFlat = true;
 
         if (url && ambientImage.complete && ambientImage.naturalWidth) {
+            backdropIsFlat = false;
             // #ambient: inset -10%, background-size cover.
             const aw = w * 1.2, ah = h * 1.2;
             const s = Math.max(aw / ambientImage.naturalWidth, ah / ambientImage.naturalHeight);
@@ -232,8 +237,10 @@ SOFTWARE.
             if (!el || el.style.display == 'none' || getComputedStyle(el).display == 'none')
                 continue;
             const r = el.getBoundingClientRect();
-            if (r.width && (el.naturalWidth || el.readyState >= 2))
+            if (r.width && (el.naturalWidth || el.readyState >= 2)) {
                 bctx.drawImage(el, r.left, r.top, r.width, r.height);
+                backdropIsFlat = false;
+            }
         }
     }
 
@@ -283,6 +290,7 @@ SOFTWARE.
         gl.uniform3f(loc('u_topTint'), ...(dark ? [0.16, 0.17, 0.21] : [1, 1, 1]));
         gl.uniform3f(loc('u_bottomTint'), ...(dark ? [0.08, 0.09, 0.11] : [0.85, 0.86, 0.9]));
         gl.uniform1f(loc('u_tintOpacity'), options.tint);
+        gl.uniform1f(loc('u_alpha'), backdropIsFlat ? (dark ? 0.6 : 0.5) : 1);
         // The library's defaults times the settings (Settings → Appearance).
         gl.uniform1f(loc('u_blurRadius'), Math.max(options.blur, 0.1));
         gl.uniform1f(loc('u_edgeIntensity'), 0.01 * options.strength);
