@@ -70,6 +70,7 @@
         useLocalCopies: true,
         // A sort menu in the search bar instead of typing order: terms.
         searchSortMenu: false,
+        showDownloadButton: true,
         searchSort: '',
         // Settings → Data usage: nothing from the internet, only your folders and the downloads.
         offlineMode: false,
@@ -1426,6 +1427,8 @@
             '<ul class="settings-list">' +
                 '<li><label class="row"><span>Sort menu in the search bar<small>Choose Newest, Oldest, Highest or Lowest score from a menu instead of typing order: terms. Default searches exactly what you type.</small></span>' +
                     '<input type="checkbox" id="search-sort-menu"' + (settings.searchSortMenu ? ' checked' : '') + '></label></li>' +
+                '<li><label class="row"><span>Download button<small>A Download button in the toolbar that saves the image or video on the screen to the download folder.</small></span>' +
+                    '<input type="checkbox" id="show-download-button"' + (settings.showDownloadButton ? ' checked' : '') + '></label></li>' +
                 '<li><label class="row"><span>Show tips while loading<small>Tips about the app\'s features, shown while an image is loading.</small></span>' +
                     '<input type="checkbox" id="app-show-tips"' + (settings.showTips ? ' checked' : '') + '></label></li>' +
                 (isFavoritesPage ?
@@ -1473,6 +1476,12 @@
             settings.searchSortMenu = e.target.checked;
             save('searchSortMenu');
             updateSearchSortMenu();
+        });
+
+        section.querySelector('#show-download-button').addEventListener('change', function (e) {
+            settings.showDownloadButton = e.target.checked;
+            save('showDownloadButton');
+            updateDownloadButton();
         });
 
         section.querySelector('#app-show-tips').addEventListener('change', function (e) {
@@ -1708,6 +1717,27 @@
 
             button.disabled = false;
         });
+    }
+
+    // ---------- Download button ----------
+
+    function updateDownloadButton() {
+        document.getElementById('download-button').hidden = !settings.showDownloadButton;
+    }
+
+    // Saves the image or video on the screen, like the download hotkey.
+    function setupDownloadButton() {
+        let button = document.getElementById('download-button');
+
+        button.addEventListener('click', function () {
+            button.blur();
+            if (!currentSlide())
+                return;
+            controller()._view.downloadCurrentSlide();
+            showToast('Saving to the download folder…');
+        });
+
+        updateDownloadButton();
     }
 
     // ---------- joi.how (test) ----------
@@ -2626,6 +2656,7 @@
         if (offlineMode && isFavoritesPage)
             controller()._model.personalListLoadedEvent.attach(() => { if (copiesLoaded) showOfflineFavorites(); });
         window.appInfo.onLocalCopiesChanged(loadLocalCopies);
+        setupDownloadButton();
         setupJoiButton();
         setupLocalFileSizes();
         setupTouchMode();
