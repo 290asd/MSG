@@ -20,6 +20,8 @@ class SiteManagerFactory
 				return new SiteManagerRule34(sitesManager, pageLimit);
 			case SITE_SAFEBOORU:
 				return new SiteManagerSafebooru(sitesManager, pageLimit);
+			case SITE_TANTABUS:
+				return new SiteManagerTantabus(sitesManager, pageLimit);
 			case SITE_XBOORU:
 				return new SiteManagerXbooru(sitesManager, pageLimit);
 			case SITE_YANDERE:

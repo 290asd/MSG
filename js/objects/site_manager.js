@@ -235,7 +235,7 @@ class SiteManager
 			return;
 		}
 		
-		if (this.id == SITE_DERPIBOORU)
+		if (this.id == SITE_DERPIBOORU || this.id == SITE_TANTABUS)
 		{
 			jsonPosts = jsonPosts["images"];
 		}

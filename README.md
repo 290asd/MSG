@@ -44,6 +44,7 @@ A background image for the start screen, and how much it is blurred, can be chos
 - U brings up the controls (the search at the top of the window); again goes back to the image. No scrollbars.
 - Rule34 works again through its new API, with the user ID and API key under Sites & accounts (rule34.xxx → My Account → Options).
 - Realbooru is a site too (`js/objects/site_managers/site_manager_realbooru.js`). Its API is switched off, so MSG reads the site's pages instead: no login needed, but a page of 42 takes about 10 seconds (the site answers 503 if asked faster), the rating filter doesn't apply, and it can break if the site's pages change.
+- Tantabus (tantabus.ai) is a site too. It runs the same software as Derpibooru, so it uses the same code (`site_manager_tantabus.js`). No login needed; an API key under Sites & accounts is optional and only matters for your own filters.
 
 These live in `js/app_settings.js`. It changes hotkeys by setting the key constants in `globals.js`, which the views read on every key press.
 

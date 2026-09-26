@@ -10,6 +10,7 @@ let SITE_KONACHAN = 'KONA';
 let SITE_REALBOORU = 'REAL';
 let SITE_RULE34 = 'RULE';
 let SITE_SAFEBOORU = 'SAFE';
+let SITE_TANTABUS = 'TANT';
 let SITE_XBOORU = 'XBOO';
 let SITE_YANDERE = 'YAND';
 // Your own folders (Settings → Folders), see site_manager_local.js.
@@ -102,6 +103,7 @@ SITE_QUERY_TERM_ASSOCIATIONS[SITE_DERPIBOORU] = {
 	"rating:e\\S*" : "explicit",
 	"sort:-upload" : ""
 };
+SITE_QUERY_TERM_ASSOCIATIONS[SITE_TANTABUS] = SITE_QUERY_TERM_ASSOCIATIONS[SITE_DERPIBOORU];
 SITE_QUERY_TERM_ASSOCIATIONS[SITE_GELBOORU] = {
 	"rating:s\\S*" : "rating:safe",
 	"rating:q\\S*" : "rating:questionable",

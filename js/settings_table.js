@@ -41,6 +41,7 @@ const SEARCH_SETTINGS = [
     { key: 'hideBlacklist', element: 'hideBlacklist', after: view => view.hideOrShowBlacklist() },
     { key: 'blacklist', element: 'blacklist' },
     { key: 'derpibooruApiKey', element: 'derpibooruApiKey' },
+    { key: 'tantabusApiKey', element: 'tantabusApiKey' },
     { key: 'e621Login', element: 'e621Login' },
     { key: 'e621ApiKey', element: 'e621ApiKey' },
     { key: 'gelbUserId', element: 'gelbUserId' },

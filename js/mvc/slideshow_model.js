@@ -15,6 +15,7 @@ class SlideshowModel extends MediaModel
             [SITE_REALBOORU]: false,
             [SITE_RULE34]: false,
             [SITE_SAFEBOORU]: true,
+            [SITE_TANTABUS]: false,
             [SITE_XBOORU]: false,
             [SITE_YANDERE]: false,
             [SITE_LOCAL]: false
@@ -30,6 +31,7 @@ class SlideshowModel extends MediaModel
         this.hideBlacklist = false;
         this.blacklist = '';
         this.derpibooruApiKey = '';
+        this.tantabusApiKey = '';
         this.e621Login = '';
         this.e621ApiKey = '';
         this.gelbUserId = '';
@@ -66,6 +68,7 @@ class SlideshowModel extends MediaModel
         this.sitesManager.addSite(SITE_REALBOORU, 42); // its pages hold 42
         this.sitesManager.addSite(SITE_RULE34, standardPageLimit);
         this.sitesManager.addSite(SITE_SAFEBOORU, standardPageLimit);
+        this.sitesManager.addSite(SITE_TANTABUS, 50);
         this.sitesManager.addSite(SITE_XBOORU, standardPageLimit);
         this.sitesManager.addSite(SITE_YANDERE, standardPageLimit);
         this.sitesManager.addSite(SITE_LOCAL, standardPageLimit);

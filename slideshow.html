@@ -204,6 +204,11 @@
 								<li><label class="row"><span>realbooru.com<small>Read from the site's pages (its API is off), so the rating filter doesn't apply and searches are slower.</small></span><input type="checkbox" name="sites-to-search" value="REAL" /></label></li>
 								<li><label class="row"><span>rule34.xxx</span><input type="checkbox" name="sites-to-search" value="RULE" /></label></li>
 								<li><label class="row"><span>safebooru.org</span><input type="checkbox" name="sites-to-search" value="SAFE" /></label></li>
+								<li><label class="row"><span>tantabus.ai</span><input type="checkbox" name="sites-to-search" value="TANT" /></label></li>
+								<li id="tantabus-api-key-container" class="account">
+									<input type="password" id="tantabus-api-key" placeholder="Tantabus API key (optional)" />
+									<a href="https://www.tantabus.ai/settings/edit" target="_blank">Get an API key</a>
+								</li>
 								<li><label class="row"><span>xbooru.com</span><input type="checkbox" name="sites-to-search" value="XBOO" /></label></li>
 								<li><label class="row"><span>yande.re</span><input type="checkbox" name="sites-to-search" value="YAND" /></label></li>
 								<li><label class="row"><span>Your folders<small>The folders chosen in Settings → Folders. Search by folder or file name, or leave the search empty to see everything.</small></span><input type="checkbox" name="sites-to-search" value="LOCL" /></label></li>
@@ -287,6 +292,7 @@
 		<script src="js/objects/site_managers/site_manager_realbooru.js"></script>
 		<script src="js/objects/site_managers/site_manager_rule34.js"></script>
 		<script src="js/objects/site_managers/site_manager_safebooru.js"></script>
+		<script src="js/objects/site_managers/site_manager_tantabus.js"></script>
 		<script src="js/objects/site_managers/site_manager_xbooru.js"></script>
 		<script src="js/objects/site_managers/site_manager_local.js"></script>
 		<script src="js/objects/site_manager_factory.js"></script>

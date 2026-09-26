@@ -77,6 +77,7 @@ class SlideshowView extends MediaView
                 document.activeElement !== _this.uiElements.maxHeightTextBox &&
                 document.activeElement !== _this.uiElements.blacklist &&
                 document.activeElement !== _this.uiElements.derpibooruApiKey &&
+                document.activeElement !== _this.uiElements.tantabusApiKey &&
                 document.activeElement !== _this.uiElements.e621Login &&
                 document.activeElement !== _this.uiElements.e621ApiKey &&
                 document.activeElement !== _this.uiElements.gelbUserId &&
@@ -233,6 +234,11 @@ class SlideshowView extends MediaView
             if (site == SITE_DERPIBOORU)
             {
                 this.uiElements.derpibooruApiKeyContainer.style.display = checked ? 'inline' : 'none';
+            }
+
+            if (site == SITE_TANTABUS)
+            {
+                this.uiElements.tantabusApiKeyContainer.style.display = checked ? 'inline' : 'none';
             }
 
             if (site == SITE_E621)

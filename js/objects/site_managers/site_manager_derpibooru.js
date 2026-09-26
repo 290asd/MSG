@@ -1,9 +1,11 @@
 class SiteManagerDerpibooru extends SiteManager
 {
-    constructor(sitesManager, pageLimit)
+    // Tantabus runs the same software (Philomena) and has the same API, so it extends this.
+    constructor(sitesManager, pageLimit, id = SITE_DERPIBOORU, url = 'https://derpibooru.org')
     {
-		super(sitesManager, SITE_DERPIBOORU, 'https://derpibooru.org', pageLimit);
+		super(sitesManager, id, url, pageLimit);
 		this.jsonPostsKey = 'posts';
+		this.apiKeyName = 'derpibooruApiKey';
     }
     
     buildPingRequestUrl()
@@ -15,7 +17,8 @@ class SiteManagerDerpibooru extends SiteManager
 	{
 		var query = this.buildSiteSpecificQuery(searchText);
 		
-		var possibleAddedKey = this.sitesManager.model.derpibooruApiKey ? '&key=' + this.sitesManager.model.derpibooruApiKey : '';
+		var apiKey = this.sitesManager.model[this.apiKeyName];
+		var possibleAddedKey = apiKey ? '&key=' + apiKey : '';
 		
 		return this.url + '/api/v1/json/search/images?q=' + this.prepareQueryForDerpibooru(query) + '&page=' + pageNumber + '&per_page=' + this.pageLimit + possibleAddedKey;
 	}
@@ -91,7 +94,7 @@ class SiteManagerDerpibooru extends SiteManager
 					return;
 				
 				var newSlide = new Slide(
-					SITE_DERPIBOORU,
+					this.id,
 					jsonPost.id,
 					jsonPost.representations.full,
 					jsonPost.representations.thumb,
