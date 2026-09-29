@@ -107,6 +107,7 @@ impl App {
         self.check(ui, "clickOpensPost", true, "Favorites: clicking the picture opens its post");
         self.check(ui, "showDownloadButton", true, "Show the Download button");
         self.check(ui, "searchSortMenu", false, "Sort menu in the search bar");
+        self.check(ui, "quickCards", true, "Quick search cards on the front page");
         ui.separator();
         ui.label("Background image (the start screen)");
         ui.horizontal(|ui| {

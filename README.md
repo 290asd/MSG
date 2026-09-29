@@ -66,6 +66,17 @@ These live in `js/app_settings.js`. It changes hotkeys by setting the key consta
 
 Fixed from the extension: the favorites page now loads the saved favorites, plays videos, runs the slideshow and preloads the next slides with thumbnails. A slide that fails to load no longer stops the slideshow on either page.
 
+## Native version (egui, no web view)
+
+`MSG-native` is the same app drawn with [egui](https://github.com/emilk/egui) instead of the web view: a simpler window with the search, slideshow, tags, favorites (import, filter, random, e621 sync), pools, quick searches and cards, downloads and offline copies, your folders, rebindable hotkeys and the settings. It reads and writes the same `settings.json`, so favorites and settings are shared. Left out: Realbooru, joi, the glass/Refract effects, tag analysis, touch mode.
+
+```
+cd src-tauri
+cargo run --release --bin MSG-native
+```
+
+Videos are played with [libmpv](https://mpv.io/), loaded when the program starts: put `mpv-2.dll` (Windows, 64-bit; for example from the `mpv-dev-lgpl-x86_64` package of [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild)) next to `MSG-native.exe`, or install mpv's library (`libmpv2` on Linux, `brew install mpv` on macOS). Without it everything else works and a video slide says the library is missing.
+
 ## Running
 
 Requires [Rust](https://rustup.rs/) (on Windows also the Visual Studio C++ Build Tools) and [Node.js](https://nodejs.org/). On Linux, Tauri's [system libraries](https://tauri.app/start/prerequisites/#linux) too.

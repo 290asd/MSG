@@ -7,6 +7,7 @@ use super::hotkeys::Hotkeys;
 use super::media::{MediaCache, State};
 use super::session::{self, Engine, Msg, Search};
 use super::sites::Site;
+use super::video::Player;
 use super::slide::{MediaType, Slide};
 use crate::store::Store;
 use eframe::egui::{self, Color32, RichText, Sense, Vec2};
@@ -67,6 +68,10 @@ pub struct App {
     pub progress: String,
     pub recording: Option<(String, usize)>,
     pub pool_sort: String,
+    pub video: Option<Player>,
+    covers: HashMap<usize, Slide>,
+    covers_asked: bool,
+    pub video_error: Option<String>,
     // Testing aid: MSG_SHOT=<png> takes a screenshot after MSG_SHOT_AFTER seconds (default 12) and quits; MSG_SEARCH=<tags> searches at start.
     hook: Option<(std::path::PathBuf, Instant, bool)>,
 }
@@ -105,8 +110,16 @@ impl App {
             progress: String::new(),
             recording: None,
             pool_sort: "added".into(),
+            video: None,
+            covers: HashMap::new(),
+            covers_asked: false,
+            video_error: None,
             hook: std::env::var_os("MSG_SHOT").map(|p| (p.into(), Instant::now(), false)),
         };
+        match cc.get_proc_address.as_deref().ok_or_else(|| "no OpenGL".to_string()).and_then(|get| Player::new(get, cc.egui_ctx.clone())) {
+            Ok(player) => app.video = Some(player),
+            Err(e) => app.video_error = Some(e),
+        }
         app.show_tags = app.flag("showTags", false);
         app.apply_theme(&cc.egui_ctx);
         app.refresh_copies();
@@ -257,6 +270,9 @@ impl App {
                     }
                 }
                 Msg::Notice(text) => self.notice(text),
+                Msg::Cover { index, slide } => {
+                    self.covers.insert(index, slide);
+                }
                 Msg::Progress(text) => self.progress = text,
                 Msg::Imported { site, slides } => {
                     let found = slides.len();
@@ -431,8 +447,27 @@ impl App {
 
     // ---------- the slideshow clock ----------
 
+    /// Starts the video of the slide being shown (and stops it when another kind of slide comes up).
+    fn sync_video(&mut self, wanted: Option<String>) {
+        let (autoplay, to_end) = (self.flag("videoAutoplay", true), self.flag("playVideosToEnd", false));
+        let (volume, muted) = (self.number("videoVolume", 0.5), self.flag("videoAutoMute", false) || self.flag("videoMuted", false));
+        let Some(player) = self.video.as_mut() else { return };
+        match wanted {
+            Some(url) if player.url != url => {
+                let referer = super::net::web_url(&url).and_then(|u| super::net::referer_for(&u));
+                player.set_volume(volume, muted);
+                player.load(&url, referer, !to_end, autoplay);
+            }
+            None => player.stop(),
+            _ => {}
+        }
+    }
+
     fn tick(&mut self, ctx: &egui::Context) {
-        let Some(slide) = self.current() else {
+        let current = self.current();
+        let wanted = current.as_ref().filter(|s| s.media_type == MediaType::Video).map(|s| self.copies_or(&s.file_url));
+        self.sync_video(wanted);
+        let Some(slide) = current else {
             self.shown_index = None;
             return;
         };
@@ -455,6 +490,17 @@ impl App {
             return;
         }
         let Some(at) = self.shown_at else { return };
+        // A video that is played to the end moves on when it has ended.
+        if is_video && self.flag("playVideosToEnd", false) {
+            if let Some(player) = &self.video {
+                if player.status().ended {
+                    self.move_by(1);
+                } else {
+                    ctx.request_repaint_after(Duration::from_millis(300));
+                }
+                return;
+            }
+        }
         let failed = matches!(self.media.get(&url), Some(State::Failed(_)));
         let wait = if failed { Duration::from_secs(1) } else { Duration::from_secs_f64(self.number("secondsPerSlide", 6.0).max(1.0)) };
         if at.elapsed() >= wait {
@@ -711,11 +757,7 @@ impl App {
         };
         let url = self.copies_or(&slide.file_url);
         if slide.media_type == MediaType::Video {
-            let text = format!("Video: {}", slide.site_id);
-            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(20.0), Color32::GRAY);
-            if response.clicked() {
-                self.open_source();
-            }
+            self.video_view(ui, rect, &response);
             return;
         }
         let fit = self.flag("autoFitSlide", true);
@@ -750,6 +792,59 @@ impl App {
         }
     }
 
+    fn video_view(&mut self, ui: &mut egui::Ui, rect: egui::Rect, response: &egui::Response) {
+        let Some(player) = &self.video else {
+            let text = self.video_error.clone().unwrap_or_else(|| "Video playback is not available.".into());
+            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), Color32::GRAY);
+            if response.clicked() {
+                self.open_source();
+            }
+            return;
+        };
+        player.paint(ui, rect);
+        let status = player.status();
+        let (mut volume, mut muted) = (self.number("videoVolume", 0.5), self.flag("videoMuted", false));
+        let (mut pause, mut seek, mut audio) = (None, None, false);
+        egui::Area::new(egui::Id::new("videobar")).fixed_pos(egui::pos2(rect.left() + 12.0, rect.bottom() - 44.0)).show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_width((rect.width() - 48.0).max(200.0));
+                ui.horizontal(|ui| {
+                    if ui.button(if status.paused { "▶" } else { "⏸" }).clicked() {
+                        pause = Some(!status.paused);
+                    }
+                    ui.label(format!("{} / {}", clock(status.position), clock(status.duration)));
+                    let mut at = status.position;
+                    let bar = ui.add_sized([(ui.available_width() - 190.0).max(60.0), 18.0], egui::Slider::new(&mut at, 0.0..=status.duration.max(0.1)).show_value(false));
+                    if bar.changed() {
+                        seek = Some(at);
+                    }
+                    if ui.button(if muted { "🔇" } else { "🔊" }).clicked() {
+                        muted = !muted;
+                        audio = true;
+                    }
+                    if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false)).changed() {
+                        audio = true;
+                    }
+                });
+            });
+        });
+        if let Some(p) = pause {
+            player.set_paused(p);
+        }
+        if let Some(t) = seek {
+            player.seek(t);
+        }
+        if audio {
+            player.set_volume(volume, muted);
+            self.set("videoVolume", json!(volume));
+            self.set("videoMuted", json!(muted));
+        }
+        if response.clicked() {
+            player.set_paused(!status.paused);
+        }
+        ui.ctx().request_repaint_after(Duration::from_millis(250));
+    }
+
     fn front_page(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
         if self.mode == Mode::Favorites {
             ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "No favorites to show.", egui::FontId::proportional(18.0), Color32::GRAY);
@@ -768,7 +863,83 @@ impl App {
         }
         let searching = self.search.as_ref().is_some_and(|s| s.loading);
         let text = if searching { "Searching…" } else { "Type a search above." };
-        ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(22.0), Color32::GRAY);
+        ui.painter().text(egui::pos2(rect.center().x, rect.top() + 40.0), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(22.0), Color32::GRAY);
+        if !searching && self.search.is_none() && self.flag("quickCards", true) {
+            self.quick_cards(ui, rect);
+        }
+    }
+
+    /// The quick searches as cards (two to a row): the first picture of the results and the main tags. Click runs the search.
+    fn quick_cards(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+        let quick: Vec<Value> = self.store.get("quickSearches").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+        let cards: Vec<(usize, Vec<Site>, String)> = quick
+            .iter()
+            .enumerate()
+            .filter_map(|(n, q)| {
+                let sites: Vec<Site> = q["sites"].as_array()?.iter().filter_map(|s| s.as_str().and_then(Site::from_id)).collect();
+                (!sites.is_empty()).then(|| (n, sites, q["tags"].as_str().unwrap_or("").to_string()))
+            })
+            .collect();
+        if cards.is_empty() {
+            return;
+        }
+        if !self.covers_asked && !self.flag("offlineMode", false) {
+            self.covers_asked = true;
+            for (n, sites, tags) in &cards {
+                let (engine, tx, sites, tags, n) = (self.engine.clone(), self.tx.clone(), sites.clone(), tags.clone(), *n);
+                self.engine.rt.spawn(async move {
+                    if let Some(slide) = session::first_slide(&engine, sites, &tags).await {
+                        let _ = tx.send(Msg::Cover { index: n, slide });
+                        engine.ctx.request_repaint();
+                    }
+                });
+            }
+        }
+        let width = ((rect.width() - 60.0) / 2.0).clamp(200.0, 420.0);
+        let area = egui::Rect::from_min_size(egui::pos2(rect.center().x - width - 6.0, rect.top() + 90.0), Vec2::new(width * 2.0 + 12.0, rect.height() - 100.0));
+        let mut run = None;
+        ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for pair in cards.chunks(2) {
+                    ui.horizontal(|ui| {
+                        for (n, sites, tags) in pair {
+                            let (card, response) = ui.allocate_exact_size(Vec2::new(width, 112.0), Sense::click());
+                            let painter = ui.painter();
+                            painter.rect_filled(card, 8.0, ui.visuals().faint_bg_color.gamma_multiply(2.0));
+                            if response.hovered() {
+                                painter.rect_stroke(card, 8.0, egui::Stroke::new(1.5, ui.visuals().selection.bg_fill), egui::StrokeKind::Inside);
+                            }
+                            let picture = egui::Rect::from_min_size(card.min + Vec2::splat(8.0), Vec2::splat(96.0));
+                            let mut main_tags = String::new();
+                            if let Some(slide) = self.covers.get(n).cloned() {
+                                let url = self.copies_or(&slide.preview_file_url);
+                                self.media.request(&self.engine, &url);
+                                if let Some(State::Ready(p)) = self.media.get(&url) {
+                                    paint_fit(ui, picture, &p.frames[0].texture, p.size);
+                                }
+                                if let Some(groups) = &slide.tag_groups {
+                                    let picked: Vec<&str> = ["artist", "character", "copyright"].iter().filter_map(|c| groups.get(*c)?.as_array()).flatten().filter_map(Value::as_str).take(3).collect();
+                                    main_tags = picked.join(" ");
+                                }
+                            }
+                            let text_x = card.left() + 116.0;
+                            let title = if tags.is_empty() { "(what is in the box)".to_string() } else { tags.clone() };
+                            let names: Vec<&str> = sites.iter().map(|s| s.name()).collect();
+                            let painter = ui.painter();
+                            painter.text(egui::pos2(text_x, card.top() + 14.0), egui::Align2::LEFT_TOP, format!("{}  {}", (n + 1) % 10, title), egui::FontId::proportional(15.0), ui.visuals().strong_text_color());
+                            painter.text(egui::pos2(text_x, card.top() + 40.0), egui::Align2::LEFT_TOP, names.join(", "), egui::FontId::proportional(12.0), Color32::GRAY);
+                            painter.text(egui::pos2(text_x, card.top() + 62.0), egui::Align2::LEFT_TOP, main_tags.replace('_', " "), egui::FontId::proportional(12.0), Color32::GRAY);
+                            if response.clicked() {
+                                run = Some(*n);
+                            }
+                        }
+                    });
+                }
+            });
+        });
+        if let Some(n) = run {
+            self.run_quick_search(n);
+        }
     }
 
     fn test_hook(&mut self, ctx: &egui::Context) {
@@ -804,6 +975,11 @@ impl App {
         });
         ctx.request_repaint_after(Duration::from_secs(1));
     }
+}
+
+fn clock(seconds: f64) -> String {
+    let s = seconds.max(0.0) as u64;
+    format!("{}:{:02}", s / 60, s % 60)
 }
 
 fn net_ok(url: &str) -> bool {
@@ -881,7 +1057,10 @@ impl eframe::App for App {
         self.toasts(&ctx);
     }
 
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+    fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        if let Some(player) = self.video.as_mut() {
+            player.shutdown(gl);
+        }
         self.store.flush();
     }
 }

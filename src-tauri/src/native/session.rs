@@ -61,6 +61,8 @@ pub enum Msg {
     Imported { site: String, slides: Vec<Slide> },
     /// A background job changed the settings file (offline copies): reread what depends on it.
     Downloaded(String),
+    /// The first result of a quick search, for its card on the front page.
+    Cover { index: usize, slide: Slide },
 }
 
 pub struct Batch {
@@ -240,6 +242,18 @@ async fn fetch_page(engine: &Engine, cfg: &Config, mut cursor: Cursor, text: &st
             (cursor, vec![], Some(warn(e)))
         }
     }
+}
+
+/// The first post the sites give for a search (a quick search's card).
+pub async fn first_slide(engine: &Engine, sites: Vec<Site>, text: &str) -> Option<Slide> {
+    let cfg = config(&engine.store);
+    for site in sites.into_iter().filter(|s| *s != Site::Local) {
+        let (_, slides, _) = fetch_page(engine, &cfg, Cursor::new(site), text).await;
+        if let Some(slide) = slides.into_iter().find(|s| s.media_type != super::slide::MediaType::Video) {
+            return Some(slide);
+        }
+    }
+    None
 }
 
 fn parse_pool(body: &str) -> Option<Pool> {
