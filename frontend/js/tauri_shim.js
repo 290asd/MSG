@@ -18,6 +18,90 @@
     // A file on this computer, as a URL the page may load.
     const fileUrl = path => convertFileSrc(path);
 
+    // ---------- The internet ----------
+    // The page's origin can't call the booru sites (CORS), so XHR and fetch to them go through Rust,
+    // and remote images and videos load through the msg-proxy scheme (which adds each site's Referer).
+    const proxyPrefix = convertFileSrc('', 'msg-proxy');
+    const assetPrefix = convertFileSrc('');
+    // Ours already (the proxy, local files, the app's own pages) stays as it is.
+    const isOurs = url => [proxyPrefix, assetPrefix, location.origin + '/', 'http://ipc.localhost'].some(prefix => url.startsWith(prefix));
+    // A file:// URL is one saved by the Electron version (the background image): it becomes an asset URL.
+    const fromFileUrl = url => convertFileSrc(decodeURIComponent(new URL(url).pathname).replace(/^\/([A-Za-z]:)/, '$1'));
+    window.msgProxyUrl = url => {
+        if (typeof url != 'string') return url;
+        if (/^file:/i.test(url)) return fromFileUrl(url);
+        return /^https?:/i.test(url) && !isOurs(url) ? convertFileSrc(url, 'msg-proxy') : url;
+    };
+
+    const rustRequest = (url, options) => invoke('http_request', {
+        url, method: options.method, headers: options.headers, body: options.body, timeoutMs: options.timeout
+    });
+
+    // Only what web_requester.js uses.
+    window.XMLHttpRequest = class {
+        constructor() {
+            this.timeout = 0;
+            this.status = 0;
+            this.responseText = '';
+            this.headers = {};
+            this.aborted = false;
+        }
+
+        open(method, url) {
+            this.method = method;
+            this.url = url;
+        }
+
+        setRequestHeader(name, value) {
+            this.headers[name] = value;
+        }
+
+        abort() {
+            this.aborted = true;
+        }
+
+        send(body) {
+            rustRequest(this.url, { method: this.method, headers: this.headers, body: body == null ? undefined : String(body), timeout: this.timeout })
+                .then(response => {
+                    if (this.aborted) return;
+                    this.status = response.status;
+                    this.responseText = response.body;
+                    if (this.onload) this.onload();
+                }, error => {
+                    if (this.aborted) return;
+                    const handler = error == 'timeout' ? this.ontimeout : this.onerror;
+                    if (handler) handler();
+                });
+        }
+    };
+
+    const pageFetch = window.fetch.bind(window);
+    window.fetch = async (input, init = {}) => {
+        const url = typeof input == 'string' ? input : input.url;
+        if (!/^https?:/i.test(url) || isOurs(url)) return pageFetch(input, init); // includes Tauri's own IPC calls
+        const method = (init.method || 'GET').toUpperCase();
+        try {
+            const response = await rustRequest(url, { method, headers: Object.fromEntries(new Headers(init.headers || {})), body: init.body });
+            return new Response(method == 'HEAD' || [204, 205, 304].includes(response.status) ? null : response.body, { status: response.status, headers: response.headers });
+        } catch (error) {
+            throw new TypeError('Failed to fetch (' + error + ')'); // never the address: it can hold an API key
+        }
+    };
+
+    // Every image and video src goes through the proxy; the elements are made CORS-enabled so
+    // Refract (liquid_glass.js) can still draw them on a canvas.
+    for (const element of [HTMLImageElement, HTMLMediaElement, HTMLSourceElement]) {
+        const descriptor = Object.getOwnPropertyDescriptor(element.prototype, 'src');
+        Object.defineProperty(element.prototype, 'src', {
+            ...descriptor,
+            set(value) {
+                const proxied = window.msgProxyUrl(String(value));
+                if ('crossOrigin' in this && (proxied.startsWith(proxyPrefix) || proxied.startsWith(assetPrefix))) this.crossOrigin = 'anonymous';
+                descriptor.set.call(this, proxied);
+            }
+        });
+    }
+
     window.appInfo = {
         getVersion: () => invoke('app_version'),
         chooseBackground: () => invoke('choose_background').then(path => path && fileUrl(path)),
@@ -35,10 +119,7 @@
         onAutoDownloadStatus: callback => listen('auto-download-status', e => callback(e.payload)),
         onDownloadProgress: callback => listen('download-progress', e => callback(e.payload)),
         onLocalCopiesChanged: callback => listen('local-copies-changed', () => callback()),
-        themeChanged: dark => invoke('theme_changed', { dark }),
-        // Shown in Settings → About.
-        runtimeName: 'Tauri',
-        runtimeVersion: window.__TAURI__.app ? '' : ''
+        themeChanged: dark => invoke('theme_changed', { dark })
     };
 
     window.msgChrome = {

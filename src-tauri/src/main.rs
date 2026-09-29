@@ -2,6 +2,7 @@
 // through js/tauri_shim.js, which keeps the window.chrome / window.appInfo shape they were written for.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod net;
 mod store;
 
 use serde_json::{Map, Value};
@@ -10,8 +11,9 @@ use std::sync::Arc;
 use store::Store;
 use tauri::{Manager, State};
 
-struct App {
-    store: Arc<Store>,
+pub struct App {
+    pub store: Arc<Store>,
+    pub client: reqwest::Client,
 }
 
 #[tauri::command]
@@ -78,12 +80,19 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .register_asynchronous_uri_scheme_protocol("msg-proxy", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            tauri::async_runtime::spawn(async move {
+                responder.respond(net::proxy(&app.state::<App>(), request).await);
+            });
+        })
         .setup(|app| {
             let config: PathBuf = app.path().config_dir()?;
-            app.manage(App { store: Store::load(config.join("MSG"), config.join("booruslideshowelectron")) });
+            let store = Store::load(config.join("MSG"), config.join("booruslideshowelectron"));
+            app.manage(App { store, client: net::client() });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![app_version, storage_get, storage_set, storage_remove])
+        .invoke_handler(tauri::generate_handler![app_version, storage_get, storage_set, storage_remove, net::http_request])
         .build(tauri::generate_context!())
         .expect("error while building MSG")
         .run(|app, event| {

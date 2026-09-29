@@ -518,12 +518,12 @@
                 video.muted = video.loop = video.autoplay = true;
                 element.appendChild(video);
             }
-            if (video.getAttribute('src') !== url)
+            if (video.getAttribute('src') !== msgProxyUrl(url))
                 video.src = url;
         } else {
             if (video)
                 video.remove();
-            element.style.backgroundImage = url ? 'url("' + url.replace(/"/g, '%22') + '")' : 'none';
+            element.style.backgroundImage = url ? 'url("' + msgProxyUrl(url).replace(/"/g, '%22') + '")' : 'none';
         }
     }
 
