@@ -2815,7 +2815,7 @@
                 ['File name', name],
                 ['Format', (extension ? extension.toUpperCase() : '?') + ' (' + slide.mediaType + ')'],
                 ['File size', fileSize(shown)],
-                ['Loaded from', /^file:/i.test(shown) ? 'disk' : 'internet'],
+                ['Loaded from', isLocalFileUrl(shown) ? 'disk' : 'internet'],
                 ['Source resolution', size(slide.width, slide.height)],
                 ['Frame, natural', isVideo ? size(video.videoWidth, video.videoHeight) : size(image.naturalWidth, image.naturalHeight)],
                 ['Frame, displayed', size(element.clientWidth, element.clientHeight)],

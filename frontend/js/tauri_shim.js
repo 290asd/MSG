@@ -18,15 +18,50 @@
     // A file on this computer, as a URL the page may load.
     const fileUrl = path => convertFileSrc(path);
 
+    // ---------- The window ----------
+    const assetPrefix = convertFileSrc('');
+    window.isLocalFileUrl = url => typeof url == 'string' && (/^file:/i.test(url) || url.startsWith(assetPrefix));
+    // A Windows path keeps its backslashes: the asset scope compares paths as written.
+    const pathOfFileUrl = url => {
+        const path = /^file:/i.test(url)
+            ? decodeURIComponent(new URL(url).pathname).replace(/^\/([A-Za-z]:)/, '$1')
+            : decodeURIComponent(url.slice(assetPrefix.length).split(/[?#]/)[0]);
+        return /^[A-Za-z]:/.test(path) ? path.replace(/\//g, '\\') : path;
+    };
+
+    // window.open and links go to the system browser; a file from your own folders is shown in Explorer.
+    window.open = url => {
+        url = String(url);
+        if (window.isLocalFileUrl(url)) invoke('show_in_folder', { path: pathOfFileUrl(url) });
+        else if (/^https?:/i.test(url)) invoke('open_external', { url });
+        return null;
+    };
+    document.addEventListener('click', event => {
+        const link = event.target.closest && event.target.closest('a[href]');
+        if (link && /^https?:/i.test(link.href) && !link.href.startsWith(location.origin + '/')) {
+            event.preventDefault();
+            invoke('open_external', { url: link.href });
+        }
+    });
+
+    document.addEventListener('keydown', event => {
+        const ctrl = event.ctrlKey || event.metaKey;
+        if (event.key == 'F11') invoke('toggle_fullscreen');
+        else if (event.key == 'F12' || (ctrl && event.shiftKey && event.key.toLowerCase() == 'i')) invoke('toggle_devtools');
+        else if (event.key == 'F5' || (ctrl && !event.shiftKey && event.key.toLowerCase() == 'r')) location.reload();
+        else if (event.key == 'Escape') return invoke('exit_fullscreen');
+        else return;
+        event.preventDefault();
+    });
+
     // ---------- The internet ----------
     // The page's origin can't call the booru sites (CORS), so XHR and fetch to them go through Rust,
     // and remote images and videos load through the msg-proxy scheme (which adds each site's Referer).
     const proxyPrefix = convertFileSrc('', 'msg-proxy');
-    const assetPrefix = convertFileSrc('');
     // Ours already (the proxy, local files, the app's own pages) stays as it is.
     const isOurs = url => [proxyPrefix, assetPrefix, location.origin + '/', 'http://ipc.localhost'].some(prefix => url.startsWith(prefix));
     // A file:// URL is one saved by the Electron version (the background image): it becomes an asset URL.
-    const fromFileUrl = url => convertFileSrc(decodeURIComponent(new URL(url).pathname).replace(/^\/([A-Za-z]:)/, '$1'));
+    const fromFileUrl = url => convertFileSrc(pathOfFileUrl(url));
     window.msgProxyUrl = url => {
         if (typeof url != 'string') return url;
         if (/^file:/i.test(url)) return fromFileUrl(url);

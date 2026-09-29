@@ -98,3 +98,14 @@ fn import_old_electron(legacy_dir: &std::path::Path) -> Map<String, Value> {
     }
     result
 }
+
+#[cfg(test)]
+mod tests {
+    // The pages iterate some saved objects in order, so a save must not sort the keys.
+    #[test]
+    fn keeps_key_order() {
+        let text = r#"{"b":1,"a":{"z":1,"y":2}}"#;
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), text);
+    }
+}

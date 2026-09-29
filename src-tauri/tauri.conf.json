@@ -8,16 +8,7 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "MSG",
-        "url": "slideshow.html",
-        "width": 1280,
-        "height": 900,
-        "backgroundColor": "#0b0c10"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null,
       "assetProtocol": { "enable": true, "scope": [] }

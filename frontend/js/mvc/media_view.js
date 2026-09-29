@@ -439,7 +439,7 @@ class MediaView
         };
 
         // A video from your own folders has no preview picture: show its first frame.
-        var isLocalVideo = /^file:.*\.(mp4|webm|m4v|mov|ogv)$/i.test(thumbnailImageUrl);
+        var isLocalVideo = isLocalFileUrl(thumbnailImageUrl) && /\.(mp4|webm|m4v|mov|ogv)$/i.test(thumbnailImageUrl);
         var newThumbnailImage = document.createElement(isLocalVideo ? "video" : "img");
         newThumbnailImage.id = 'thumbnail-image-' + thumbnailSlideId;
         newThumbnailImage.classList.add("thumbnail-image");
