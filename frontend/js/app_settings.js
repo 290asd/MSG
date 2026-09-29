@@ -2009,9 +2009,10 @@
                 ? (model.filtered ? model.filteredPersonalList : model.personalList).personalListItems
                 : model.sitesManager.allSortedSlides;
             let images = items.filter(item => item.fileUrl).map(item => ({
-                thumbnail: item.previewFileUrl || item.fileUrl,
-                preview: item.fileUrl,
-                full: item.fileUrl,
+                // joi.how runs in its own frame, without the proxy that gives the sites their Referer.
+                thumbnail: msgProxyUrl(item.previewFileUrl || item.fileUrl),
+                preview: msgProxyUrl(item.fileUrl),
+                full: msgProxyUrl(item.fileUrl),
                 type: types[item.mediaType] || 'image',
                 source: item.viewableWebsitePostUrl,
                 id: item.siteId + '-' + item.id
@@ -2584,7 +2585,7 @@
         section.innerHTML =
             '<div class="about-header">' +
                 '<img class="logo" src="img/msg_logo.svg" alt="">' +
-                '<div><h2>' + APP_NAME + '</h2><p class="muted">Version ' + version + ' · Electron ' + window.appInfo.electronVersion + ' · Chromium ' + window.appInfo.chromeVersion + '</p></div>' +
+                '<div><h2>' + APP_NAME + '</h2><p class="muted">Version ' + version + ' · ' + window.appInfo.runtime + '</p></div>' +
             '</div>' +
             '<p class="section-intro">MSG is monosodium glutamate, food additive E621. The logo is its structural formula.</p>' +
 
@@ -2599,7 +2600,7 @@
 
             '<h4 class="subheading">Built with</h4>' +
             '<div class="credit">' +
-                '<p><b><a href="https://www.electronjs.org/" target="_blank">Electron</a></b>, MIT license, Copyright (c) Electron contributors, Copyright (c) 2013-2020 GitHub Inc. The full license is in the LICENSE file and Chromium\'s licenses in LICENSES.chromium.html, both next to the app.</p>' +
+                '<p><b><a href="https://tauri.app/" target="_blank">Tauri</a></b>, MIT or Apache-2.0 license, Copyright (c) Tauri Programme within The Commons Conservancy, and the Rust libraries under it and MSG (wry, reqwest, serde, tokio and others, each MIT or Apache-2.0). The pages are shown by the system\'s web view: Microsoft Edge WebView2 on Windows, WebKit on macOS and Linux.</p>' +
             '</div>' +
 
             '<div class="credit">' +
@@ -2872,7 +2873,7 @@
                 ['Sites', enabled || '—'],
                 ['Offline mode', offlineMode ? 'on' : 'off'],
                 ['Downloaded copies', localCopies.size],
-                ['MSG', appVersion + ' · Electron ' + window.appInfo.electronVersion + ' · Chromium ' + window.appInfo.chromeVersion],
+                ['MSG', appVersion + ' · ' + window.appInfo.runtime],
                 ['Platform', navigator.platform]
             ]
         });

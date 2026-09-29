@@ -154,8 +154,12 @@
         onAutoDownloadStatus: callback => listen('auto-download-status', e => callback(e.payload)),
         onDownloadProgress: callback => listen('download-progress', e => callback(e.payload)),
         onLocalCopiesChanged: callback => listen('local-copies-changed', () => callback()),
-        themeChanged: dark => invoke('theme_changed', { dark })
+        themeChanged: dark => invoke('theme_changed', { dark }),
+        // Shown in Settings → About and Developer.
+        runtime: 'Tauri'
     };
+    const webView = (navigator.userAgent.match(/Edg\/([\d.]+)/) || navigator.userAgent.match(/Version\/([\d.]+)/) || [])[1];
+    window.__TAURI__.app.getTauriVersion().then(version => window.appInfo.runtime = 'Tauri ' + version + (webView ? ' · web view ' + webView : ''));
 
     window.msgChrome = {
         storage: { sync: storageArea, local: storageArea },
