@@ -165,7 +165,7 @@ impl Player {
                 return Err("mpv could not be created".into());
             }
             for (name, value) in [
-                ("vo", "libmpv"), ("hwdec", "auto-safe"), ("keep-open", "yes"), ("idle", "yes"), ("terminal", "no"),
+                ("vo", "libmpv"), ("hwdec", "auto-copy-safe"), ("keep-open", "yes"), ("idle", "yes"), ("terminal", "no"),
                 ("input-default-bindings", "no"), ("input-vo-keyboard", "no"), ("osc", "no"), ("ytdl", "no"),
                 ("audio-display", "no"), ("user-agent", concat!("MSG/", env!("CARGO_PKG_VERSION"), " (booru slideshow)")),
             ] {
