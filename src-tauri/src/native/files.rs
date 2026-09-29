@@ -22,6 +22,11 @@ pub fn user_data() -> PathBuf {
     dirs_config().join("MSG")
 }
 
+/// The folder used before the rename to MSG.
+pub fn legacy_dir() -> PathBuf {
+    dirs_config().join("booruslideshowelectron")
+}
+
 fn dirs_config() -> PathBuf {
     #[cfg(windows)]
     let base = std::env::var_os("APPDATA").map(PathBuf::from);

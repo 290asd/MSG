@@ -51,6 +51,18 @@ pub fn ticked_sites(store: &Store) -> Vec<Site> {
     }
 }
 
+/// What background work tells the window.
+pub enum Msg {
+    Batch(Batch),
+    /// A short line for the user (errors, results).
+    Notice(String),
+    /// A favorites import, one site at a time: a progress line and, at the end, the slides found.
+    Progress(String),
+    Imported { site: String, slides: Vec<Slide> },
+    /// A background job changed the settings file (offline copies): reread what depends on it.
+    Downloaded(String),
+}
+
 pub struct Batch {
     pub generation: u64,
     pub cursors: Vec<Cursor>,
@@ -86,12 +98,17 @@ impl Search {
         }
     }
 
+    /// (id, name, page count) of the e621 pool being read.
+    pub fn pool(&self) -> Option<(u64, String, usize)> {
+        self.cursors.iter().find_map(|c| c.pool.as_ref()).map(|p| (p.id, p.name.clone(), p.post_ids.len()))
+    }
+
     pub fn has_more(&self) -> bool {
         self.loading || self.cursors.iter().any(|c| !c.exhausted)
     }
 
     /// Reads the next page of every site that still has results; the answer arrives as a `Batch`.
-    pub fn load_more(&mut self, engine: &Engine, tx: Sender<Batch>) {
+    pub fn load_more(&mut self, engine: &Engine, tx: Sender<Msg>) {
         if self.loading || !self.cursors.iter().any(|c| !c.exhausted) {
             return;
         }
@@ -114,7 +131,7 @@ impl Search {
                     warnings.extend(warning);
                 }
             }
-            let _ = tx.send(Batch { generation, cursors, slides, warnings });
+            let _ = tx.send(Msg::Batch(Batch { generation, cursors, slides, warnings }));
             engine.ctx.request_repaint();
         });
     }
