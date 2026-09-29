@@ -1,22 +1,22 @@
 # MSG
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/msg_icon_white_256.png">
-  <img src="img/msg_icon_black_256.png" width="120" align="right" alt="MSG logo">
+  <source media="(prefers-color-scheme: dark)" srcset="frontend/img/msg_icon_white_256.png">
+  <img src="frontend/img/msg_icon_black_256.png" width="120" align="right" alt="MSG logo">
 </picture>
 
-A desktop slideshow for booru sites. It started as an Electron version of [Chirmaya's BooruSlideshow](https://github.com/Chirmaya/BooruSlideshow) browser extension (v10.6) and replaces the old [BooruSlideshowElectron](https://github.com/michutsu/BooruSlideshowElectron) port.
+A desktop slideshow for booru sites. It started as an Electron version of [Chirmaya's BooruSlideshow](https://github.com/Chirmaya/BooruSlideshow) browser extension (v10.6) and replaces the old [BooruSlideshowElectron](https://github.com/michutsu/BooruSlideshowElectron) port. It now runs on [Tauri](https://tauri.app/): the pages are in `frontend/` (the paths in this file are relative to it) and the native side is Rust, in `src-tauri/`.
 
 The name: MSG, monosodium glutamate, is food additive E621. The logo (`img/msg_logo.svg`, and `img/msg_logo_small.svg` for 32 px and below) is its structural formula, black on the light theme and white on the dark one.
 
-The extension's logic (`js/`) comes from the original. `preload.js` provides the `chrome.*` API calls it uses:
+The extension's logic (`js/`) comes from the original. `js/tauri_shim.js` provides the `chrome.*` API calls it uses, on top of the Rust commands in `src-tauri/src/`:
 
-| Extension API | Electron replacement |
+| Extension API | Replacement |
 |---|---|
 | `chrome.storage.sync` / `local` | `settings.json` in the app's user data folder |
 | `chrome.downloads.download` | Saved to the download folder (Settings → Folders, default `Downloads/MSG/downloads/`) |
-| `rules_header_referer.json` (Gelbooru Referer) | `session.webRequest` in `main.js`, which also sets the Referer that e621's image server requires |
-| host permissions | `webSecurity: false` (the page reaches booru APIs without CORS) |
+| `rules_header_referer.json` (Gelbooru Referer) | Images and videos load through the `msg-proxy` scheme (`src-tauri/src/net.rs`), which sets the Referer that Gelbooru, e621, Rule34 and Realbooru require |
+| host permissions | XHR and `fetch` to the sites go through Rust (`http_request`), so the page reaches booru APIs without CORS |
 | `window.open` / external links | Open in your default browser |
 
 Settings and favorites from the old BooruSlideshowElectron are imported automatically on first start.
@@ -68,34 +68,33 @@ Fixed from the extension: the favorites page now loads the saved favorites, play
 
 ## Running
 
-Requires [Node.js](https://nodejs.org/).
+Requires [Rust](https://rustup.rs/) (on Windows also the Visual Studio C++ Build Tools) and [Node.js](https://nodejs.org/). On Linux, Tauri's [system libraries](https://tauri.app/start/prerequisites/#linux) too.
 
 ```
 npm install
 npm start
 ```
 
+The pages are inside the app, so restart it to see a change in `frontend/`.
+
 ## Install
 
-Download a package from [Releases](../../releases) and unpack it anywhere; nothing is installed.
+Download a package from [Releases](../../releases). MSG shows its pages with the system's web view instead of bundling a browser, so the packages are small.
 
-- **Windows**: `MSG-windows-x64.zip`, then run `MSG.exe`.
-- **Linux** (Ubuntu and others, x64): `MSG-linux-x64.tar.gz`, then run `./MSG`. If it stops with a message about `chrome-sandbox`, give the sandbox helper its rights once: `sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox` (or start it with `./MSG --no-sandbox`).
-- **macOS**: `MSG-macos-arm64.zip` (Apple Silicon) or `MSG-macos-x64.zip` (Intel). The app is not signed, so the first time right-click MSG.app → Open, or run `xattr -cr MSG.app`.
+- **Windows**: the `-setup.exe` installer (or the `.msi`). Needs Microsoft Edge WebView2, which Windows 11 has; the installer fetches it on Windows 10 if it is missing.
+- **Linux** (x64): the `.AppImage`, or the `.deb`. Needs WebKitGTK 4.1 (`libwebkit2gtk-4.1`).
+- **macOS**: the `.dmg`, `aarch64` for Apple Silicon and `x64` for Intel. The app is not signed, so the first time right-click MSG.app → Open, or run `xattr -cr /Applications/MSG.app`.
 
 Settings and favorites are kept in the user data folder: `%APPDATA%\MSG` on Windows, `~/.config/MSG` on Linux and `~/Library/Application Support/MSG` on macOS.
 
 ## Building
 
-Portable apps go into `MSG-<platform>-<arch>/`:
-
 ```
-npm run build        # Windows
-npm run build:linux  # Linux x64
-npm run build:mac    # macOS x64 and arm64 (needs macOS, Linux, or Windows as admin, for the app bundle's symlinks)
+npm run build        # the app alone: src-tauri/target/release/MSG.exe (or MSG)
+npm run tauri build  # the installers too (src-tauri/target/release/bundle/)
 ```
 
-Pushing a tag like `v1.0.0` runs `.github/workflows/build.yml`, which builds all three on GitHub and attaches them to that release.
+Each system builds its own package. Pushing a tag like `v1.0.0` runs `.github/workflows/build.yml`, which builds Windows, Linux and macOS (Apple silicon and Intel) on GitHub and attaches them to that release.
 
 ## Fixed keys
 
@@ -114,6 +113,6 @@ MSG is based on version 10.6 of [BooruSlideshow](https://github.com/Chirmaya/Boo
 > Open license to copy/modify/etc. as long as you:
 > - Don't publish under the name "Booru Slideshow" (to reduce name confusion)
 
-That is why this app is called MSG and has its own icons. The license text and credits are also in Settings → About, along with michutsu's [BooruSlideshowElectron](https://github.com/michutsu/BooruSlideshowElectron) (the earlier Electron port; no code from it is used) [Electron](https://www.electronjs.org/) (MIT; a build includes Electron's `LICENSE` and `LICENSES.chromium.html`), and [Libraries.dev](https://libraries.dev) by Jakub Antalik (MIT): the search bar's [border beam](https://libraries.dev/beam) (`css/vendor/border-beam.css`, the CSS the `border-beam` package generates) and the [thinking orb](https://libraries.dev/orbs) loading animation (`js/vendor/thinking-orbs-engine.js`, the `thinking-orbs` engine as a plain script, cut down to the searching orb, drawn by `js/loading_orb.js`). The Refract effects style (a test) uses the glass shader of [liquid-glass-js](https://github.com/dashersw/liquid-glass-js) by Armagan Amcalar (MIT), in `js/liquid_glass.js`. Their license text is at the top of those files.
+That is why this app is called MSG and has its own icons. The license text and credits are also in Settings → About, along with michutsu's [BooruSlideshowElectron](https://github.com/michutsu/BooruSlideshowElectron) (the earlier Electron port; no code from it is used) [Tauri](https://tauri.app/) (MIT or Apache-2.0) with the Rust libraries under it, and [Libraries.dev](https://libraries.dev) by Jakub Antalik (MIT): the search bar's [border beam](https://libraries.dev/beam) (`css/vendor/border-beam.css`, the CSS the `border-beam` package generates) and the [thinking orb](https://libraries.dev/orbs) loading animation (`js/vendor/thinking-orbs-engine.js`, the `thinking-orbs` engine as a plain script, cut down to the searching orb, drawn by `js/loading_orb.js`). The Refract effects style (a test) uses the glass shader of [liquid-glass-js](https://github.com/dashersw/liquid-glass-js) by Armagan Amcalar (MIT), in `js/liquid_glass.js`. Their license text is at the top of those files.
 
 Settings and favorites saved before the rename (in `%APPDATA%/booruslideshowelectron`) are copied over on the first start.

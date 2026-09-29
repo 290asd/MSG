@@ -3,6 +3,15 @@ name = "msg"
 version = "1.0.1"
 description = "A slideshow for booru sites, based on the BooruSlideshow extension."
 edition = "2021"
+default-run = "MSG"
+
+[[bin]]
+name = "MSG"
+path = "src/main.rs"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

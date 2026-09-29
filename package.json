@@ -1,19 +1,15 @@
 {
   "name": "msg",
   "productName": "MSG",
-  "version": "1.0.1",
   "description": "A slideshow for booru sites, based on the BooruSlideshow extension.",
-  "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "pack": "electron-packager . MSG --overwrite --ignore=\"^/(MSG-|release|\\.claude|\\.github|\\.gitignore|CLAUDE\\.md|claude-kayttoohje\\.html|changelog\\.txt|README\\.md|package-lock\\.json|node_modules|joi/(README\\.md|msg-changes\\.patch)|img/(msg_icon_app|msg_logo_small|msg_icon_(black|white)_(16|32|48|128|512)\\.png|.*\\.(ico|icns)))\"",
-    "build": "npm run pack -- --icon=img/msg_icon_black.ico",
-    "build:linux": "npm run pack -- --platform=linux --arch=x64",
-    "build:mac": "npm run pack -- --platform=darwin --arch=x64,arm64 --icon=img/msg_icon.icns --app-bundle-id=fi.msg.app"
+    "start": "cargo run --manifest-path src-tauri/Cargo.toml",
+    "build": "cargo build --release --manifest-path src-tauri/Cargo.toml",
+    "tauri": "tauri"
   },
   "license": "SEE LICENSE IN LICENSE",
   "devDependencies": {
-    "@electron/packager": "^20.3.0",
-    "electron": "^44.4.4"
-  }
+    "@tauri-apps/cli": "^2"
+  },
+  "private": true
 }

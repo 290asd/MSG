@@ -1,6 +1,5 @@
-# Builds MSG for Windows, Linux and macOS when a version tag (v1.0.0, …) is pushed,
+# Builds MSG for Windows, Linux and macOS (Apple silicon and Intel) when a version tag (v1.0.0, …) is pushed,
 # and attaches the packages to that tag's GitHub release. Can also be run by hand (Actions → Build → Run workflow).
-# macOS is built here because packaging a Mac app needs symlinks, which Windows only allows as admin.
 name: Build
 
 on:
@@ -18,23 +17,19 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            script: build
-            pack: 7z a -tzip MSG-windows-x64.zip ./MSG-win32-x64/*
-            file: MSG-windows-x64.zip
-          - os: ubuntu-latest
-            script: build:linux
-            pack: tar czf MSG-linux-x64.tar.gz MSG-linux-x64
-            file: MSG-linux-x64.tar.gz
+            args: ''
+          - os: ubuntu-22.04
+            args: ''
           - os: macos-latest
-            script: build:mac
-            # ditto keeps the app bundle's symlinks and permissions.
-            pack: >-
-              ditto -c -k --keepParent MSG-darwin-arm64/MSG.app MSG-macos-arm64.zip &&
-              ditto -c -k --keepParent MSG-darwin-x64/MSG.app MSG-macos-x64.zip
-            file: MSG-macos-*.zip
+            args: --target aarch64-apple-darwin
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            args: --target x86_64-apple-darwin
+            target: x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -42,16 +37,21 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
       - run: npm ci
-      - run: npm run ${{ matrix.script }}
-      - run: ${{ matrix.pack }}
-        shell: bash
-      - uses: actions/upload-artifact@v4
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: ${{ matrix.os }}
-          path: ${{ matrix.file }}
-      - if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag || github.ref_name }}
-          files: ${{ matrix.file }}
+          tagName: ${{ inputs.tag != '' && inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '') }}
+          releaseName: MSG ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
+          args: ${{ matrix.args }}

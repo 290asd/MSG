@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "MSG",
-  "version": "1.0.1",
   "identifier": "fi.msg.app",
   "build": {
     "frontendDist": "../frontend"
@@ -11,7 +10,10 @@
     "windows": [],
     "security": {
       "csp": null,
-      "assetProtocol": { "enable": true, "scope": [] }
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
     }
   },
   "bundle": {
@@ -24,5 +26,6 @@
       "../frontend/img/msg_icon_black.ico",
       "../frontend/img/msg_icon.icns"
     ]
-  }
+  },
+  "mainBinaryName": "MSG"
 }
