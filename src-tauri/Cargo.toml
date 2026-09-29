@@ -9,6 +9,11 @@ default-run = "MSG"
 name = "MSG"
 path = "src/main.rs"
 
+# The same app with a native egui window instead of the web view (src/native/).
+[[bin]]
+name = "MSG-native"
+path = "src/native/main.rs"
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
@@ -24,9 +29,17 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli"] }
 rand = "0.8"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "rt-multi-thread", "sync"] }
 base64 = "0.22"
 urlencoding = "2"
+eframe = "0.36.2"
+egui_extras = "0.36.2"
+image = "0.25.10"
+regex = "1.13.1"
+chrono = "0.4.45"
+rfd = "0.17.2"
+open = "5.4.4"
+roxmltree = "0.21.1"
 
 [profile.release]
 opt-level = "s"
