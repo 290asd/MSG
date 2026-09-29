@@ -4,11 +4,12 @@
 		<title>MSG</title>
 		<meta charset="utf-8">
 		<!-- Only the app's own scripts run; images, videos and API requests may come from anywhere. -->
-		<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src * data: blob: file:; media-src * data: blob: file:; connect-src * data: blob: file:; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'self' file:">
+		<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src * data: blob: asset: http://asset.localhost msg-proxy: http://msg-proxy.localhost; media-src * data: blob: asset: http://asset.localhost msg-proxy: http://msg-proxy.localhost; connect-src * data: blob: ipc: http://ipc.localhost asset: http://asset.localhost msg-proxy: http://msg-proxy.localhost; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'self' file:">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<link rel="stylesheet" type="text/css" href="css/app.css">
 		<link rel="stylesheet" type="text/css" href="css/vendor/border-beam.css">
 		<!-- Set the theme before the first paint (app_settings.js keeps it up to date). -->
+		<script src="js/tauri_shim.js"></script>
 		<script src="js/chrome_api.js"></script>
 		<script src="js/theme_early.js"></script>
 	</head>
