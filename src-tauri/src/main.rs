@@ -2,6 +2,7 @@
 // through js/tauri_shim.js, which keeps the window.chrome / window.appInfo shape they were written for.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod downloads;
 mod files;
 mod net;
 mod store;
@@ -14,6 +15,7 @@ use tauri::{image::Image, webview::Color, AppHandle, Manager, State, Theme, Webv
 pub struct App {
     pub store: Arc<Store>,
     pub client: reqwest::Client,
+    pub downloads: downloads::Downloads,
 }
 
 #[tauri::command]
@@ -54,10 +56,14 @@ fn storage_get(state: State<App>, keys: Value) -> Value {
 #[tauri::command]
 fn storage_set(app: AppHandle, state: State<App>, items: Map<String, Value>) {
     let folder_changed = items.contains_key("downloadFolder");
+    let download_setting = downloads::AUTO_DOWNLOAD_KEYS.iter().any(|key| items.contains_key(*key));
     state.store.data.lock().unwrap().extend(items);
     state.store.save();
     if folder_changed {
         let _ = files::download_path(&app, &state, "MSG/"); // lets the pages load from the new folder
+    }
+    if download_setting {
+        downloads::schedule(&app, 5000);
     }
 }
 
@@ -164,11 +170,12 @@ fn main() {
             let handle = app.handle();
             let user_data = files::user_data(handle);
             let store = Store::load(user_data.clone(), user_data.with_file_name("booruslideshowelectron"));
-            app.manage(App { store, client: net::client() });
+            app.manage(App { store, client: net::client(), downloads: Default::default() });
             files::allow_dir(handle, &user_data);
             let state = app.state::<App>();
             let _ = files::download_path(handle, &state, "MSG/");
             create_window(handle)?;
+            downloads::schedule(handle, 15_000);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -191,6 +198,10 @@ fn main() {
             files::list_local_media,
             files::offline_folders,
             files::list_local_copies,
+            downloads::download,
+            downloads::download_many,
+            downloads::download_many_cancel,
+            downloads::auto_download_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building MSG")
