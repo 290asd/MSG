@@ -165,7 +165,7 @@ impl Player {
                 return Err("mpv could not be created".into());
             }
             for (name, value) in [
-                ("vo", "libmpv"), ("hwdec", "auto-copy-safe"), ("keep-open", "yes"), ("idle", "yes"), ("terminal", "no"),
+                ("vo", "libmpv"), ("hwdec", "no"),("keep-open", "yes"), ("idle", "yes"), ("terminal", "no"),
                 ("input-default-bindings", "no"), ("input-vo-keyboard", "no"), ("osc", "no"), ("ytdl", "no"),
                 ("audio-display", "no"), ("user-agent", concat!("MSG/", env!("CARGO_PKG_VERSION"), " (booru slideshow)")),
             ] {
@@ -218,6 +218,12 @@ impl Player {
         let mut pointers: Vec<*const c_char> = owned.iter().map(|a| a.as_ptr()).collect();
         pointers.push(std::ptr::null());
         unsafe { (self.api.command)(self.handle.0, pointers.as_mut_ptr()) };
+    }
+
+    /// Takes effect with the next file. The graphics card's decoder is lighter on the processor but some
+    /// videos come out with streaks and dots in it, so the default is the processor (see the `videoHwdec` setting).
+    pub fn set_hwdec(&self, hardware: bool) {
+        self.set("hwdec", if hardware { "auto-copy-safe" } else { "no" });
     }
 
     /// Starts `url` (an address or a file). `looped`: play again at the end; `play`: start at once.

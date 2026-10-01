@@ -180,6 +180,7 @@ impl App {
         self.check(ui, "playVideosToEnd", false, "Play videos to the end before moving on");
         self.check(ui, "videoAutoplay", true, "Play videos automatically");
         self.check(ui, "videoAutoMute", false, "Start videos muted");
+        self.check(ui, "videoHwdec", false, "Decode videos with the graphics card (lighter, but some videos show streaks and dots; applies to the next video)");
     }
 
     fn tab_filtering(&mut self, ui: &mut egui::Ui) {

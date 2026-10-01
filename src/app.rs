@@ -460,13 +460,14 @@ impl App {
 
     /// Starts the video of the slide being shown (and stops it when another kind of slide comes up).
     fn sync_video(&mut self, wanted: Option<String>) {
-        let (autoplay, to_end) = (self.flag("videoAutoplay", true), self.flag("playVideosToEnd", false));
+        let (autoplay, to_end, hardware) = (self.flag("videoAutoplay", true), self.flag("playVideosToEnd", false), self.flag("videoHwdec", false));
         let (volume, muted) = (self.number("videoVolume", 0.5), self.flag("videoAutoMute", false) || self.flag("videoMuted", false));
         let Some(player) = self.video.as_mut() else { return };
         match wanted {
             Some(url) if player.url != url => {
                 let referer = super::net::web_url(&url).and_then(|u| super::net::referer_for(&u));
                 player.set_volume(volume, muted);
+                player.set_hwdec(hardware);
                 player.load(&url, referer, !to_end, autoplay);
             }
             None => player.stop(),
