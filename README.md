@@ -75,12 +75,11 @@ cd src-tauri
 cargo run --release --bin MSG-native
 ```
 
-Videos are played with [libmpv](https://mpv.io/), loaded when the program starts: put `mpv-2.dll` (Windows, 64-bit; for example from the `mpv-dev-lgpl-x86_64` package of [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild)) next to `MSG-native.exe`, or install mpv's library (`libmpv2` on Linux, `brew install mpv` on macOS). Without it everything else works and a video slide says the library is missing.
+Videos are played with [libmpv](https://mpv.io/), loaded when the program starts: put `mpv-2.dll` (Windows, 64-bit; for example from the `mpv-dev-lgpl-x86_64` package of [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild)) next to `MSG-native.exe`. Without it everything else works and a video slide says the library is missing.
 
 ## Running
 
-Requires [Rust](https://rustup.rs/) (on Windows also the Visual Studio C++ Build Tools) and [Node.js](https://nodejs.org/). On Linux, Tauri's [system libraries](https://tauri.app/start/prerequisites/#linux) too.
-
+Requires [Rust](https://rustup.rs/) (on Windows also the Visual Studio C++ Build Tools) and [Node.js](https://nodejs.org/).
 ```
 npm install
 npm start
@@ -93,19 +92,18 @@ The pages are inside the app, so restart it to see a change in `frontend/`.
 Download a package from [Releases](../../releases). MSG shows its pages with the system's web view instead of bundling a browser, so the packages are small.
 
 - **Windows**: the `-setup.exe` installer (or the `.msi`). Needs Microsoft Edge WebView2, which Windows 11 has; the installer fetches it on Windows 10 if it is missing.
-- **Linux** (x64): the `.AppImage`, or the `.deb`. Needs WebKitGTK 4.1 (`libwebkit2gtk-4.1`).
-- **macOS**: the `.dmg`, `aarch64` for Apple Silicon and `x64` for Intel. The app is not signed, so the first time right-click MSG.app → Open, or run `xattr -cr /Applications/MSG.app`.
+MSG runs on Windows only; Linux and macOS packages are no longer built.
 
-Settings and favorites are kept in the user data folder: `%APPDATA%\MSG` on Windows, `~/.config/MSG` on Linux and `~/Library/Application Support/MSG` on macOS.
+Settings and favorites are kept in the user data folder `%APPDATA%\MSG`.
 
 ## Building
 
 ```
-npm run build        # the app alone: src-tauri/target/release/MSG.exe (or MSG)
+npm run build        # the app alone: src-tauri/target/release/MSG.exe
 npm run tauri build  # the installers too (src-tauri/target/release/bundle/)
 ```
 
-Each system builds its own package. Pushing a tag like `v1.0.0` runs `.github/workflows/build.yml`, which builds Windows, Linux and macOS (Apple silicon and Intel) on GitHub and attaches them to that release.
+Pushing a tag like `v1.0.0` runs `.github/workflows/build.yml`, which builds the Windows packages on GitHub and attaches them to that release.
 
 ## Fixed keys
 
