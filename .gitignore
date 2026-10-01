@@ -1,6 +1,2 @@
-node_modules/
-MSG-*/
+target/
 *.zip
-release/
-src-tauri/target/
-src-tauri/gen/

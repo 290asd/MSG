@@ -396,13 +396,12 @@ impl App {
     }
 
     fn tab_about(&mut self, ui: &mut egui::Ui) {
-        ui.heading(format!("MSG (native) {}", env!("CARGO_PKG_VERSION")));
+        ui.heading(format!("MSG {}", env!("CARGO_PKG_VERSION")));
         ui.label("A desktop slideshow for booru sites, based on Chirmaya's BooruSlideshow 10.6.");
-        ui.label("This window is drawn with egui; settings and favorites are shared with the web view version (settings.json).");
         ui.separator();
         ui.label("Original license (Chirmaya): open license to copy/modify as long as it is not published under the name \"Booru Slideshow\".");
         ui.label("Libraries: egui/eframe (MIT or Apache-2.0), image, reqwest, tokio and others under MIT or Apache-2.0.");
-        ui.hyperlink_to("Source", "https://github.com/290asd/booruslideshowelectron");
+        ui.hyperlink_to("Source", "https://github.com/290asd/MSG");
     }
 
     pub fn save_pool(&mut self, id: u64, name: String, count: usize, cover: String) {

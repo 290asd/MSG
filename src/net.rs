@@ -1,4 +1,4 @@
-// The internet side of the native window. Same rules as src/net.rs: an honest User-Agent, the Referer
+// The internet side. The rules: an honest User-Agent, the Referer
 // each site's image server expects, only http(s), and never the request URL in an error (Rule34's holds the API key).
 use crate::store::Store;
 use reqwest::{header, Client, Url};

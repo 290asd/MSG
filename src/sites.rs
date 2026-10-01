@@ -1,5 +1,5 @@
 // The booru sites: the URL of a page of results and how each site's answer becomes slides.
-// Ported from frontend/js/objects/site_managers/*.js. Realbooru (an HTML scraper) is left out.
+// Ported from the browser extension's site managers (JavaScript). Realbooru (an HTML scraper) is left out.
 use super::slide::{iso_date, id_text, MediaType, Slide};
 use regex::RegexBuilder;
 use serde_json::{Map, Value};

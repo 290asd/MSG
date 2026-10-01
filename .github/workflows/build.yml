@@ -1,5 +1,5 @@
-# Builds MSG for Windows when a version tag (v1.0.0, …) is pushed,
-# and attaches the packages to that tag's GitHub release. Can also be run by hand (Actions → Build → Run workflow).
+# Builds MSG for Windows when a version tag (v2.0.0, …) is pushed and attaches the exe to that tag's GitHub release
+# (the release is created if it does not exist). Can also be run by hand (Actions → Build → Run workflow).
 name: Build
 
 on:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to attach the packages to (for example v1.0.0); empty builds only
+        description: Release tag to attach the exe to (for example v2.0.0); empty builds only
         required: false
 
 permissions:
@@ -19,32 +19,17 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - run: npm ci
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ inputs.tag != '' && inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '') }}
-          releaseName: MSG ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
-      # MSG-native (the egui window, no web view) is attached as a plain binary. libmpv is not bundled:
-      # videos need mpv-2.dll / libmpv next to it (see README).
-      - name: Build MSG-native
-        working-directory: src-tauri
-        run: cargo build --release --bin MSG-native
-      - name: Attach MSG-native to the release
+      - run: cargo build --release
+      # libmpv is not bundled: videos need mpv-2.dll next to the exe (see README).
+      - name: Attach MSG.exe to the release
         if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
         run: |
-          cp src-tauri/target/release/MSG-native.exe MSG-native-windows-x64.exe
-          gh release upload "$TAG" MSG-native-windows-x64.exe --clobber
+          cp target/release/MSG.exe MSG-windows-x64.exe
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "MSG $TAG" --notes "MSG $TAG"
+          gh release upload "$TAG" MSG-windows-x64.exe --clobber
