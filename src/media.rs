@@ -6,12 +6,16 @@ use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 use std::time::Duration;
 
 // Bigger pictures are shrunk: a GPU texture has a size limit (and 8K RGBA is 130 MB).
 const MAX_SIDE: u32 = 4096;
 const MAX_GIF_FRAMES: usize = 400;
 const KEEP: usize = 90;
+// At most this many downloads at once, so a row of thumbnails doesn't hammer a site's image server;
+// the rest wait their turn in the order they were asked for (the picture on the screen comes first).
+const AT_ONCE: usize = 6;
 
 pub struct Frame {
     pub texture: TextureHandle,
@@ -70,12 +74,13 @@ pub struct MediaCache {
     tx: Sender<(String, Result<Decoded, String>)>,
     rx: Receiver<(String, Result<Decoded, String>)>,
     tick: u64,
+    limit: Arc<tokio::sync::Semaphore>,
 }
 
 impl MediaCache {
     pub fn new() -> MediaCache {
         let (tx, rx) = channel();
-        MediaCache { entries: HashMap::new(), tx, rx, tick: 0 }
+        MediaCache { entries: HashMap::new(), tx, rx, tick: 0, limit: Arc::new(tokio::sync::Semaphore::new(AT_ONCE)) }
     }
 
     pub fn get(&mut self, url: &str) -> Option<&State> {
@@ -98,9 +103,10 @@ impl MediaCache {
             return;
         }
         self.entries.insert(url.to_string(), (State::Loading, self.tick));
-        let (tx, engine, url) = (self.tx.clone(), engine.clone(), url.to_string());
+        let (tx, engine, url, limit) = (self.tx.clone(), engine.clone(), url.to_string(), self.limit.clone());
         engine.rt.clone().spawn(async move {
             let bytes = if net::web_url(&url).is_some() {
+                let _turn = limit.acquire().await;
                 net::get_bytes(&engine.client, &engine.store, &url).await
             } else {
                 tokio::fs::read(&url).await.map_err(|_| "file not found".to_string())
