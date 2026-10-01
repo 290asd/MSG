@@ -17,6 +17,9 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+/// How many of the next slides get a thumbnail (shown in the strip and loaded ahead).
+const THUMBS: usize = 40;
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum Mode {
     Slideshow,
@@ -517,7 +520,7 @@ impl App {
             .iter()
             .enumerate()
             .skip(i)
-            .take(12)
+            .take(THUMBS)
             .map(|(n, s)| (if n < i + 4 && s.media_type != MediaType::Video { s.file_url.clone() } else { String::new() }, s.preview_file_url.clone()))
             .collect();
         for (full, preview) in wanted {
@@ -664,13 +667,15 @@ impl App {
         let len = self.list().len();
         // The next slides as thumbnails.
         let i = self.idx();
-        let thumbs: Vec<(usize, String)> = self.list().iter().enumerate().skip(i + 1).take(14).map(|(n, s)| (n, s.preview_file_url.clone())).collect();
+        let thumbs: Vec<(usize, String)> = self.list().iter().enumerate().skip(i + 1).take(THUMBS).map(|(n, s)| (n, s.preview_file_url.clone())).collect();
         if !thumbs.is_empty() {
             let mut jump = None;
             egui::ScrollArea::horizontal().id_salt("thumbs").show(ui, |ui| {
                 ui.horizontal(|ui| {
                     for (n, url) in &thumbs {
                         let url = thumb_source(&self.copies_or(url));
+                        // Also asks for what is missing (the list may have grown); a thumbnail in use is not let go.
+                        self.media.request(&self.engine, &url);
                         let size = Vec2::new(84.0, 64.0);
                         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
                         ui.painter().rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
