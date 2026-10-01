@@ -14,13 +14,13 @@ pub struct Store {
 }
 
 impl Store {
-    /// `dir` is the user data folder (the same as Electron's: <config>/MSG), so old settings carry over.
-    /// `legacy_dir` is the folder used before the rename to MSG.
+    /// `dir` is the user data folder (<config>/MSG).
+    /// `legacy_dir` is the folder used before the rename to MSG; its settings.json is copied over on the first start.
     pub fn load(dir: PathBuf, legacy_dir: PathBuf) -> Arc<Store> {
         let file = dir.join("settings.json");
         let (data, fresh) = match read_json(&file) {
             Some(data) => (data, false),
-            None => (read_json(&legacy_dir.join("settings.json")).unwrap_or_else(|| import_old_electron(&legacy_dir)), true),
+            None => (read_json(&legacy_dir.join("settings.json")).unwrap_or_default(), true),
         };
         let store = Arc::new(Store { data: Mutex::new(data), file, pending: AtomicBool::new(false) });
         if fresh {
@@ -78,25 +78,6 @@ fn read_json(file: &std::path::Path) -> Option<Map<String, Value>> {
         Value::Object(map) => Some(map),
         _ => None,
     }
-}
-
-// The old BooruSlideshowElectron used electron-json-storage: <userData>/storage/<key>.json = {key: value}
-fn import_old_electron(legacy_dir: &std::path::Path) -> Map<String, Value> {
-    let mut result = Map::new();
-    let Ok(entries) = std::fs::read_dir(legacy_dir.join("storage")) else { return result };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("json") {
-            continue;
-        }
-        let Some(key) = path.file_stem().and_then(|s| s.to_str()) else { continue };
-        if let Some(mut data) = read_json(&path) {
-            if let Some(value) = data.remove(key) {
-                result.insert(key.to_string(), value);
-            }
-        }
-    }
-    result
 }
 
 #[cfg(test)]

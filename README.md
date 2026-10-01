@@ -7,7 +7,7 @@
 
 A desktop slideshow for booru sites: e621, Danbooru, Gelbooru, Rule34, Realbooru, Derpibooru, Tantabus and your own folders of images and videos. Search with tags, watch the results as a slideshow, keep favorites, save pools (comics), download, and work with hotkeys or a touch screen.
 
-It is based on version 10.6 of Chirmaya's [BooruSlideshow](https://github.com/Chirmaya/BooruSlideshow) browser extension and replaces the old [BooruSlideshowElectron](https://github.com/michutsu/BooruSlideshowElectron) port. **MSG runs on Windows only.**
+It is based on version 10.6 of Chirmaya's [BooruSlideshow](https://github.com/Chirmaya/BooruSlideshow) browser extension. **MSG runs on Windows only.**
 
 The name: MSG, monosodium glutamate, is food additive E621. The logo (`img/msg_logo.svg`, and `img/msg_logo_small.svg` for 32 px and below) is its structural formula, black on the light theme and white on the dark one.
 
@@ -59,8 +59,6 @@ The pages are in `frontend/`; paths such as `js/`, `css/` and `img/` in this fil
 | `rules_header_referer.json` (Gelbooru Referer) | Images and videos load through the `msg-proxy` scheme (`src-tauri/src/net.rs`), which sets the Referer that Gelbooru, e621, Rule34 and Realbooru require |
 | host permissions | XHR and `fetch` to the sites go through Rust (`http_request`), so the page reaches booru APIs without CORS |
 | `window.open` / external links | Open in your default browser |
-
-Settings and favorites from the old BooruSlideshowElectron are imported automatically on first start.
 
 A background image for the start screen, and how much it is blurred, can be chosen in Settings → Appearance.
 

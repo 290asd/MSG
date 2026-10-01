@@ -1,6 +1,6 @@
 # MSG
 
-Tauri-diaesitys (Rust + järjestelmän web view) booru-sivustoille (pohjana Chirmayan BooruSlideshow 10.6, aiemmin Electron). Kuvaus, ominaisuudet ja käyttöohjeet ovat `README.md`:ssä, joten niitä ei toisteta tässä.
+Tauri-diaesitys (Rust + järjestelmän web view) booru-sivustoille (pohjana Chirmayan BooruSlideshow 10.6). Vanha Electron-versio on poistettu: se löytyy vain git-historiasta (tagi `electron-final`), ja jatkossa kehitetään vain Rust-versiota. Kuvaus, ominaisuudet ja käyttöohjeet ovat `README.md`:ssä, joten niitä ei toisteta tässä.
 
 ## Rakenne
 - `src-tauri/` on natiivipuoli (Rust): `main.rs` (ikkuna, komennot), `store.rs` (settings.json), `net.rs` (verkko), `files.rs` (kansiot, taustakuva), `downloads.rs` (lataukset). Sivut ovat kansiossa `frontend/`, ja kaikki alla mainitut `js/`, `css/`, `img/` ja `joi/` ovat siellä.

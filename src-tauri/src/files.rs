@@ -17,7 +17,7 @@ fn extension(path: &Path) -> String {
     path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase()
 }
 
-/// The user data folder (settings.json, the background images): the same one Electron used.
+/// The user data folder (settings.json, the background images).
 pub fn user_data(app: &AppHandle) -> PathBuf {
     app.path().config_dir().unwrap_or_default().join("MSG")
 }

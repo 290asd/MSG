@@ -1,5 +1,5 @@
 // The native side (src-tauri) behind the same window.msgChrome / window.appInfo the pages were written for,
-// so the rest of the code doesn't know it isn't running in Electron any more.
+// so the pages, written for the browser extension, run unchanged.
 (function () {
     const { invoke, convertFileSrc } = window.__TAURI__.core;
     const { listen } = window.__TAURI__.event;
@@ -60,7 +60,7 @@
     const proxyPrefix = convertFileSrc('', 'msg-proxy');
     // Ours already (the proxy, local files, the app's own pages) stays as it is.
     const isOurs = url => [proxyPrefix, assetPrefix, location.origin + '/', 'http://ipc.localhost'].some(prefix => url.startsWith(prefix));
-    // A file:// URL is one saved by the Electron version (the background image): it becomes an asset URL.
+    // A file:// URL is one saved by an earlier version (the background image): it becomes an asset URL.
     const fromFileUrl = url => convertFileSrc(pathOfFileUrl(url));
     window.msgProxyUrl = url => {
         if (typeof url != 'string') return url;

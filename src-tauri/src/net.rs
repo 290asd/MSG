@@ -1,4 +1,4 @@
-// The internet side. Electron's webSecurity:false and its Referer hook are replaced by two things here:
+// The internet side, in two parts:
 //  - `http_request`: the pages' XHR/fetch calls go through this, so no CORS applies and API keys never
 //    show in a webview error.
 //  - the `msg-proxy` scheme: remote images and videos are loaded through it, so the sites that reject
