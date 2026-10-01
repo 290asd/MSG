@@ -10,7 +10,7 @@ Vanhat versiot ovat vain git-historiassa, eikä niitä kehitetä: Electron (tagi
 - Video toimii libmpv:llä (`video.rs`), joka ladataan ajon aikana (`mpv-2.dll` exe:n viereen). Ilman sitä videopostaus näyttää virheen. eframe käyttää glow-taustaa, koska libmpv:n render API vaatii OpenGL:n.
 - `img/` sisältää logot ja kuvakkeet (ikkunan kuvake upotetaan binääriin `main.rs`:ssä).
 - `settings.json` (`%APPDATA%\MSG`) ja `store.rs` ovat samat kuin vanhoissa versioissa, joten vanhat asetukset ja suosikit toimivat.
-- Testausapu: `MSG_SHOT=<png>` ottaa kuvakaappauksen `MSG_SHOT_AFTER` sekunnin (oletus 12) kuluttua ja sulkee ohjelman, `MSG_SEARCH=<tagit>` hakee käynnistyksessä.
+- Testausapu: `MSG_SHOT=<png>` ottaa kuvakaappauksen `MSG_SHOT_AFTER` sekunnin (oletus 12) kuluttua ja sulkee ohjelman, `MSG_SEARCH=<tagit>` hakee käynnistyksessä. `MSG_SCRIPT="18:shot=a,19:next,21:prev,25:shot=b,27:quit"` tekee toiminnot annettuina sekunteina (`next`, `prev`, `shot=<nimi>`, `quit`) ja tallentaa kuvat kansioon `MSG_SHOT_DIR`. Näin voi toistaa esim. videon ja kuvan vaihdot. Video tarvitsee `mpv-2.dll`:n tai `libmpv-2.dll`:n exe:n viereen (kopioi `target/debug` tai `target/release`).
 
 ## Tiedostomuoto
 - Lähdetiedostot ovat **CRLF**. Käytä Edit-työkalua. `sed -i` ja bash-heredoc muuttavat rivinvaihdot tai rikkovat lainausmerkit, ja se on jo tapahtunut useasti.

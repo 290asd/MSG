@@ -79,6 +79,8 @@ pub struct App {
     pub video_error: Option<String>,
     // Testing aid: MSG_SHOT=<png> takes a screenshot after MSG_SHOT_AFTER seconds (default 12) and quits; MSG_SEARCH=<tags> searches at start.
     hook: Option<(std::path::PathBuf, Instant, bool)>,
+    // MSG_SCRIPT="18:shot=a,19:next,21:prev,24:shot=b,26:quit" does these at those seconds (shots go to MSG_SHOT_DIR).
+    script: Option<(Instant, Vec<(f64, String)>)>,
 }
 
 impl App {
@@ -120,6 +122,10 @@ impl App {
             covers_asked: false,
             video_error: None,
             hook: std::env::var_os("MSG_SHOT").map(|p| (p.into(), Instant::now(), false)),
+            script: std::env::var("MSG_SCRIPT").ok().map(|text| {
+                let steps = text.split(',').filter_map(|s| s.split_once(':')).filter_map(|(t, a)| Some((t.trim().parse().ok()?, a.trim().to_string()))).collect();
+                (Instant::now(), steps)
+            }),
         };
         match cc.get_proc_address.as_deref().ok_or_else(|| "no OpenGL".to_string()).and_then(|get| Player::new(get, cc.egui_ctx.clone())) {
             Ok(player) => app.video = Some(player),
@@ -951,6 +957,32 @@ impl App {
         }
     }
 
+    fn test_script(&mut self, ctx: &egui::Context) {
+        let dir = std::path::PathBuf::from(std::env::var_os("MSG_SHOT_DIR").unwrap_or_default());
+        for event in ctx.input(|i| i.events.clone()) {
+            if let egui::Event::Screenshot { image, user_data, .. } = event {
+                if let Some(name) = user_data.data.as_ref().and_then(|d| d.downcast_ref::<String>()) {
+                    let bytes: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
+                    let _ = image::save_buffer(dir.join(format!("{name}.png")), &bytes, image.size[0] as u32, image.size[1] as u32, image::ColorType::Rgba8);
+                }
+            }
+        }
+        let Some((started, steps)) = self.script.as_mut() else { return };
+        let now = started.elapsed().as_secs_f64();
+        let due: Vec<String> = steps.iter().take_while(|(t, _)| *t <= now).map(|(_, a)| a.clone()).collect();
+        steps.drain(..due.len());
+        for action in due {
+            match action.split_once('=') {
+                Some(("shot", name)) => ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(name.to_string()))),
+                _ if action == "next" => self.move_by(1),
+                _ if action == "prev" => self.move_by(-1),
+                _ if action == "quit" => std::process::exit(0),
+                _ => {}
+            }
+        }
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
+
     fn test_hook(&mut self, ctx: &egui::Context) {
         let Some((path, started, sent)) = self.hook.as_mut() else { return };
         for event in ctx.input(|i| i.events.clone()) {
@@ -1061,6 +1093,7 @@ impl eframe::App for App {
         egui::CentralPanel::default().show(ui, |ui| self.viewer(ui));
 
         self.test_hook(&ctx);
+        self.test_script(&ctx);
         self.settings_window(&ctx);
         self.pools_window(&ctx);
         self.toasts(&ctx);

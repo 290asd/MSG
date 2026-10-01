@@ -263,6 +263,9 @@ impl Player {
     /// Puts the video in `rect` (points) with a paint callback.
     pub fn paint(&self, ui: &egui::Ui, rect: egui::Rect) {
         let (api, render, target) = (self.api.clone(), self.render, self.target.clone());
+        // mpv keeps the last frame of the previous video until the new one has its first: that would show for a
+        // moment, so until the new file has video parameters (they go with the first frame) the box stays black.
+        let has_frame = !self.url.is_empty() && self.get("video-params/w").is_some();
         let callback = eframe::egui_glow::CallbackFn::new(move |info, painter| {
             let gl = painter.gl();
             let vp = info.viewport_in_pixels();
@@ -291,12 +294,20 @@ impl Player {
                 gl.viewport(vp.left_px, vp.from_bottom_px, vp.width_px, vp.height_px);
                 gl.enable(glow::SCISSOR_TEST);
                 gl.disable(glow::BLEND);
-                gl.use_program(t.program);
-                gl.bind_vertex_array(t.vao);
-                gl.active_texture(glow::TEXTURE0);
-                gl.bind_texture(glow::TEXTURE_2D, t.texture);
-                gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
-                gl.bind_texture(glow::TEXTURE_2D, None);
+                if has_frame {
+                    gl.use_program(t.program);
+                    gl.bind_vertex_array(t.vao);
+                    gl.active_texture(glow::TEXTURE0);
+                    gl.bind_texture(glow::TEXTURE_2D, t.texture);
+                    gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
+                    gl.bind_texture(glow::TEXTURE_2D, None);
+                } else {
+                    // Only the video's box is cleared (mpv leaves the scissor box at its own size).
+                    let clip = info.clip_rect_in_pixels();
+                    gl.scissor(clip.left_px, clip.from_bottom_px, clip.width_px, clip.height_px);
+                    gl.clear_color(0.0, 0.0, 0.0, 1.0);
+                    gl.clear(glow::COLOR_BUFFER_BIT);
+                }
             }
         });
         ui.painter().add(egui::PaintCallback { rect, callback: Arc::new(callback) });
