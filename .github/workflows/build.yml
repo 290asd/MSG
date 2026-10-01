@@ -1,4 +1,4 @@
-# Builds MSG for Windows, Linux and macOS (Apple silicon and Intel) when a version tag (v1.0.0, …) is pushed,
+# Builds MSG for Windows when a version tag (v1.0.0, …) is pushed,
 # and attaches the packages to that tag's GitHub release. Can also be run by hand (Actions → Build → Run workflow).
 name: Build
 
@@ -16,29 +16,7 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            args: ''
-            native: MSG-native.exe
-            native-out: MSG-native-windows-x64.exe
-          - os: ubuntu-22.04
-            args: ''
-            native: MSG-native
-            native-out: MSG-native-linux-x64
-          - os: macos-latest
-            args: --target aarch64-apple-darwin
-            target: aarch64-apple-darwin
-            native: MSG-native
-            native-out: MSG-native-macos-arm64
-          - os: macos-latest
-            args: --target x86_64-apple-darwin
-            target: x86_64-apple-darwin
-            native: MSG-native
-            native-out: MSG-native-macos-x64
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,15 +24,9 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - if: matrix.os == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
       - run: npm ci
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -62,12 +34,11 @@ jobs:
         with:
           tagName: ${{ inputs.tag != '' && inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '') }}
           releaseName: MSG ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
-          args: ${{ matrix.args }}
       # MSG-native (the egui window, no web view) is attached as a plain binary. libmpv is not bundled:
       # videos need mpv-2.dll / libmpv next to it (see README).
       - name: Build MSG-native
         working-directory: src-tauri
-        run: cargo build --release --bin MSG-native ${{ matrix.args }}
+        run: cargo build --release --bin MSG-native
       - name: Attach MSG-native to the release
         if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -75,7 +46,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
         run: |
-          dir=src-tauri/target/${{ matrix.target }}/release
-          [ -d "$dir" ] || dir=src-tauri/target/release
-          cp "$dir/${{ matrix.native }}" "${{ matrix.native-out }}"
-          gh release upload "$TAG" "${{ matrix.native-out }}" --clobber
+          cp src-tauri/target/release/MSG-native.exe MSG-native-windows-x64.exe
+          gh release upload "$TAG" MSG-native-windows-x64.exe --clobber
