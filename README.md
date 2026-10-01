@@ -5,11 +5,52 @@
   <img src="frontend/img/msg_icon_black_256.png" width="120" align="right" alt="MSG logo">
 </picture>
 
-A desktop slideshow for booru sites. It started as an Electron version of [Chirmaya's BooruSlideshow](https://github.com/Chirmaya/BooruSlideshow) browser extension (v10.6) and replaces the old [BooruSlideshowElectron](https://github.com/michutsu/BooruSlideshowElectron) port. It now runs on [Tauri](https://tauri.app/): the pages are in `frontend/` (the paths in this file are relative to it) and the native side is Rust, in `src-tauri/`.
+A desktop slideshow for booru sites: e621, Danbooru, Gelbooru, Rule34, Realbooru, Derpibooru, Tantabus and your own folders of images and videos. Search with tags, watch the results as a slideshow, keep favorites, save pools (comics), download, and work with hotkeys or a touch screen.
+
+It is based on version 10.6 of Chirmaya's [BooruSlideshow](https://github.com/Chirmaya/BooruSlideshow) browser extension and replaces the old [BooruSlideshowElectron](https://github.com/michutsu/BooruSlideshowElectron) port. **MSG runs on Windows only.**
 
 The name: MSG, monosodium glutamate, is food additive E621. The logo (`img/msg_logo.svg`, and `img/msg_logo_small.svg` for 32 px and below) is its structural formula, black on the light theme and white on the dark one.
 
-The extension's logic (`js/`) comes from the original. `js/tauri_shim.js` provides the `chrome.*` API calls it uses, on top of the Rust commands in `src-tauri/src/`:
+## Two versions
+
+Both are built from the same Rust package in `src-tauri/` and share `settings.json`, so favorites and settings are the same in either.
+
+| | MSG (`MSG.exe`) | MSG-native (`MSG-native.exe`) |
+|---|---|---|
+| Window | The extension's pages in the system's web view (Microsoft Edge WebView2), on [Tauri](https://tauri.app/) | Drawn with [egui](https://github.com/emilk/egui), no web view |
+| Features | Everything in this file | The main ones: search, slideshow, tags, favorites, pools, quick searches, downloads, offline copies, your folders, hotkeys, settings |
+| Left out | | Realbooru, joi, the glass/Refract effects, tag analysis, touch mode, "Find pools in favorites" |
+| Video | The web view's own player | [libmpv](https://mpv.io/), loaded at start (see below) |
+| Packaged as | Installer (`-setup.exe`, `.msi`) | A plain `.exe` |
+
+## Install
+
+Download from [Releases](../../releases).
+
+- **MSG**: the `-setup.exe` installer (or the `.msi`). MSG shows its pages with the system's web view instead of bundling a browser, so the packages are small. It needs Microsoft Edge WebView2, which Windows 11 has; the installer fetches it on Windows 10 if it is missing.
+- **MSG-native**: `MSG-native-windows-x64.exe`, no installer. Videos are played with libmpv: put `mpv-2.dll` (64-bit; for example from the `mpv-dev-lgpl-x86_64` package of [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild)) next to the exe. Without it everything else works and a video slide says the library is missing.
+
+Settings and favorites are kept in the user data folder `%APPDATA%\MSG`. They are not part of the packages, so a new computer starts empty. Features that are off by default (joi, the sort menu, Refract, offline copies) are turned on in the settings.
+
+## Running and building
+
+Requires [Rust](https://rustup.rs/), the Visual Studio C++ Build Tools and [Node.js](https://nodejs.org/). Close MSG before building, or the build fails.
+
+```
+npm install
+npm start                                   # MSG in debug mode
+npm run build                               # MSG alone: src-tauri/target/release/MSG.exe
+npm run tauri build                         # the installers too (src-tauri/target/release/bundle/)
+
+cd src-tauri
+cargo run --release --bin MSG-native        # MSG-native
+```
+
+The pages (`frontend/`) are inside the app, so restart it to see a change there. Pushing a tag like `v1.0.0` runs `.github/workflows/build.yml`, which builds the Windows packages and `MSG-native` on GitHub and attaches them to that release.
+
+## The web view version (MSG)
+
+The pages are in `frontend/`; paths such as `js/`, `css/` and `img/` in this file are relative to it. The extension's logic (`js/`) comes from the original. `js/tauri_shim.js` provides the `chrome.*` API calls it uses, on top of the Rust commands in `src-tauri/src/`:
 
 | Extension API | Replacement |
 |---|---|
@@ -66,46 +107,13 @@ These live in `js/app_settings.js`. It changes hotkeys by setting the key consta
 
 Fixed from the extension: the favorites page now loads the saved favorites, plays videos, runs the slideshow and preloads the next slides with thumbnails. A slide that fails to load no longer stops the slideshow on either page.
 
-## Native version (egui, no web view)
+## MSG-native
 
-`MSG-native` is the same app drawn with [egui](https://github.com/emilk/egui) instead of the web view: a simpler window with the search, slideshow, tags, favorites (import, filter, random, e621 sync), pools, quick searches and cards, downloads and offline copies, your folders, rebindable hotkeys and the settings. It reads and writes the same `settings.json`, so favorites and settings are shared. Left out: Realbooru, joi, the glass/Refract effects, tag analysis, touch mode.
+The same app drawn with egui instead of the web view: a simpler window with the search, slideshow, tags, favorites (import, filter, random, e621 sync), pools, quick searches and cards, downloads and offline copies, your folders, rebindable hotkeys and the settings. The site code (`src-tauri/src/native/sites.rs`) and the search state are ported from the JavaScript to Rust. It uses OpenGL (eframe's glow backend), because libmpv draws the video into it.
 
-```
-cd src-tauri
-cargo run --release --bin MSG-native
-```
+For testing, `MSG_SEARCH=<tags>` makes it search at start, and `MSG_SHOT=<file.png>` saves a screenshot after `MSG_SHOT_AFTER` seconds (default 12) and exits.
 
-Videos are played with [libmpv](https://mpv.io/), loaded when the program starts: put `mpv-2.dll` (Windows, 64-bit; for example from the `mpv-dev-lgpl-x86_64` package of [zhongfly/mpv-winbuild](https://github.com/zhongfly/mpv-winbuild)) next to `MSG-native.exe`. Without it everything else works and a video slide says the library is missing.
-
-## Running
-
-Requires [Rust](https://rustup.rs/) (on Windows also the Visual Studio C++ Build Tools) and [Node.js](https://nodejs.org/).
-```
-npm install
-npm start
-```
-
-The pages are inside the app, so restart it to see a change in `frontend/`.
-
-## Install
-
-Download a package from [Releases](../../releases). MSG shows its pages with the system's web view instead of bundling a browser, so the packages are small.
-
-- **Windows**: the `-setup.exe` installer (or the `.msi`). Needs Microsoft Edge WebView2, which Windows 11 has; the installer fetches it on Windows 10 if it is missing.
-MSG runs on Windows only; Linux and macOS packages are no longer built.
-
-Settings and favorites are kept in the user data folder `%APPDATA%\MSG`.
-
-## Building
-
-```
-npm run build        # the app alone: src-tauri/target/release/MSG.exe
-npm run tauri build  # the installers too (src-tauri/target/release/bundle/)
-```
-
-Pushing a tag like `v1.0.0` runs `.github/workflows/build.yml`, which builds the Windows packages on GitHub and attaches them to that release.
-
-## Fixed keys
+## Fixed keys (MSG)
 
 - F11: fullscreen (Esc exits)
 - Ctrl+R / F5: reload
@@ -122,6 +130,6 @@ MSG is based on version 10.6 of [BooruSlideshow](https://github.com/Chirmaya/Boo
 > Open license to copy/modify/etc. as long as you:
 > - Don't publish under the name "Booru Slideshow" (to reduce name confusion)
 
-That is why this app is called MSG and has its own icons. The license text and credits are also in Settings → About, along with michutsu's [BooruSlideshowElectron](https://github.com/michutsu/BooruSlideshowElectron) (the earlier Electron port; no code from it is used) [Tauri](https://tauri.app/) (MIT or Apache-2.0) with the Rust libraries under it, and [Libraries.dev](https://libraries.dev) by Jakub Antalik (MIT): the search bar's [border beam](https://libraries.dev/beam) (`css/vendor/border-beam.css`, the CSS the `border-beam` package generates) and the [thinking orb](https://libraries.dev/orbs) loading animation (`js/vendor/thinking-orbs-engine.js`, the `thinking-orbs` engine as a plain script, cut down to the searching orb, drawn by `js/loading_orb.js`). The Refract effects style (a test) uses the glass shader of [liquid-glass-js](https://github.com/dashersw/liquid-glass-js) by Armagan Amcalar (MIT), in `js/liquid_glass.js`. Their license text is at the top of those files.
+That is why this app is called MSG and has its own icons. The license text and credits are also in Settings → About, along with michutsu's [BooruSlideshowElectron](https://github.com/michutsu/BooruSlideshowElectron) (the earlier Electron port; no code from it is used) [Tauri](https://tauri.app/) (MIT or Apache-2.0) with the Rust libraries under it, and [Libraries.dev](https://libraries.dev) by Jakub Antalik (MIT): the search bar's [border beam](https://libraries.dev/beam) (`css/vendor/border-beam.css`, the CSS the `border-beam` package generates) and the [thinking orb](https://libraries.dev/orbs) loading animation (`js/vendor/thinking-orbs-engine.js`, the `thinking-orbs` engine as a plain script, cut down to the searching orb, drawn by `js/loading_orb.js`). MSG-native uses [egui](https://github.com/emilk/egui) and eframe (MIT or Apache-2.0) and, for video, loads [libmpv](https://mpv.io/) (LGPL-2.1 or later) at run time; it is not included in the packages. The Refract effects style (a test) uses the glass shader of [liquid-glass-js](https://github.com/dashersw/liquid-glass-js) by Armagan Amcalar (MIT), in `js/liquid_glass.js`. Their license text is at the top of those files.
 
 Settings and favorites saved before the rename (in `%APPDATA%/booruslideshowelectron`) are copied over on the first start.
