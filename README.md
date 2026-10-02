@@ -32,13 +32,24 @@ Videos are played with libmpv, loaded when the program starts: put `mpv-2.dll` (
 
 Settings and favorites are kept in `%APPDATA%\MSG\settings.json`. They are not part of the download, so a new computer starts empty. Settings saved before the rename (in `%APPDATA%\booruslideshowelectron`) are copied over on the first start.
 
+## Terminal version
+
+`msg-cli.exe` is a lighter MSG for the terminal: e621 searches and your favorites as a slideshow of pictures (no videos), with the same hotkeys, favorites (and e621 sync), tags, pools, downloads and quick searches. It reads and writes the same `settings.json`; the settings themselves are changed in the MSG window.
+
+```
+msg-cli [--sixel | --blocks] [tags…]
+```
+
+In Windows Terminal (1.22 or newer) the pictures are drawn with Sixel, at about the screen's own resolution in full screen (F11; U hides the bars), with up to 256 colours for every strip of three text rows. Other terminals get half blocks (two 24-bit colour pixels per character). `--sixel` and `--blocks` choose by hand. Press `?` for the keys. GIFs show their first frame.
+
 ## Building
 
 Requires [Rust](https://rustup.rs/) and the Visual Studio C++ Build Tools. Close MSG before building, or the build fails.
 
 ```
 cargo run --release     # run
-cargo build --release   # target/release/MSG.exe
+cargo build --release   # target/release/MSG.exe and msg-cli.exe
+cargo run --release --bin msg-cli -- <tags>
 cargo test
 ```
 

@@ -3,10 +3,16 @@ name = "msg"
 version = "2.0.2"
 description = "A slideshow for booru sites, based on the BooruSlideshow extension."
 edition = "2021"
+default-run = "MSG"
 
 [[bin]]
 name = "MSG"
 path = "src/main.rs"
+
+# The terminal version: e621 pictures as Sixel or half blocks (src/cli.rs, src/term.rs).
+[[bin]]
+name = "msg-cli"
+path = "src/cli.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -16,13 +22,16 @@ rand = "0.8"
 tokio = { version = "1", features = ["time", "rt-multi-thread", "sync", "fs"] }
 urlencoding = "2"
 eframe = { version = "0.36.2", default-features = false, features = ["glow", "default_fonts", "x11", "wayland", "accesskit"] }
-image = "0.25.10"
+# color_quant: dithering with NeuQuant (msg-cli's Sixel); the library is in the build anyway, for GIFs.
+image = { version = "0.25.10", features = ["color_quant"] }
 regex = "1.13.1"
 chrono = "0.4.45"
 rfd = "0.17.2"
 open = "5.4.4"
 roxmltree = "0.21.1"
 libloading = "0.9.0"
+crossterm = { version = "0.29", default-features = false, features = ["events", "windows"] }
+color_quant = "1.1"
 
 [profile.release]
 opt-level = "s"
