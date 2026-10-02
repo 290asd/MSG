@@ -4,7 +4,7 @@ use super::downloads::{self, Downloader};
 use super::favorites::{self, Favorites};
 use super::files;
 use super::hotkeys::Hotkeys;
-use super::media::{MediaCache, State};
+use super::media::{self, MediaCache, State};
 use super::session::{self, Engine, Msg, Search};
 use super::sites::Site;
 use super::video::Player;
@@ -787,7 +787,7 @@ impl App {
                 let (w, h) = (picture.size[0] as f32, picture.size[1] as f32);
                 let scale = if fit { (rect.width() / w).min(rect.height() / h) } else { 1.0f32.min(max_w / w).min(max_h / h) };
                 let image_rect = egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale));
-                ui.painter().image(frame.texture.id(), image_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+                media::paint(ui, image_rect, &frame.texture, picture.size);
                 if faved {
                     ui.painter().rect_stroke(image_rect, 0.0, egui::Stroke::new(2.0, Color32::from_rgb(230, 70, 90)), egui::StrokeKind::Outside);
                 }
@@ -1037,8 +1037,7 @@ fn thumb_source(url: &str) -> String {
 fn paint_fit(ui: &egui::Ui, rect: egui::Rect, texture: &egui::TextureHandle, size: [usize; 2]) {
     let (w, h) = (size[0] as f32, size[1] as f32);
     let scale = (rect.width() / w).min(rect.height() / h);
-    let r = egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale));
-    ui.painter().image(texture.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+    media::paint(ui, egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale)), texture, size);
 }
 
 fn category_color(category: &str, dark: bool) -> Color32 {

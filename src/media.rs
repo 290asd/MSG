@@ -2,11 +2,13 @@
 // textures when they arrive. A GIF keeps all its frames; the window picks the frame by time.
 use super::net;
 use super::session::Engine;
+use super::video;
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
+use eframe::glow::{self, HasContext};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 // Bigger pictures are shrunk: a GPU texture has a size limit (and 8K RGBA is 130 MB).
@@ -149,6 +151,55 @@ impl MediaCache {
             }
         }
     }
+}
+
+// A shrunk picture: every texel under a window pixel, averaged. The GPU's own filter reads only the 4 nearest,
+// so at under half the size it skips most of a thin line and the line comes out stair-stepped. (Mipmaps
+// fix that too, but blur the picture.)
+const SHRINK_SHADER: &str = "in vec2 uv;
+uniform sampler2D tex;
+uniform vec2 pixel;
+uniform int taps;
+out vec4 color;
+void main() {
+    vec2 corner = vec2(uv.x, 1.0 - uv.y) - pixel * 0.5;
+    vec4 sum = vec4(0.0);
+    for (int y = 0; y < taps; y++)
+        for (int x = 0; x < taps; x++)
+            sum += texture(tex, corner + pixel * (vec2(x, y) + 0.5) / float(taps));
+    color = sum / float(taps * taps);
+}";
+static SHRINK: OnceLock<Option<(glow::Program, glow::VertexArray)>> = OnceLock::new();
+
+/// Draws a picture into `rect`.
+pub fn paint(ui: &egui::Ui, rect: egui::Rect, texture: &TextureHandle, size: [usize; 2]) {
+    let texels_per_pixel = size[0] as f32 / (rect.width() * ui.ctx().pixels_per_point());
+    // Not shrunk, or the shader didn't compile: egui draws it.
+    if texels_per_pixel <= 1.0 || matches!(SHRINK.get(), Some(None)) {
+        ui.painter().image(texture.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+        return;
+    }
+    let (id, ctx) = (texture.id(), ui.ctx().clone());
+    let callback = eframe::egui_glow::CallbackFn::new(move |info, painter| {
+        let gl = painter.gl();
+        let Some((program, vao)) = *SHRINK.get_or_init(|| unsafe { Some((video::quad_program(gl, SHRINK_SHADER)?, gl.create_vertex_array().ok()?)) }) else {
+            return ctx.request_repaint();
+        };
+        let Some(texture) = painter.texture(id) else { return };
+        let vp = info.viewport_in_pixels();
+        let (w, h) = (vp.width_px.max(1) as f32, vp.height_px.max(1) as f32);
+        let taps = (size[0] as f32 / w).max(size[1] as f32 / h).ceil().clamp(1.0, 16.0) as i32;
+        unsafe {
+            gl.use_program(Some(program));
+            gl.bind_vertex_array(Some(vao));
+            gl.active_texture(glow::TEXTURE0);
+            gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+            gl.uniform_2_f32(gl.get_uniform_location(program, "pixel").as_ref(), 1.0 / w, 1.0 / h);
+            gl.uniform_1_i32(gl.get_uniform_location(program, "taps").as_ref(), taps);
+            gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
+        }
+    });
+    ui.painter().add(egui::PaintCallback { rect, callback: Arc::new(callback) });
 }
 
 fn decode(bytes: &[u8]) -> Result<Decoded, String> {

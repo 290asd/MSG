@@ -341,28 +341,34 @@ impl Player {
 
 unsafe fn init_blit(gl: &glow::Context, t: &mut Target) -> bool {
     unsafe {
+        t.program = quad_program(gl, "in vec2 uv;\nuniform sampler2D tex;\nout vec4 color;\nvoid main() { color = vec4(texture(tex, uv).rgb, 1.0); }");
+        t.vao = gl.create_vertex_array().ok();
+        t.program.is_some()
+    }
+}
+
+/// A program that covers the viewport with this fragment shader (`in vec2 uv`, 0..1 from the bottom left).
+pub unsafe fn quad_program(gl: &glow::Context, fragment: &str) -> Option<glow::Program> {
+    unsafe {
         let header = if gl.version().is_embedded { "#version 300 es\nprecision mediump float;\n" } else { "#version 330 core\n" };
-        let vertex = format!("{header}out vec2 uv;\nvoid main() {{ vec2 p = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1)); uv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }}");
-        let fragment = format!("{header}in vec2 uv;\nuniform sampler2D tex;\nout vec4 color;\nvoid main() {{ color = vec4(texture(tex, uv).rgb, 1.0); }}");
-        let Ok(program) = gl.create_program() else { return false };
+        let vertex = "out vec2 uv;\nvoid main() { vec2 p = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1)); uv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }";
+        let program = gl.create_program().ok()?;
         for (kind, source) in [(glow::VERTEX_SHADER, vertex), (glow::FRAGMENT_SHADER, fragment)] {
-            let Ok(shader) = gl.create_shader(kind) else { return false };
-            gl.shader_source(shader, &source);
+            let shader = gl.create_shader(kind).ok()?;
+            gl.shader_source(shader, &format!("{header}{source}"));
             gl.compile_shader(shader);
             if !gl.get_shader_compile_status(shader) {
-                eprintln!("video shader: {}", gl.get_shader_info_log(shader));
-                return false;
+                eprintln!("shader: {}", gl.get_shader_info_log(shader));
+                return None;
             }
             gl.attach_shader(program, shader);
         }
         gl.link_program(program);
         if !gl.get_program_link_status(program) {
-            eprintln!("video shader link: {}", gl.get_program_info_log(program));
-            return false;
+            eprintln!("shader link: {}", gl.get_program_info_log(program));
+            return None;
         }
-        t.program = Some(program);
-        t.vao = gl.create_vertex_array().ok();
-        true
+        Some(program)
     }
 }
 
