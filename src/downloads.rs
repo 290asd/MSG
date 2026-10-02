@@ -59,7 +59,7 @@ impl Downloader {
 
     fn say(engine: &Engine, tx: &Sender<Msg>, text: String) {
         let _ = tx.send(Msg::Notice(text));
-        engine.ctx.request_repaint();
+        engine.wake();
     }
 
     /// <download folder>/downloads/<name>, overwriting.
@@ -170,7 +170,7 @@ impl Downloader {
                 std::mem::take(&mut a.again)
             };
             let _ = tx.send(Msg::Downloaded(status));
-            engine.ctx.request_repaint();
+            engine.wake();
             if again {
                 this.schedule(Duration::from_secs(1));
             }

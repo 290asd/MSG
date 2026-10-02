@@ -137,8 +137,8 @@ pub fn sync_e621(engine: &Engine, tx: &Sender<Msg>, slide: &Slide, faved: bool) 
     }
     let (Some(login), Some(key)) = (store.string("e621Login"), store.string("e621ApiKey")) else { return };
     let id = super::slide::id_text(&slide.id);
-    let (client, tx, ctx) = (engine.client.clone(), tx.clone(), engine.ctx.clone());
-    engine.rt.spawn(async move {
+    let (client, tx, engine) = (engine.client.clone(), tx.clone(), engine.clone());
+    engine.rt.clone().spawn(async move {
         let request = if faved {
             client.post("https://e621.net/favorites.json").form(&[("post_id", id.as_str())])
         } else {
@@ -152,7 +152,7 @@ pub fn sync_e621(engine: &Engine, tx: &Sender<Msg>, slide: &Slide, faved: bool) 
             Err(_) => format!("Couldn't reach e621 to {} the post.", if faved { "fave" } else { "unfave" }),
         };
         let _ = tx.send(Msg::Notice(message));
-        ctx.request_repaint();
+        engine.wake();
     });
 }
 
@@ -185,7 +185,7 @@ pub fn import(engine: &Engine, tx: Sender<Msg>) {
             let mut all: Vec<Slide> = vec![];
             while !cursor.exhausted {
                 let _ = tx.send(Msg::Progress(format!("{}: loading page {} ({} favorites so far)", site.name(), cursor.page + 1, all.len())));
-                engine.ctx.request_repaint();
+                engine.wake();
                 let Some(url) = sites::request_url(&cfg, &cursor, &query) else { break };
                 match net::get_text(&engine.client, &store, &url).await.and_then(|body| sites::parse(&cfg, site, &body)) {
                     Ok((mut slides, count)) => {
@@ -204,10 +204,10 @@ pub fn import(engine: &Engine, tx: Sender<Msg>) {
             // Sites list favorites newest first; the list keeps the newest last.
             all.reverse();
             let _ = tx.send(Msg::Imported { site: site.name().into(), slides: all });
-            engine.ctx.request_repaint();
+            engine.wake();
         }
         let _ = tx.send(Msg::Progress(String::new()));
-        engine.ctx.request_repaint();
+        engine.wake();
     });
 }
 

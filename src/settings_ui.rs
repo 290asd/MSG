@@ -406,10 +406,7 @@ impl App {
     }
 
     pub fn save_pool(&mut self, id: u64, name: String, count: usize, cover: String) {
-        let mut pools: Vec<Value> = self.store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default();
-        pools.retain(|p| p["id"].as_u64() != Some(id));
-        pools.push(json!({"id": id, "name": name, "count": count, "cover": cover}));
-        self.set("savedPools", Value::Array(pools));
+        super::session::save_pool(&self.store, id, &name, count, &cover);
         self.notice(format!("Saved the pool “{name}”."));
         self.settings_changed();
     }

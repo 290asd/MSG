@@ -86,7 +86,8 @@ pub struct App {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, rt: tokio::runtime::Runtime, store: Arc<Store>) -> App {
         let (tx, rx) = channel();
-        let engine = Engine { rt: rt.handle().clone(), client: super::net::client(), store: store.clone(), ctx: cc.egui_ctx.clone() };
+        let ctx = cc.egui_ctx.clone();
+        let engine = Engine { rt: rt.handle().clone(), client: super::net::client(), store: store.clone(), wake: Arc::new(move || ctx.request_repaint()) };
         let downloader = Downloader::new(engine.clone(), tx.clone());
         let mut app = App {
             rt,
@@ -745,7 +746,7 @@ impl App {
     fn tags_panel(&mut self, ui: &mut egui::Ui, slide: &Slide) {
         let mut clicked: Option<String> = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
-            let groups = tag_groups(slide);
+            let groups = super::slide::tag_groups(slide);
             for (category, tags) in groups {
                 if !category.is_empty() {
                     ui.label(RichText::new(&category).strong());
@@ -906,7 +907,7 @@ impl App {
                 self.engine.rt.spawn(async move {
                     if let Some(slide) = session::first_slide(&engine, sites, &tags).await {
                         let _ = tx.send(Msg::Cover { index: n, slide });
-                        engine.ctx.request_repaint();
+                        engine.wake();
                     }
                 });
             }
@@ -1038,25 +1039,6 @@ fn paint_fit(ui: &egui::Ui, rect: egui::Rect, texture: &egui::TextureHandle, siz
     let scale = (rect.width() / w).min(rect.height() / h);
     let r = egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale));
     ui.painter().image(texture.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
-}
-
-/// (category, tags): by category in e621's order when the site gave them, else one list.
-fn tag_groups(slide: &Slide) -> Vec<(String, Vec<String>)> {
-    const ORDER: [&str; 9] = ["artist", "copyright", "character", "species", "general", "meta", "lore", "invalid", "contributor"];
-    match &slide.tag_groups {
-        Some(groups) if groups.values().any(|v| v.as_array().is_some_and(|a| !a.is_empty())) => {
-            let mut names: Vec<&String> = groups.keys().collect();
-            names.sort_by_key(|n| ORDER.iter().position(|o| o == n).unwrap_or(99));
-            names
-                .into_iter()
-                .filter_map(|n| {
-                    let tags: Vec<String> = groups[n].as_array()?.iter().filter_map(|t| t.as_str().map(String::from)).collect();
-                    (!tags.is_empty()).then(|| (n.clone(), tags))
-                })
-                .collect()
-        }
-        _ => vec![(String::new(), slide.tags.split_whitespace().map(String::from).collect())],
-    }
 }
 
 fn category_color(category: &str, dark: bool) -> Color32 {

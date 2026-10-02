@@ -116,7 +116,7 @@ impl MediaCache {
                 Err(e) => Err(e),
             };
             let _ = tx.send((url, result));
-            engine.ctx.request_repaint();
+            engine.wake();
         });
     }
 

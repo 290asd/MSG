@@ -13,12 +13,19 @@ use std::collections::HashSet;
 use std::sync::{mpsc::Sender, Arc};
 
 /// Shared by everything that talks to the network: the runtime the work runs on, the client and the settings.
+/// `wake` tells the window (or the terminal) that something arrived; the shared code knows nothing of egui.
 #[derive(Clone)]
 pub struct Engine {
     pub rt: tokio::runtime::Handle,
     pub client: Client,
     pub store: Arc<Store>,
-    pub ctx: eframe::egui::Context,
+    pub wake: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl Engine {
+    pub fn wake(&self) {
+        (self.wake)()
+    }
 }
 
 pub fn config(store: &Store) -> Config {
@@ -79,7 +86,7 @@ pub struct Search {
     pub loading: bool,
     // Held here while idle; moved into the task while a page is being read.
     cursors: Vec<Cursor>,
-    cfg: Config,
+    pub cfg: Config,
     seen: HashSet<String>,
     include_dupes: bool,
 }
@@ -134,7 +141,7 @@ impl Search {
                 }
             }
             let _ = tx.send(Msg::Batch(Batch { generation, cursors, slides, warnings }));
-            engine.ctx.request_repaint();
+            engine.wake();
         });
     }
 
@@ -254,6 +261,15 @@ pub async fn first_slide(engine: &Engine, sites: Vec<Site>, text: &str) -> Optio
         }
     }
     None
+}
+
+/// Adds the pool to settings.json → savedPools (last, as the newest; once).
+pub fn save_pool(store: &Arc<Store>, id: u64, name: &str, count: usize, cover: &str) {
+    let mut pools: Vec<Value> = store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+    pools.retain(|p| p["id"].as_u64() != Some(id));
+    pools.push(serde_json::json!({"id": id, "name": name, "count": count, "cover": cover}));
+    store.data.lock().unwrap().insert("savedPools".into(), Value::Array(pools));
+    store.save();
 }
 
 fn parse_pool(body: &str) -> Option<Pool> {

@@ -64,6 +64,25 @@ impl Slide {
     }
 }
 
+/// (category, tags): by category in e621's order when the site gave them, else one list.
+pub fn tag_groups(slide: &Slide) -> Vec<(String, Vec<String>)> {
+    const ORDER: [&str; 9] = ["artist", "copyright", "character", "species", "general", "meta", "lore", "invalid", "contributor"];
+    match &slide.tag_groups {
+        Some(groups) if groups.values().any(|v| v.as_array().is_some_and(|a| !a.is_empty())) => {
+            let mut names: Vec<&String> = groups.keys().collect();
+            names.sort_by_key(|n| ORDER.iter().position(|o| o == n).unwrap_or(99));
+            names
+                .into_iter()
+                .filter_map(|n| {
+                    let tags: Vec<String> = groups[n].as_array()?.iter().filter_map(|t| t.as_str().map(String::from)).collect();
+                    (!tags.is_empty()).then(|| (n.clone(), tags))
+                })
+                .collect()
+        }
+        _ => vec![(String::new(), slide.tags.split_whitespace().map(String::from).collect())],
+    }
+}
+
 pub fn id_text(id: &Value) -> String {
     match id {
         Value::String(s) => s.clone(),
