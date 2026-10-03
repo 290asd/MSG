@@ -37,7 +37,8 @@ use term::{Area, Cache, Output, State};
 const USAGE: &str = "msg-cli [--sixel | --blocks] [tags…]
 
 A slideshow of e621 pictures in the terminal. Settings and favorites are shared with MSG
-(%APPDATA%\\MSG\\settings.json). Sixel is used in Windows Terminal, half blocks elsewhere.
+(%APPDATA%\\MSG\\settings.json). Sixel is used when the terminal says it draws it (Windows Terminal does),
+half blocks elsewhere.
 Press ? in the program for the keys.";
 /// The picture on the screen and the next ones are loaded and drawn ahead.
 const AHEAD: usize = 4;
@@ -125,20 +126,21 @@ fn main() {
             _ => words.push(arg),
         }
     }
-    // Windows Terminal (WT_SESSION) draws Sixel; others get half blocks.
-    let output = output.unwrap_or(if std::env::var_os("WT_SESSION").is_some() { Output::Sixel } else { Output::Blocks });
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("async runtime");
     let store = Store::load(files::user_data(), files::legacy_dir());
-    let mut cli = Cli::new(rt.handle().clone(), store.clone(), output);
-    if !words.is_empty() {
-        cli.start_search(&words.join(" "));
-    }
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         restore();
         default_hook(info);
     }));
-    let result = terminal::enable_raw_mode().and_then(|_| execute!(io::stdout(), EnterAlternateScreen, Hide, EnableMouseCapture)).and_then(|_| cli.run());
+    let result = terminal::enable_raw_mode().and_then(|_| {
+        let mut cli = Cli::new(rt.handle().clone(), store.clone(), output.unwrap_or_else(detect_output));
+        if !words.is_empty() {
+            cli.start_search(&words.join(" "));
+        }
+        execute!(io::stdout(), EnterAlternateScreen, Hide, EnableMouseCapture)?;
+        cli.run()
+    });
     restore();
     store.flush();
     if let Err(e) = result {
@@ -149,6 +151,39 @@ fn main() {
 fn restore() {
     let _ = execute!(io::stdout(), DisableMouseCapture, Show, LeaveAlternateScreen);
     let _ = terminal::disable_raw_mode();
+}
+
+/// Asks the terminal (in raw mode) whether it draws Sixel. A program started by double-clicking is handed to
+/// Windows Terminal without WT_SESSION, so the terminal's own answer decides; that is the guess only when it
+/// doesn't answer in half a second.
+fn detect_output() -> Output {
+    let _ = execute!(io::stdout(), Print("\x1b[c"));
+    let deadline = Instant::now() + Duration::from_millis(500);
+    let mut answer = String::new();
+    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+        if !event::poll(left).unwrap_or(false) {
+            break;
+        }
+        // The answer comes as keys: Esc, then "[?61;4;…c".
+        if let Ok(Event::Key(KeyEvent { code: KeyCode::Char(c), kind: KeyEventKind::Press, .. })) = event::read() {
+            answer.push(c);
+            if c == 'c' {
+                break;
+            }
+        }
+    }
+    match sixel_in(&answer) {
+        Some(true) => Output::Sixel,
+        Some(false) => Output::Blocks,
+        None if std::env::var_os("WT_SESSION").is_some() => Output::Sixel,
+        None => Output::Blocks,
+    }
+}
+
+/// Whether a Primary Device Attributes answer ("[?61;4;6c") lists 4, Sixel graphics; None when it isn't one.
+fn sixel_in(answer: &str) -> Option<bool> {
+    let params = answer.strip_prefix("[?")?.strip_suffix('c')?;
+    Some(params.split(';').skip(1).any(|p| p == "4"))
 }
 
 impl Cli {
@@ -932,5 +967,14 @@ mod tests {
         assert_eq!(key(KeyCode::Left, KeyModifiers::NONE), Some(37));
         assert_eq!(key(KeyCode::Char(' '), KeyModifiers::NONE), Some(32));
         assert_eq!(key(KeyCode::Char('?'), KeyModifiers::SHIFT), None);
+    }
+
+    #[test]
+    fn sixel_from_the_terminals_answer() {
+        // Windows Terminal's answer, xterm's without Sixel, and no answer.
+        assert_eq!(sixel_in("[?61;4;6;7;14;21;22;23;24;28;32;42c"), Some(true));
+        assert_eq!(sixel_in("[?1;2c"), Some(false));
+        assert_eq!(sixel_in("[?4c"), Some(false));
+        assert_eq!(sixel_in(""), None);
     }
 }
