@@ -74,7 +74,7 @@ pub struct App {
     pub notices: Vec<(String, Instant)>,
     pub progress: String,
     pub recording: Option<(String, usize)>,
-    pub pool_sort: String,
+    pub pool_filter: String,
     pub video: Option<Player>,
     covers: HashMap<usize, Slide>,
     covers_asked: bool,
@@ -119,7 +119,7 @@ impl App {
             notices: vec![],
             progress: String::new(),
             recording: None,
-            pool_sort: "added".into(),
+            pool_filter: String::new(),
             video: None,
             covers: HashMap::new(),
             covers_asked: false,
@@ -240,6 +240,7 @@ impl App {
 
     pub fn start_search(&mut self, text: &str) {
         self.mode = Mode::Slideshow;
+        self.show_pools = false;
         self.generation += 1;
         let text = text.trim();
         self.query = text.to_string();
@@ -371,6 +372,7 @@ impl App {
 
     pub fn open_favorites(&mut self, on: bool) {
         self.mode = if on { Mode::Favorites } else { Mode::Slideshow };
+        self.show_pools = false;
         self.shown_at = None;
         if on {
             self.rebuild_favorites();
@@ -416,7 +418,9 @@ impl App {
             "home" => {
                 self.mode = Mode::Slideshow;
                 self.search = None;
+                self.show_pools = false;
             }
+            "openPools" => self.show_pools = !self.show_pools,
             _ => {}
         }
         ctx.request_repaint();
@@ -484,7 +488,8 @@ impl App {
     }
 
     fn tick(&mut self, ctx: &egui::Context) {
-        let current = self.current();
+        // The pools page covers the slideshow: the video stops and the slide's clock starts over afterwards.
+        let current = if self.show_pools { None } else { self.current() };
         let wanted = current.as_ref().filter(|s| s.media_type == MediaType::Video).map(|s| self.copies_or(&s.file_url));
         self.sync_video(wanted);
         let Some(slide) = current else {
@@ -558,12 +563,15 @@ impl App {
             if ui.button("🏠").on_hover_text("Front page").clicked() {
                 self.act(&ui.ctx().clone(), "home");
             }
-            if self.mode == Mode::Slideshow {
+            if self.mode == Mode::Slideshow && !self.show_pools {
                 self.sites_menu(ui);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("⚙").clicked() {
                     self.show_settings = !self.show_settings;
+                }
+                if self.show_pools {
+                    return self.pools_bar(ui);
                 }
                 let label = if self.mode == Mode::Favorites { "◀ Slideshow" } else { "♥ Favorites" };
                 if ui.button(label).clicked() {
@@ -581,7 +589,7 @@ impl App {
     /// Right to left (see top_bar).
     fn search_bar(&mut self, ui: &mut egui::Ui) {
         if ui.button("📚 Pools").clicked() {
-            self.show_pools = !self.show_pools;
+            self.show_pools = true;
         }
         if let Some(pool) = self.search.as_ref().and_then(|s| s.pool()) {
             if ui.button("☆ Save pool").clicked() {
@@ -1071,7 +1079,7 @@ fn thumb_source(url: &str) -> String {
     url.to_string()
 }
 
-fn paint_fit(ui: &egui::Ui, rect: egui::Rect, texture: &egui::TextureHandle, size: [usize; 2]) {
+pub fn paint_fit(ui: &egui::Ui, rect: egui::Rect, texture: &egui::TextureHandle, size: [usize; 2]) {
     let (w, h) = (size[0] as f32, size[1] as f32);
     let scale = (rect.width() / w).min(rect.height() / h);
     media::paint(ui, egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale)), texture, size);
@@ -1100,21 +1108,27 @@ impl eframe::App for App {
         self.tick(&ctx);
         self.preload();
 
-        if self.show_controls {
+        // The pools page takes the whole window below the bar.
+        if self.show_controls || self.show_pools {
             egui::Panel::top("bar").show(ui, |ui| self.top_bar(ui));
-            egui::Panel::bottom("controls").show(ui, |ui| self.controls(ui));
         }
-        if self.show_tags {
-            if let Some(slide) = self.current() {
-                egui::Panel::right("tags").default_size(220.0).show(ui, |ui| self.tags_panel(ui, &slide));
+        if self.show_pools {
+            egui::CentralPanel::default().show(ui, |ui| self.pools_page(ui));
+        } else {
+            if self.show_controls {
+                egui::Panel::bottom("controls").show(ui, |ui| self.controls(ui));
             }
+            if self.show_tags {
+                if let Some(slide) = self.current() {
+                    egui::Panel::right("tags").default_size(220.0).show(ui, |ui| self.tags_panel(ui, &slide));
+                }
+            }
+            egui::CentralPanel::default().show(ui, |ui| self.viewer(ui));
         }
-        egui::CentralPanel::default().show(ui, |ui| self.viewer(ui));
 
         self.test_hook(&ctx);
         self.test_script(&ctx);
         self.settings_window(&ctx);
-        self.pools_window(&ctx);
         self.toasts(&ctx);
     }
 

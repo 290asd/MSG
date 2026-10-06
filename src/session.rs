@@ -272,6 +272,17 @@ pub fn save_pool(store: &Arc<Store>, id: u64, name: &str, count: usize, cover: &
     store.save();
 }
 
+/// The saved pools in the order chosen (poolsSort): newest saved first, by name or most pages first.
+pub fn saved_pools(store: &Store) -> Vec<Value> {
+    let mut pools: Vec<Value> = store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+    match store.string("poolsSort").as_deref() {
+        Some("name") => pools.sort_by_key(|p| p["name"].as_str().unwrap_or("").to_lowercase()),
+        Some("pages") => pools.sort_by_key(|p| std::cmp::Reverse(p["count"].as_u64().unwrap_or(0))),
+        _ => pools.reverse(),
+    }
+    pools
+}
+
 fn parse_pool(body: &str) -> Option<Pool> {
     let v: Value = serde_json::from_str(body).ok()?;
     Some(Pool {
@@ -310,5 +321,19 @@ mod tests {
     fn pool_json() {
         let pool = parse_pool(r#"{"id":5,"name":"a_b","post_ids":[3,1,2]}"#).unwrap();
         assert_eq!((pool.name.as_str(), pool.post_ids), ("a b", vec![3, 1, 2]));
+    }
+
+    #[test]
+    fn saved_pools_order() {
+        let store = Store::load(std::env::temp_dir().join("msg-native-pools"), std::env::temp_dir().join("msg-native-pools-legacy"));
+        let pools = serde_json::json!([{"id": 1, "name": "b", "count": 9}, {"id": 2, "name": "A", "count": 5}, {"id": 3, "name": "c", "count": 7}]);
+        store.data.lock().unwrap().insert("savedPools".into(), pools);
+        let order = |sort: &str| {
+            store.data.lock().unwrap().insert("poolsSort".into(), Value::from(sort));
+            saved_pools(&store).iter().filter_map(|p| p["id"].as_u64()).collect::<Vec<_>>()
+        };
+        assert_eq!(order("added"), [3, 2, 1]);
+        assert_eq!(order("name"), [2, 1, 3]);
+        assert_eq!(order("pages"), [1, 3, 2]);
     }
 }

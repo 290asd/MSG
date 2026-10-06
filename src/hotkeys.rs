@@ -15,7 +15,7 @@ pub struct Action {
     pub defaults: &'static [u32],
 }
 
-pub const ACTIONS: [Action; 16] = [
+pub const ACTIONS: [Action; 17] = [
     Action { id: "previous", label: "Previous", defaults: &[37, 65] },
     Action { id: "next", label: "Next", defaults: &[39, 68] },
     Action { id: "back10", label: "Back 10", defaults: &[87] },
@@ -31,6 +31,7 @@ pub const ACTIONS: [Action; 16] = [
     Action { id: "setBackground", label: "Use the image as background", defaults: &[CTRL + 76] },
     Action { id: "showInterface", label: "Show / hide the controls", defaults: &[85] },
     Action { id: "home", label: "Front page", defaults: &[36] },
+    Action { id: "openPools", label: "Saved pools", defaults: &[80] },
     Action { id: "addToAnalysis", label: "Add to the tag analysis", defaults: &[67] },
 ];
 

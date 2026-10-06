@@ -1,10 +1,15 @@
-// The settings window and the saved pools window.
+// The settings window and the saved pools page.
 use super::app::{App, Tab};
 use super::hotkeys::{self, ACTIONS};
 use super::media::State;
 use super::sites::Site;
 use eframe::egui::{self, RichText, Vec2};
 use serde_json::{json, Value};
+
+/// A pool on the pools page: the cover, and the name and page count under it.
+const POOL_TILE: Vec2 = Vec2::new(160.0, 270.0);
+const POOL_COVER: f32 = 210.0;
+const POOL_GAP: f32 = 14.0;
 
 const TABS: [(Tab, &str); 10] = [
     (Tab::Appearance, "Appearance"),
@@ -411,66 +416,83 @@ impl App {
         self.settings_changed();
     }
 
-    pub fn pools_window(&mut self, ctx: &egui::Context) {
-        if !self.show_pools {
+    /// The pools page's part of the top bar, right to left (see top_bar).
+    pub fn pools_bar(&mut self, ui: &mut egui::Ui) {
+        if ui.button("◀ Back").clicked() {
+            self.show_pools = false;
+        }
+        let sort = self.text("poolsSort");
+        let names = [("added", "Recently added"), ("name", "Name"), ("pages", "Most pages")];
+        let label = names.iter().find(|(v, _)| *v == sort).map_or("Recently added", |(_, n)| *n);
+        egui::ComboBox::from_id_salt("poolsort").selected_text(label).show_ui(ui, |ui| {
+            for (value, name) in names {
+                if ui.selectable_label(label == name, name).clicked() {
+                    self.set("poolsSort", json!(value));
+                }
+            }
+        });
+        ui.add(egui::TextEdit::singleline(&mut self.pool_filter).hint_text("Filter pools by name…").desired_width(f32::INFINITY));
+    }
+
+    /// The saved pools as covers that fill the window. Only the rows on the screen are drawn (and their covers
+    /// loaded). A click opens the pool, × (on hover) removes it.
+    pub fn pools_page(&mut self, ui: &mut egui::Ui) {
+        let words: Vec<String> = self.pool_filter.to_lowercase().split_whitespace().map(String::from).collect();
+        let mut pools = super::session::saved_pools(&self.store);
+        pools.retain(|p| {
+            let name = p["name"].as_str().unwrap_or("").to_lowercase();
+            words.iter().all(|w| name.contains(w.as_str()))
+        });
+        let rect = ui.available_rect_before_wrap();
+        if pools.is_empty() {
+            let text = if words.is_empty() { "No saved pools. Search pool:<number> (or paste a pool link) and press ☆ Save pool." } else { "No pools match." };
+            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), egui::Color32::GRAY);
             return;
         }
-        let mut open = true;
-        let mut pools: Vec<Value> = self.store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default();
-        let mut go = None;
-        let mut remove = None;
-        egui::Window::new("Pools").open(&mut open).default_size([560.0, 480.0]).show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Sort");
-                for (value, name) in [("added", "Recently added"), ("name", "Name"), ("pages", "Most pages")] {
-                    if ui.radio(self.pool_sort == value, name).clicked() {
-                        self.pool_sort = value.into();
-                        self.set("poolsSort", json!(value));
-                    }
-                }
-            });
-            match self.pool_sort.as_str() {
-                "name" => pools.sort_by_key(|p| p["name"].as_str().unwrap_or("").to_lowercase()),
-                "pages" => pools.sort_by_key(|p| std::cmp::Reverse(p["count"].as_u64().unwrap_or(0))),
-                _ => pools.reverse(),
-            }
-            if pools.is_empty() {
-                ui.label("No saved pools. Search pool:<number> (or paste a pool link) and press ☆ Save pool.");
-            }
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for pool in &pools {
-                    let id = pool["id"].as_u64().unwrap_or(0);
-                    ui.horizontal(|ui| {
-                        let cover = pool["cover"].as_str().unwrap_or("").to_string();
-                        let cover = super::downloads::display_url(&self.copies, &cover);
+        // The scroll bar's room is left out; the columns are centred.
+        let width = rect.width() - 16.0;
+        let columns = ((width + POOL_GAP) / (POOL_TILE.x + POOL_GAP)).floor().max(1.0) as usize;
+        let margin = ((width + POOL_GAP - columns as f32 * (POOL_TILE.x + POOL_GAP)) / 2.0).max(0.0);
+        let (mut go, mut remove) = (None, None);
+        ui.spacing_mut().item_spacing = Vec2::splat(POOL_GAP);
+        egui::ScrollArea::vertical().id_salt("pools").auto_shrink(false).show_rows(ui, POOL_TILE.y, pools.len().div_ceil(columns), |ui, rows| {
+            for row in pools.chunks(columns).skip(rows.start).take(rows.len()) {
+                ui.horizontal(|ui| {
+                    ui.add_space(margin);
+                    for pool in row {
+                        let id = pool["id"].as_u64().unwrap_or(0);
+                        let name = pool["name"].as_str().unwrap_or("?");
+                        let (tile, response) = ui.allocate_exact_size(POOL_TILE, egui::Sense::click());
+                        let cover_rect = egui::Rect::from_min_size(tile.min, Vec2::new(POOL_TILE.x, POOL_COVER));
+                        let hovered = ui.rect_contains_pointer(tile);
+                        ui.painter().rect_filled(cover_rect, 6.0, ui.visuals().extreme_bg_color);
+                        let cover = super::downloads::display_url(&self.copies, pool["cover"].as_str().unwrap_or(""));
                         self.media.request(&self.engine, &cover);
-                        let (rect, response) = ui.allocate_exact_size(Vec2::new(72.0, 96.0), egui::Sense::click());
-                        ui.painter().rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
                         if let Some(State::Ready(p)) = self.media.get(&cover) {
-                            let (w, h) = (p.size[0] as f32, p.size[1] as f32);
-                            let scale = (rect.width() / w).min(rect.height() / h);
-                            let r = egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale));
-                            ui.painter().image(p.frames[0].texture.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                            super::app::paint_fit(ui, cover_rect, &p.frames[0].texture, p.size);
                         }
-                        if response.clicked() {
+                        if hovered {
+                            ui.painter().rect_stroke(cover_rect, 6.0, egui::Stroke::new(2.0, ui.visuals().selection.bg_fill), egui::StrokeKind::Outside);
+                        }
+                        // The name on two rows at most, the page count under it.
+                        let mut job = egui::text::LayoutJob::simple(name.to_string(), egui::FontId::proportional(13.0), ui.visuals().strong_text_color(), POOL_TILE.x);
+                        job.wrap.max_rows = 2;
+                        let galley = ui.painter().layout_job(job);
+                        ui.painter().galley(egui::pos2(tile.left(), cover_rect.bottom() + 6.0), galley, ui.visuals().text_color());
+                        let pages = format!("{} pages", pool["count"].as_u64().unwrap_or(0));
+                        ui.painter().text(tile.left_bottom(), egui::Align2::LEFT_BOTTOM, pages, egui::FontId::proportional(12.0), egui::Color32::GRAY);
+                        if hovered {
+                            let corner = egui::Rect::from_min_size(egui::pos2(cover_rect.right() - 30.0, cover_rect.top() + 6.0), Vec2::splat(24.0));
+                            if ui.put(corner, egui::Button::new("×")).on_hover_text("Remove from the saved pools").clicked() {
+                                remove = Some(id);
+                            }
+                        }
+                        if response.on_hover_text(name).clicked() {
                             go = Some(id);
                         }
-                        ui.vertical(|ui| {
-                            ui.label(RichText::new(pool["name"].as_str().unwrap_or("?")).strong());
-                            ui.label(format!("{} pages", pool["count"].as_u64().unwrap_or(0)));
-                            ui.horizontal(|ui| {
-                                if ui.button("Open").clicked() {
-                                    go = Some(id);
-                                }
-                                if ui.button("Remove").clicked() {
-                                    remove = Some(id);
-                                }
-                            });
-                        });
-                    });
-                    ui.separator();
-                }
-            });
+                    }
+                });
+            }
         });
         if let Some(id) = remove {
             let mut all: Vec<Value> = self.store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default();
@@ -478,11 +500,7 @@ impl App {
             self.set("savedPools", Value::Array(all));
         }
         if let Some(id) = go {
-            self.show_pools = false;
             self.start_search(&format!("pool:{id}"));
-        }
-        if !open {
-            self.show_pools = false;
         }
     }
 }

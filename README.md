@@ -17,7 +17,7 @@ The name: MSG, monosodium glutamate, is food additive E621. The logo (`img/msg_l
 - **Slideshow** with automatic advance, preloading of the next slides, a strip of the next slides, and the tags of the current image grouped by category. Clicking a tag searches for it.
 - **Your folders**: browse your own images and videos as a site. The search words filter by folder and file name (`-word` leaves out).
 - **Favorites**: import them from e621, Derpibooru and Gelbooru, filter by tag or site, show them in random order, and keep e621 favorites in sync.
-- **e621 pools** (comics): search `pool:17870` or paste a pool link, save pools and open them from a list of covers.
+- **e621 pools** (comics): search `pool:17870` or paste a pool link and save the pool. The Pools page (📚 Pools or P) fills the window with the saved pools' covers, with a name filter and sorting; click a cover to read the pool.
 - **Downloads** of the image or video on the screen, of all favorites, and in the background as offline copies of the favorites and saved pools that are used instead of the site when they are on the disk.
 - **Video** through [libmpv](https://mpv.io/) (see below).
 - **Rebindable hotkeys** and a settings window with sections for appearance, sites and accounts, slideshow, filtering, hotkeys, folders, favorites, quick searches and history.

@@ -452,6 +452,7 @@ impl Cli {
                 self.mode = Mode::Slideshow;
                 self.search = None;
             }
+            "openPools" => self.open_picker(Pick::Pools, 0),
             _ => {}
         }
     }
@@ -532,12 +533,7 @@ impl Cli {
         let (title, items): (&'static str, Vec<(String, String)>) = match pick {
             Pick::History => ("Search history", self.history().into_iter().rev().map(|h| (h.clone(), h)).collect()),
             Pick::Pools => {
-                let mut pools: Vec<Value> = self.engine.store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default();
-                match self.text("poolsSort").as_str() {
-                    "name" => pools.sort_by_key(|p| p["name"].as_str().unwrap_or("").to_lowercase()),
-                    "pages" => pools.sort_by_key(|p| std::cmp::Reverse(p["count"].as_u64().unwrap_or(0))),
-                    _ => pools.reverse(),
-                }
+                let pools = session::saved_pools(&self.engine.store);
                 let items = pools.iter().map(|p| (format!("{}  ({} pages)", p["name"].as_str().unwrap_or("?"), p["count"].as_u64().unwrap_or(0)), p["id"].as_u64().unwrap_or(0).to_string())).collect();
                 ("Saved pools", items)
             }
