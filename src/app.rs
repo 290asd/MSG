@@ -301,6 +301,16 @@ impl App {
                     self.refresh_copies();
                     self.notice(status);
                 }
+                Msg::Pools(found) => {
+                    let mut pools: Vec<Value> = self.store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+                    for pool in found {
+                        if !pools.iter().any(|p| p["id"] == pool["id"]) {
+                            pools.push(pool);
+                        }
+                    }
+                    self.set("savedPools", Value::Array(pools));
+                    self.settings_changed();
+                }
             }
         }
     }

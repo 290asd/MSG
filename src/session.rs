@@ -70,6 +70,8 @@ pub enum Msg {
     Downloaded(String),
     /// The first result of a quick search, for its card on the front page.
     Cover { index: usize, slide: Slide },
+    /// Find pools in favorites: the pools that weren't saved yet.
+    Pools(Vec<Value>),
 }
 
 pub struct Batch {
@@ -281,6 +283,81 @@ pub fn saved_pools(store: &Store) -> Vec<Value> {
         _ => pools.reverse(),
     }
     pools
+}
+
+/// Find pools in favorites: the e621 pools that the e621 favorites (`favorites`, post ids) are in and that
+/// aren't in `saved`. Read-only on e621; the window adds them (Msg::Pools).
+pub fn find_pools(engine: &Engine, tx: Sender<Msg>, favorites: Vec<String>, saved: Vec<u64>) {
+    if engine.store.flag("offlineMode") {
+        let _ = tx.send(Msg::Notice("Offline mode is on.".into()));
+        return;
+    }
+    if favorites.is_empty() {
+        let _ = tx.send(Msg::Notice("There are no e621 favorites to look in.".into()));
+        return;
+    }
+    // At once, so the button is off before the first answer.
+    let _ = tx.send(Msg::Progress("Checking favorites…".into()));
+    let engine = engine.clone();
+    engine.rt.clone().spawn(async move {
+        let text = match pools_of(&engine, &tx, &favorites, &saved).await {
+            Ok((found, pools)) => {
+                let text = format!("Checked {} e621 favorites: {found} pools, {} new.", favorites.len(), pools.len());
+                let _ = tx.send(Msg::Pools(pools));
+                text
+            }
+            Err(e) => format!("Finding pools failed: {e}"),
+        };
+        let _ = tx.send(Msg::Notice(text));
+        let _ = tx.send(Msg::Progress(String::new()));
+        engine.wake();
+    });
+}
+
+/// The posts 100 at a time (their "pools"), then the new pools' names and first pages (the covers).
+async fn pools_of(engine: &Engine, tx: &Sender<Msg>, favorites: &[String], saved: &[u64]) -> Result<(usize, Vec<Value>), String> {
+    use super::downloads::e621_json;
+    let say = |text: String| {
+        let _ = tx.send(Msg::Progress(text));
+        engine.wake();
+    };
+    let posts = |ids: &[String]| format!("/posts.json?limit=100&tags=id:{}", ids.join(","));
+    let mut found = std::collections::BTreeSet::new();
+    let mut checked = 0;
+    for ids in favorites.chunks(100) {
+        let data = e621_json(engine, &posts(ids)).await?;
+        for post in data["posts"].as_array().into_iter().flatten() {
+            found.extend(post["pools"].as_array().into_iter().flatten().filter_map(Value::as_u64));
+        }
+        checked += ids.len();
+        say(format!("Checking favorites: {checked} / {} · {} pools", favorites.len(), found.len()));
+    }
+    let new: Vec<String> = found.iter().filter(|id| !saved.contains(id)).map(u64::to_string).collect();
+    // (pool, its first page)
+    let mut pools: Vec<(Value, Option<u64>)> = vec![];
+    for ids in new.chunks(100) {
+        say(format!("Getting pool names: {} / {}", pools.len(), new.len()));
+        let data = e621_json(engine, &format!("/pools.json?limit=100&search%5Bid%5D={}", ids.join(","))).await?;
+        for pool in data.as_array().into_iter().flatten() {
+            let name = pool["name"].as_str().unwrap_or("pool").replace('_', " ");
+            pools.push((serde_json::json!({"id": pool["id"], "name": name, "count": pool["post_count"], "cover": ""}), pool["post_ids"][0].as_u64()));
+        }
+    }
+    let firsts: Vec<String> = pools.iter().filter_map(|(_, first)| first.map(|id| id.to_string())).collect();
+    for ids in firsts.chunks(100) {
+        say("Getting covers…".into());
+        let data = e621_json(engine, &posts(ids)).await?;
+        for post in data["posts"].as_array().into_iter().flatten() {
+            if let Some(url) = post["preview"]["url"].as_str() {
+                for (pool, _) in pools.iter_mut().filter(|(_, first)| *first == post["id"].as_u64()) {
+                    pool["cover"] = Value::from(url);
+                }
+            }
+        }
+    }
+    let mut pools: Vec<Value> = pools.into_iter().map(|(pool, _)| pool).collect();
+    pools.sort_by_key(|p| p["name"].as_str().unwrap_or("").to_lowercase());
+    Ok((found.len(), pools))
 }
 
 fn parse_pool(body: &str) -> Option<Pool> {

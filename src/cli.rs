@@ -420,7 +420,7 @@ impl Cli {
                     self.refresh_copies();
                     self.notice(status);
                 }
-                Msg::Imported { .. } | Msg::Cover { .. } => {}
+                Msg::Imported { .. } | Msg::Cover { .. } | Msg::Pools(_) => {}
             }
         }
     }

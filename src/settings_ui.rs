@@ -421,6 +421,14 @@ impl App {
         if ui.button("◀ Back").clicked() {
             self.show_pools = false;
         }
+        // One e621 job at a time (the favorites import's progress shows here too).
+        let busy = !self.progress.is_empty();
+        let find = ui.add_enabled(!busy, egui::Button::new("Find pools in favorites")).on_hover_text("Adds the e621 pools that your e621 favorites are in.");
+        if find.clicked() {
+            let favorites = self.fav.items.iter().filter(|s| s.site_id == "E621").map(|s| super::slide::id_text(&s.id)).collect();
+            let saved = self.store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|p| p["id"].as_u64()).collect();
+            super::session::find_pools(&self.engine, self.tx.clone(), favorites, saved);
+        }
         let sort = self.text("poolsSort");
         let names = [("added", "Recently added"), ("name", "Name"), ("pages", "Most pages")];
         let label = names.iter().find(|(v, _)| *v == sort).map_or("Recently added", |(_, n)| *n);
@@ -431,6 +439,9 @@ impl App {
                 }
             }
         });
+        if busy {
+            ui.label(RichText::new(&self.progress).weak());
+        }
         ui.add(egui::TextEdit::singleline(&mut self.pool_filter).hint_text("Filter pools by name…").desired_width(f32::INFINITY));
     }
 
@@ -445,7 +456,7 @@ impl App {
         });
         let rect = ui.available_rect_before_wrap();
         if pools.is_empty() {
-            let text = if words.is_empty() { "No saved pools. Search pool:<number> (or paste a pool link) and press ☆ Save pool." } else { "No pools match." };
+            let text = if words.is_empty() { "No saved pools. Search pool:<number> (or paste a pool link) and press ☆ Save pool, or use Find pools in favorites." } else { "No pools match." };
             ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), egui::Color32::GRAY);
             return;
         }
