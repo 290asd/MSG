@@ -448,6 +448,10 @@ impl Cli {
             "openFavorites" => self.open_favorites(self.mode == Mode::Slideshow),
             "openSettings" => self.notice("The settings are in the MSG window."),
             "showInterface" => self.show_bars = !self.show_bars,
+            "home" => {
+                self.mode = Mode::Slideshow;
+                self.search = None;
+            }
             _ => {}
         }
     }

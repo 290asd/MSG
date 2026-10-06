@@ -410,6 +410,11 @@ impl App {
             "openSettings" => self.show_settings = !self.show_settings,
             "setBackground" => self.use_as_background(),
             "showInterface" => self.show_controls = !self.show_controls,
+            // Back to the front page (the quick search cards); a new search starts from there as before.
+            "home" => {
+                self.mode = Mode::Slideshow;
+                self.search = None;
+            }
             _ => {}
         }
         ctx.request_repaint();
@@ -548,6 +553,9 @@ impl App {
     /// One row: the buttons are laid out from the right end, and the search box takes the width that is left.
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
+            if ui.button("🏠").on_hover_text("Front page").clicked() {
+                self.act(&ui.ctx().clone(), "home");
+            }
             if self.mode == Mode::Slideshow {
                 self.sites_menu(ui);
             }
