@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 /// How many of the next slides are loaded ahead (their thumbnails, and the first few pictures).
 const AHEAD: usize = 12;
 /// A thumbnail in the strip: its width and the space between two.
-const THUMB_STEP: f32 = 84.0 + 8.0;
+const THUMB_STEP: f32 = 56.0 + 8.0;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Mode {
@@ -680,7 +680,7 @@ impl App {
         // As many as fit in the window (and two more, for the scrolling), so only those are loaded.
         let fit = (ui.available_width() / THUMB_STEP).ceil() as usize + 2;
         let thumbs: Vec<(usize, String)> = self.list().iter().enumerate().skip(i + 1).take(fit).map(|(n, s)| (n, s.preview_file_url.clone())).collect();
-        if !thumbs.is_empty() {
+        if !thumbs.is_empty() && self.flag("showThumbs", true) {
             let mut jump = None;
             egui::ScrollArea::horizontal().id_salt("thumbs").show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -688,7 +688,7 @@ impl App {
                         let url = thumb_source(&self.copies_or(url));
                         // Also asks for what is missing (the list may have grown); a thumbnail in use is not let go.
                         self.media.request(&self.engine, &url);
-                        let size = Vec2::new(THUMB_STEP - 8.0, 64.0);
+                        let size = Vec2::new(THUMB_STEP - 8.0, 42.0);
                         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
                         ui.painter().rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
                         if let Some(State::Ready(p)) = self.media.get(&url) {
@@ -732,6 +732,10 @@ impl App {
             if ui.selectable_label(self.show_tags, "# Tags").clicked() {
                 self.show_tags = !self.show_tags;
                 self.set("showTags", json!(self.show_tags));
+            }
+            let thumbs = self.flag("showThumbs", true);
+            if ui.selectable_label(thumbs, "Thumbnails").clicked() {
+                self.set("showThumbs", json!(!thumbs));
             }
             let mut fit = self.flag("autoFitSlide", true);
             if ui.checkbox(&mut fit, "Fit").changed() {
