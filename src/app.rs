@@ -545,56 +545,66 @@ impl App {
 
     // ---------- drawing ----------
 
+    /// One row: the buttons are laid out from the right end, and the search box takes the width that is left.
     fn top_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
+        ui.horizontal(|ui| {
             if self.mode == Mode::Slideshow {
                 self.sites_menu(ui);
-                let width = (ui.available_width() - 330.0).max(160.0);
-                let mut query = std::mem::take(&mut self.query);
-                let response = ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search tags…").desired_width(width));
-                self.query = query;
-                let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                let history: Vec<String> = self.store.get("searchHistory").and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().rev().filter_map(|v| v.as_str().map(String::from)).collect();
-                if !history.is_empty() {
-                    ui.menu_button("🕘", |ui| {
-                        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                            for item in history.iter().take(40) {
-                                if ui.button(item).clicked() {
-                                    let item = item.clone();
-                                    ui.close();
-                                    self.start_search(&item);
-                                }
-                            }
-                        });
-                    });
-                }
-                if ui.button("Search").clicked() || enter {
-                    let text = self.query.clone();
-                    self.start_search(&text);
-                }
-                if self.flag("searchSortMenu", false) {
-                    self.sort_menu(ui);
-                }
-                if let Some(pool) = self.search.as_ref().and_then(|s| s.pool()) {
-                    if ui.button("☆ Save pool").clicked() {
-                        let cover = self.search.as_ref().and_then(|s| s.slides.first().map(|x| x.preview_file_url.clone())).unwrap_or_default();
-                        self.save_pool(pool.0, pool.1, pool.2, cover);
-                    }
-                }
-                if ui.button("📚 Pools").clicked() {
-                    self.show_pools = !self.show_pools;
-                }
-            } else {
-                self.favorites_bar(ui);
             }
-            let label = if self.mode == Mode::Favorites { "◀ Slideshow" } else { "♥ Favorites" };
-            if ui.button(label).clicked() {
-                self.open_favorites(self.mode == Mode::Slideshow);
-            }
-            if ui.button("⚙").clicked() {
-                self.show_settings = !self.show_settings;
-            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("⚙").clicked() {
+                    self.show_settings = !self.show_settings;
+                }
+                let label = if self.mode == Mode::Favorites { "◀ Slideshow" } else { "♥ Favorites" };
+                if ui.button(label).clicked() {
+                    self.open_favorites(self.mode == Mode::Slideshow);
+                }
+                if self.mode == Mode::Slideshow {
+                    self.search_bar(ui);
+                } else {
+                    self.favorites_bar(ui);
+                }
+            });
         });
+    }
+
+    /// Right to left (see top_bar).
+    fn search_bar(&mut self, ui: &mut egui::Ui) {
+        if ui.button("📚 Pools").clicked() {
+            self.show_pools = !self.show_pools;
+        }
+        if let Some(pool) = self.search.as_ref().and_then(|s| s.pool()) {
+            if ui.button("☆ Save pool").clicked() {
+                let cover = self.search.as_ref().and_then(|s| s.slides.first().map(|x| x.preview_file_url.clone())).unwrap_or_default();
+                self.save_pool(pool.0, pool.1, pool.2, cover);
+            }
+        }
+        if self.flag("searchSortMenu", false) {
+            self.sort_menu(ui);
+        }
+        let search = ui.button("Search").clicked();
+        let history: Vec<String> = self.store.get("searchHistory").and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().rev().filter_map(|v| v.as_str().map(String::from)).collect();
+        if !history.is_empty() {
+            ui.menu_button("🕘", |ui| {
+                egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                    for item in history.iter().take(40) {
+                        if ui.button(item).clicked() {
+                            let item = item.clone();
+                            ui.close();
+                            self.start_search(&item);
+                        }
+                    }
+                });
+            });
+        }
+        let mut query = std::mem::take(&mut self.query);
+        let response = ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search tags…").desired_width(f32::INFINITY));
+        self.query = query;
+        let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if search || enter {
+            let text = self.query.clone();
+            self.start_search(&text);
+        }
     }
 
     fn sites_menu(&mut self, ui: &mut egui::Ui) {
@@ -639,21 +649,9 @@ impl App {
         });
     }
 
+    /// Right to left (see top_bar).
     fn favorites_bar(&mut self, ui: &mut egui::Ui) {
-        let mut filter = std::mem::take(&mut self.fav_filter_box);
-        let response = ui.add(egui::TextEdit::singleline(&mut filter).hint_text("Filter by tags (-tag, ~tag, tag*)").desired_width(260.0));
-        self.fav_filter_box = filter;
-        let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        if ui.button("Filter").clicked() || enter {
-            self.apply_favorite_filter();
-        }
-        if ui.button("🔀 Random").clicked() {
-            self.fav.filter = self.fav_filter_box.trim().to_string();
-            self.fav.random = true;
-            self.rebuild_favorites();
-            self.cur[Mode::Favorites as usize] = 0;
-            self.shown_at = None;
-        }
+        ui.label(format!("{} shown", self.fav.view.len()));
         let counts = self.fav.site_counts();
         let selected = self.fav.site.clone();
         let label = selected.as_ref().and_then(|s| Site::from_id(s)).map(|s| s.name().to_string()).unwrap_or_else(|| format!("All sites ({})", self.fav.items.len()));
@@ -670,7 +668,21 @@ impl App {
                 }
             }
         });
-        ui.label(format!("{} shown", self.fav.view.len()));
+        if ui.button("🔀 Random").clicked() {
+            self.fav.filter = self.fav_filter_box.trim().to_string();
+            self.fav.random = true;
+            self.rebuild_favorites();
+            self.cur[Mode::Favorites as usize] = 0;
+            self.shown_at = None;
+        }
+        let filter_clicked = ui.button("Filter").clicked();
+        let mut filter = std::mem::take(&mut self.fav_filter_box);
+        let response = ui.add(egui::TextEdit::singleline(&mut filter).hint_text("Filter by tags (-tag, ~tag, tag*)").desired_width(f32::INFINITY));
+        self.fav_filter_box = filter;
+        let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if filter_clicked || enter {
+            self.apply_favorite_filter();
+        }
     }
 
     fn controls(&mut self, ui: &mut egui::Ui) {
@@ -983,7 +995,7 @@ impl App {
                 _ if action == "next" => self.move_by(1),
                 _ if action == "prev" => self.move_by(-1),
                 _ if action == "quit" => std::process::exit(0),
-                _ => {}
+                _ => self.act(ctx, &action),
             }
         }
         ctx.request_repaint_after(Duration::from_millis(100));
