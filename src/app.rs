@@ -21,6 +21,8 @@ use std::time::{Duration, Instant};
 const AHEAD: usize = 12;
 /// A thumbnail in the strip: its width and the space between two.
 const THUMB_STEP: f32 = 56.0 + 8.0;
+/// How long (seconds) the video bar stays after the pointer stops.
+const VIDEO_BAR_SECS: f32 = 2.0;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Mode {
@@ -846,29 +848,40 @@ impl App {
         let status = player.status();
         let (mut volume, mut muted) = (self.number("videoVolume", 0.5), self.flag("videoMuted", false));
         let (mut pause, mut seek, mut audio) = (None, None, false);
-        egui::Area::new(egui::Id::new("videobar")).fixed_pos(egui::pos2(rect.left() + 12.0, rect.bottom() - 44.0)).show(ui.ctx(), |ui| {
-            egui::Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_width((rect.width() - 48.0).max(200.0));
-                ui.horizontal(|ui| {
-                    if ui.button(if status.paused { "▶" } else { "⏸" }).clicked() {
-                        pause = Some(!status.paused);
-                    }
-                    ui.label(format!("{} / {}", clock(status.position), clock(status.duration)));
-                    let mut at = status.position;
-                    let bar = ui.add_sized([(ui.available_width() - 190.0).max(60.0), 18.0], egui::Slider::new(&mut at, 0.0..=status.duration.max(0.1)).show_value(false));
-                    if bar.changed() {
-                        seek = Some(at);
-                    }
-                    if ui.button(if muted { "🔇" } else { "🔊" }).clicked() {
-                        muted = !muted;
-                        audio = true;
-                    }
-                    if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false)).changed() {
-                        audio = true;
-                    }
+        // The bar shows while the pointer moves, rests on the bar or the video is paused; the pointer hides with it.
+        let (idle, pointer) = ui.input(|i| (i.pointer.time_since_last_movement(), i.pointer.hover_pos()));
+        let on_bar = pointer.is_some_and(|p| p.y > rect.bottom() - 56.0 && rect.contains(p));
+        if status.paused || on_bar || idle < VIDEO_BAR_SECS {
+            egui::Area::new(egui::Id::new("videobar")).fixed_pos(egui::pos2(rect.left() + 12.0, rect.bottom() - 44.0)).show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_width((rect.width() - 48.0).max(200.0));
+                    ui.horizontal(|ui| {
+                        if ui.button(if status.paused { "▶" } else { "⏸" }).clicked() {
+                            pause = Some(!status.paused);
+                        }
+                        ui.label(format!("{} / {}", clock(status.position), clock(status.duration)));
+                        // Volume at the right end, and the seek bar takes the width between (a slider is slider_width wide).
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.spacing_mut().slider_width = 90.0;
+                            if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false)).changed() {
+                                audio = true;
+                            }
+                            if ui.button(if muted { "🔇" } else { "🔊" }).clicked() {
+                                muted = !muted;
+                                audio = true;
+                            }
+                            ui.spacing_mut().slider_width = ui.available_width() - 8.0;
+                            let mut at = status.position;
+                            if ui.add(egui::Slider::new(&mut at, 0.0..=status.duration.max(0.1)).show_value(false).trailing_fill(true)).changed() {
+                                seek = Some(at);
+                            }
+                        });
+                    });
                 });
             });
-        });
+        } else if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+        }
         if let Some(p) = pause {
             player.set_paused(p);
         }
