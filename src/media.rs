@@ -76,13 +76,15 @@ pub struct MediaCache {
     tx: Sender<(String, Result<Decoded, String>)>,
     rx: Receiver<(String, Result<Decoded, String>)>,
     tick: u64,
+    // The tick at the last poll (the start of the last frame).
+    frame: u64,
     limit: Arc<tokio::sync::Semaphore>,
 }
 
 impl MediaCache {
     pub fn new() -> MediaCache {
         let (tx, rx) = channel();
-        MediaCache { entries: HashMap::new(), tx, rx, tick: 0, limit: Arc::new(tokio::sync::Semaphore::new(AT_ONCE)) }
+        MediaCache { entries: HashMap::new(), tx, rx, tick: 0, frame: 0, limit: Arc::new(tokio::sync::Semaphore::new(AT_ONCE)) }
     }
 
     pub fn get(&mut self, url: &str) -> Option<&State> {
@@ -122,7 +124,8 @@ impl MediaCache {
         });
     }
 
-    /// Moves what has arrived into textures, and lets the oldest go when there are too many.
+    /// Moves what has arrived into textures, and lets the oldest go when there are too many. What the last
+    /// frame drew stays, however many (a screen full of pool covers), or it would be loaded again and again.
     pub fn poll(&mut self, ctx: &egui::Context) {
         while let Ok((url, result)) = self.rx.try_recv() {
             let state = match result {
@@ -144,12 +147,13 @@ impl MediaCache {
             }
         }
         if self.entries.len() > KEEP {
-            let mut by_use: Vec<_> = self.entries.iter().map(|(k, (_, used))| (*used, k.clone())).collect();
+            let mut by_use: Vec<_> = self.entries.iter().filter(|(_, (_, used))| *used <= self.frame).map(|(k, (_, used))| (*used, k.clone())).collect();
             by_use.sort();
             for (_, key) in by_use.into_iter().take(self.entries.len() - KEEP) {
                 self.entries.remove(&key);
             }
         }
+        self.frame = self.tick;
     }
 }
 
