@@ -1,4 +1,4 @@
-// The settings window and the saved pools page.
+// The settings page and the saved pools page.
 use super::app::{App, Tab};
 use super::hotkeys::{self, ACTIONS};
 use super::media::State;
@@ -48,43 +48,42 @@ impl App {
         rfd::FileDialog::new().set_title(title).pick_folder().map(|p| p.to_string_lossy().into_owned())
     }
 
-    pub fn settings_window(&mut self, ctx: &egui::Context) {
-        if !self.show_settings {
-            return;
+    /// The settings page's part of the top bar, right to left (see top_bar).
+    pub fn settings_bar(&mut self, ui: &mut egui::Ui) {
+        if ui.button("◀ Back").clicked() {
+            self.show_settings = false;
         }
-        let mut open = true;
-        egui::Window::new("Settings").open(&mut open).default_size([720.0, 520.0]).show(ctx, |ui| {
-            ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
-                    ui.set_min_width(130.0);
-                    for (tab, name) in TABS {
-                        if ui.selectable_label(self.tab == tab, name).clicked() {
-                            self.tab = tab;
-                            self.recording = None;
-                        }
+    }
+
+    /// The settings as a page that fills the window below the bar: the sections on the left, the chosen one beside them.
+    pub fn settings_page(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_min_width(150.0);
+                for (tab, name) in TABS {
+                    if ui.selectable_label(self.tab == tab, name).clicked() {
+                        self.tab = tab;
+                        self.recording = None;
                     }
-                });
-                ui.separator();
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.vertical(|ui| match self.tab {
-                        Tab::Appearance => self.tab_appearance(ui, ctx),
-                        Tab::Sites => self.tab_sites(ui),
-                        Tab::Slideshow => self.tab_slideshow(ui),
-                        Tab::Filtering => self.tab_filtering(ui),
-                        Tab::Hotkeys => self.tab_hotkeys(ui, ctx),
-                        Tab::Folders => self.tab_folders(ui),
-                        Tab::Favorites => self.tab_favorites(ui),
-                        Tab::Quick => self.tab_quick(ui),
-                        Tab::History => self.tab_history(ui),
-                        Tab::About => self.tab_about(ui),
-                    });
+                }
+            });
+            ui.separator();
+            egui::ScrollArea::vertical().id_salt("settings").auto_shrink(false).show(ui, |ui| {
+                ui.vertical(|ui| match self.tab {
+                    Tab::Appearance => self.tab_appearance(ui, &ctx),
+                    Tab::Sites => self.tab_sites(ui),
+                    Tab::Slideshow => self.tab_slideshow(ui),
+                    Tab::Filtering => self.tab_filtering(ui),
+                    Tab::Hotkeys => self.tab_hotkeys(ui, &ctx),
+                    Tab::Folders => self.tab_folders(ui),
+                    Tab::Favorites => self.tab_favorites(ui),
+                    Tab::Quick => self.tab_quick(ui),
+                    Tab::History => self.tab_history(ui),
+                    Tab::About => self.tab_about(ui),
                 });
             });
         });
-        if !open {
-            self.show_settings = false;
-            self.recording = None;
-        }
     }
 
     fn tab_appearance(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {

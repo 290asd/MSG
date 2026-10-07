@@ -1,5 +1,5 @@
 // The window: search bar, the picture, the controls, the tags and the thumbnails. The state of the
-// slideshow lives here; the settings window is in settings_ui.rs.
+// slideshow lives here; the settings and pools pages are in settings_ui.rs.
 use super::downloads::{self, Downloader};
 use super::favorites::{self, Favorites};
 use super::files;
@@ -241,6 +241,7 @@ impl App {
     pub fn start_search(&mut self, text: &str) {
         self.mode = Mode::Slideshow;
         self.show_pools = false;
+        self.show_settings = false;
         self.generation += 1;
         let text = text.trim();
         self.query = text.to_string();
@@ -383,6 +384,7 @@ impl App {
     pub fn open_favorites(&mut self, on: bool) {
         self.mode = if on { Mode::Favorites } else { Mode::Slideshow };
         self.show_pools = false;
+        self.show_settings = false;
         self.shown_at = None;
         if on {
             self.rebuild_favorites();
@@ -429,8 +431,13 @@ impl App {
                 self.mode = Mode::Slideshow;
                 self.search = None;
                 self.show_pools = false;
+                self.show_settings = false;
             }
-            "openPools" => self.show_pools = !self.show_pools,
+            // From the settings page straight to the pools page.
+            "openPools" => {
+                self.show_pools = !self.show_pools || self.show_settings;
+                self.show_settings = false;
+            }
             _ => {}
         }
         ctx.request_repaint();
@@ -498,8 +505,8 @@ impl App {
     }
 
     fn tick(&mut self, ctx: &egui::Context) {
-        // The pools page covers the slideshow: the video stops and the slide's clock starts over afterwards.
-        let current = if self.show_pools { None } else { self.current() };
+        // The pools and settings pages cover the slideshow: the video stops and the slide's clock starts over afterwards.
+        let current = if self.show_pools || self.show_settings { None } else { self.current() };
         let wanted = current.as_ref().filter(|s| s.media_type == MediaType::Video).map(|s| self.copies_or(&s.file_url));
         self.sync_video(wanted);
         let Some(slide) = current else {
@@ -573,12 +580,15 @@ impl App {
             if ui.button("🏠").on_hover_text("Front page").clicked() {
                 self.act(&ui.ctx().clone(), "home");
             }
-            if self.mode == Mode::Slideshow && !self.show_pools {
+            if self.mode == Mode::Slideshow && !self.show_pools && !self.show_settings {
                 self.sites_menu(ui);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("⚙").clicked() {
                     self.show_settings = !self.show_settings;
+                }
+                if self.show_settings {
+                    return self.settings_bar(ui);
                 }
                 if self.show_pools {
                     return self.pools_bar(ui);
@@ -1112,17 +1122,23 @@ fn category_color(category: &str, dark: bool) -> Color32 {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // A key being recorded stops the hotkeys, so it ends whichever way the settings page is left.
+        if !self.show_settings {
+            self.recording = None;
+        }
         self.media.poll(&ctx);
         self.handle_messages();
         self.handle_keys(&ctx);
         self.tick(&ctx);
         self.preload();
 
-        // The pools page takes the whole window below the bar.
-        if self.show_controls || self.show_pools {
+        // The settings and pools pages take the whole window below the bar (settings over pools; Back returns there).
+        if self.show_controls || self.show_pools || self.show_settings {
             egui::Panel::top("bar").show(ui, |ui| self.top_bar(ui));
         }
-        if self.show_pools {
+        if self.show_settings {
+            egui::CentralPanel::default().show(ui, |ui| self.settings_page(ui));
+        } else if self.show_pools {
             egui::CentralPanel::default().show(ui, |ui| self.pools_page(ui));
         } else {
             if self.show_controls {
@@ -1138,7 +1154,6 @@ impl eframe::App for App {
 
         self.test_hook(&ctx);
         self.test_script(&ctx);
-        self.settings_window(&ctx);
         self.toasts(&ctx);
     }
 
@@ -1150,7 +1165,7 @@ impl eframe::App for App {
     }
 }
 
-// So the settings and pool windows (another file) can name it.
+// So the settings page (another file) can name it.
 pub fn user_dir() -> std::path::PathBuf {
     files::user_data()
 }
