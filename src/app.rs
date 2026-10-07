@@ -1008,10 +1008,17 @@ impl App {
                             let title = if tags.is_empty() { "(what is in the box)".to_string() } else { tags.clone() };
                             let names: Vec<&str> = sites.iter().map(|s| s.name()).collect();
                             let painter = ui.painter();
-                            painter.text(egui::pos2(text_x, card.top() + 14.0), egui::Align2::LEFT_TOP, format!("{}  {}", (n + 1) % 10, title), egui::FontId::proportional(15.0), ui.visuals().strong_text_color());
-                            painter.text(egui::pos2(text_x, card.top() + 40.0), egui::Align2::LEFT_TOP, names.join(", "), egui::FontId::proportional(12.0), Color32::GRAY);
-                            painter.text(egui::pos2(text_x, card.top() + 62.0), egui::Align2::LEFT_TOP, main_tags.replace('_', " "), egui::FontId::proportional(12.0), Color32::GRAY);
-                            if response.clicked() {
+                            // One row each, cut with … at the card's edge.
+                            let line = |text: String, y: f32, size: f32, color: Color32| {
+                                let mut job = egui::text::LayoutJob::simple(text, egui::FontId::proportional(size), color, card.right() - 12.0 - text_x);
+                                job.wrap.max_rows = 1;
+                                job.wrap.break_anywhere = true;
+                                painter.galley(egui::pos2(text_x, card.top() + y), painter.layout_job(job), color);
+                            };
+                            line(format!("{}  {}", (n + 1) % 10, title), 14.0, 15.0, ui.visuals().strong_text_color());
+                            line(names.join(", "), 40.0, 12.0, Color32::GRAY);
+                            line(main_tags.replace('_', " "), 62.0, 12.0, Color32::GRAY);
+                            if response.on_hover_text(&title).clicked() {
                                 run = Some(*n);
                             }
                         }
