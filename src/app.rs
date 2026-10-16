@@ -448,7 +448,8 @@ impl App {
             return;
         }
         let (events, wants_text) = (ctx.input(|i| i.events.clone()), ctx.egui_wants_keyboard_input());
-        for action in self.hotkeys.pressed(&events, wants_text) {
+        let mouse = !self.show_settings && !self.show_pools;
+        for action in self.hotkeys.pressed(&events, wants_text, mouse) {
             self.act(ctx, action);
         }
         // Fixed keys: Enter also plays and pauses, F11 is fullscreen, Esc closes things, 1–0 are the quick searches.

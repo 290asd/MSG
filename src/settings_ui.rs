@@ -208,10 +208,23 @@ impl App {
 
     fn tab_hotkeys(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.heading("Hotkeys");
-        ui.label(RichText::new("Click a key, then press the new one (Delete clears, Esc cancels). Fixed: Enter, F11, Esc, 1–0 (quick searches).").weak());
+        ui.label(RichText::new("Click a key, then press the new one or a mouse button / the wheel (Delete clears, Esc cancels; the left button can't be bound). Fixed: Enter, F11, Esc, 1–0 (quick searches).").weak());
         // The key being recorded.
         if let Some((id, slot)) = self.recording.clone() {
             for event in ctx.input(|i| i.events.clone()) {
+                if let Some(code) = hotkeys::mouse_code_of(&event) {
+                    if let Some(codes) = self.hotkeys.map.get_mut(&id) {
+                        if slot < codes.len() {
+                            codes[slot] = code;
+                        } else {
+                            codes.push(code);
+                        }
+                    }
+                    self.recording = None;
+                    let value = self.hotkeys.to_value();
+                    self.set("appHotkeys", value);
+                    break;
+                }
                 if let egui::Event::Key { key, pressed: true, modifiers, .. } = event {
                     match key {
                         egui::Key::Escape => self.recording = None,

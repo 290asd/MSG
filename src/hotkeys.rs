@@ -1,7 +1,7 @@
 // Hotkeys are saved as in the web version (settings.json → appHotkeys): action id → JS key codes, with
 // 256 added for Ctrl, 512 for Shift and 1024 for Alt. (In the web version's own header 256 is Ctrl.)
 use crate::store::Store;
-use eframe::egui::{Event, Key, Modifiers};
+use eframe::egui::{Event, Key, Modifiers, PointerButton};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -55,10 +55,38 @@ pub fn code_of(key: Key, m: Modifiers) -> Option<u32> {
     Some(base + if m.ctrl || m.command { CTRL } else { 0 } + if m.shift { SHIFT } else { 0 } + if m.alt { ALT } else { 0 })
 }
 
+// Mouse bindings use base codes of their own (below 256, clear of the key codes and the modifier bits).
+// The primary button is left out: it is the UI's own click.
+const MOUSE: [(u32, &str); 6] = [
+    (201, "Right click"), (202, "Middle click"), (203, "Mouse back"), (204, "Mouse forward"),
+    (205, "Wheel up"), (206, "Wheel down"),
+];
+
+/// The code of a mouse event (a button going down, or a wheel step), if it can be bound.
+pub fn mouse_code_of(event: &Event) -> Option<u32> {
+    let (base, m) = match event {
+        Event::PointerButton { button, pressed: true, modifiers, .. } => (
+            match button {
+                PointerButton::Secondary => 201,
+                PointerButton::Middle => 202,
+                PointerButton::Extra1 => 203,
+                PointerButton::Extra2 => 204,
+                PointerButton::Primary => return None,
+            },
+            *modifiers,
+        ),
+        Event::MouseWheel { delta, modifiers, .. } if delta.y != 0.0 => (if delta.y > 0.0 { 205 } else { 206 }, *modifiers),
+        _ => return None,
+    };
+    Some(base + if m.ctrl || m.command { CTRL } else { 0 } + if m.shift { SHIFT } else { 0 } + if m.alt { ALT } else { 0 })
+}
+
 /// "Ctrl+F", "Left" ...
 pub fn label(code: u32) -> String {
     let base = code & !(CTRL | SHIFT | ALT);
-    let name = KEYS.iter().find(|(_, c)| *c == base).map(|(k, _)| k.name().to_string()).unwrap_or_else(|| format!("#{base}"));
+    let name = KEYS.iter().find(|(_, c)| *c == base).map(|(k, _)| k.name().to_string())
+        .or_else(|| MOUSE.iter().find(|(c, _)| *c == base).map(|(_, n)| n.to_string()))
+        .unwrap_or_else(|| format!("#{base}"));
     let mut text = String::new();
     for (bit, prefix) in [(CTRL, "Ctrl+"), (SHIFT, "Shift+"), (ALT, "Alt+")] {
         if code & bit != 0 {
@@ -90,19 +118,23 @@ impl Hotkeys {
     }
 
     /// The actions whose key went down in this frame's events.
-    pub fn pressed(&self, events: &[Event], text_focus: bool) -> Vec<&'static str> {
+    /// `mouse` tells whether mouse bindings count now (not over the settings or pools page).
+    pub fn pressed(&self, events: &[Event], text_focus: bool, mouse: bool) -> Vec<&'static str> {
         let mut out = vec![];
         for event in events {
-            if let Event::Key { key, pressed: true, repeat: false, modifiers, .. } = event {
-                let Some(code) = code_of(*key, *modifiers) else { continue };
-                // Typing in a box: only keys with Ctrl/Alt count.
-                if text_focus && code & (CTRL | ALT) == 0 {
-                    continue;
-                }
-                for action in &ACTIONS {
-                    if self.map[action.id].contains(&code) {
-                        out.push(action.id);
-                    }
+            let code = match event {
+                Event::Key { key, pressed: true, repeat: false, modifiers, .. } => code_of(*key, *modifiers),
+                _ if mouse => mouse_code_of(event),
+                _ => None,
+            };
+            let Some(code) = code else { continue };
+            // Typing in a box: only keys with Ctrl/Alt count.
+            if text_focus && code & (CTRL | ALT) == 0 {
+                continue;
+            }
+            for action in &ACTIONS {
+                if self.map[action.id].contains(&code) {
+                    out.push(action.id);
                 }
             }
         }
@@ -120,5 +152,8 @@ mod tests {
         assert_eq!(code_of(Key::ArrowLeft, Modifiers::NONE), Some(37));
         assert_eq!(label(CTRL + 70), "Ctrl+F");
         assert_eq!(label(37), Key::ArrowLeft.name());
+        assert_eq!(label(SHIFT + 202), "Shift+Middle click");
+        let wheel = Event::MouseWheel { unit: eframe::egui::MouseWheelUnit::Line, phase: eframe::egui::TouchPhase::Move, delta: eframe::egui::vec2(0.0, -1.0), modifiers: Modifiers::CTRL };
+        assert_eq!(mouse_code_of(&wheel), Some(CTRL + 206));
     }
 }
