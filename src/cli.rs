@@ -865,7 +865,7 @@ impl Cli {
 
     fn draw_help(&self, out: &mut impl Write, lay: Layout) -> io::Result<()> {
         let mut lines = vec!["Keys (change them in MSG → Settings → Hotkeys)".to_string(), String::new()];
-        for a in hotkeys::ACTIONS.iter().filter(|a| !matches!(a.id, "openSettings" | "setBackground" | "addToAnalysis")) {
+        for a in hotkeys::ACTIONS.iter().filter(|a| !matches!(a.id, "openSettings" | "setBackground" | "addToAnalysis" | "openReadingList")) {
             lines.push(format!("  {:<28} {}", self.key_names(a.id), a.label));
         }
         lines.push(String::new());

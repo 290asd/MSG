@@ -1,8 +1,9 @@
-// The settings page and the saved pools page.
+// The settings page, the saved pools page and the reading list page.
 use super::app::{App, Tab};
 use super::hotkeys::{self, ACTIONS};
 use super::media::State;
 use super::sites::Site;
+use super::slide::MediaType;
 use eframe::egui::{self, RichText, Vec2};
 use serde_json::{json, Value};
 
@@ -10,6 +11,9 @@ use serde_json::{json, Value};
 const POOL_TILE: Vec2 = Vec2::new(160.0, 270.0);
 const POOL_COVER: f32 = 210.0;
 const POOL_GAP: f32 = 14.0;
+/// A post on the reading list page.
+const THUMB: f32 = 150.0;
+const THUMB_GAP: f32 = 8.0;
 
 const TABS: [(Tab, &str); 10] = [
     (Tab::Appearance, "Appearance"),
@@ -111,6 +115,16 @@ impl App {
         self.check(ui, "clickOpensPost", true, "Favorites: clicking the picture opens its post");
         self.check(ui, "showDownloadButton", true, "Show the Download button");
         self.check(ui, "searchSortMenu", false, "Sort menu in the search bar");
+        let reading = self.text("frontPage") == "reading";
+        ui.horizontal(|ui| {
+            ui.label("Front page");
+            if ui.radio(!reading, "search (quick search cards)").clicked() {
+                self.set("frontPage", json!("search"));
+            }
+            if ui.radio(reading, "reading list").clicked() {
+                self.set("frontPage", json!("reading"));
+            }
+        });
         self.check(ui, "quickCards", true, "Quick search cards on the front page");
         ui.separator();
         ui.label("Background image (the start screen)");
@@ -524,6 +538,97 @@ impl App {
         }
         if let Some(id) = go {
             self.start_search(&format!("pool:{id}"));
+        }
+    }
+
+    /// The reading list page's part of the top bar, right to left (see top_bar); the search bar comes after it.
+    pub fn reading_bar(&mut self, ui: &mut egui::Ui) {
+        let (count, loading) = self.search.as_ref().map_or((0, false), |s| (s.slides.len(), s.loading));
+        if ui.add_enabled(count > 0, egui::Button::new("▶ Slideshow")).clicked() {
+            self.show_reading = false;
+            self.set_idx(0);
+            self.playing = true;
+        }
+        let list = super::session::reading_list(&self.store);
+        let mut remove = None;
+        ui.menu_button(format!("Following ({})", list.len()), |ui| {
+            if list.is_empty() {
+                ui.label("Search for an artist or tag and press ☆ Follow.");
+            }
+            for (tags, sites) in &list {
+                ui.horizontal(|ui| {
+                    if ui.small_button("✕").on_hover_text("Stop following").clicked() {
+                        remove = Some(tags.clone());
+                    }
+                    let names: Vec<&str> = sites.iter().map(|s| s.name()).collect();
+                    ui.label(format!("{tags} · {}", names.join(", ")));
+                });
+            }
+        });
+        if let Some(tags) = remove {
+            self.toggle_follow(&tags);
+            self.start_reading();
+        }
+        ui.label(RichText::new(if loading { "Loading…".to_string() } else { format!("{count} posts") }).weak());
+    }
+
+    /// The reading list's posts as thumbnails that fill the window, newest first. Only the rows on the screen are
+    /// drawn (and their pictures loaded), and near the end the next page is read. A click shows the post in the slideshow.
+    pub fn reading_page(&mut self, ui: &mut egui::Ui) {
+        let rect = ui.available_rect_before_wrap();
+        let thumbs: Vec<(String, bool)> = self.search.as_ref().map(|s| s.slides.iter().map(|x| (x.preview_file_url.clone(), x.media_type == MediaType::Video)).collect()).unwrap_or_default();
+        if thumbs.is_empty() {
+            let text = if self.search.as_ref().is_some_and(|s| s.loading) {
+                "Loading the reading list…"
+            } else if super::session::reading_list(&self.store).is_empty() {
+                "Nothing followed yet. Search for an artist or tag and press ☆ Follow."
+            } else {
+                "No posts."
+            };
+            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), egui::Color32::GRAY);
+            return;
+        }
+        // As on the pools page.
+        let width = rect.width() - 16.0;
+        let columns = ((width + THUMB_GAP) / (THUMB + THUMB_GAP)).floor().max(1.0) as usize;
+        let margin = ((width + THUMB_GAP - columns as f32 * (THUMB + THUMB_GAP)) / 2.0).max(0.0);
+        let rows_total = thumbs.len().div_ceil(columns);
+        let (mut go, mut near_end) = (None, false);
+        // A list read again starts from the top.
+        let generation = self.search.as_ref().map_or(0, |s| s.generation);
+        ui.spacing_mut().item_spacing = Vec2::splat(THUMB_GAP);
+        egui::ScrollArea::vertical().id_salt(("reading", generation)).auto_shrink(false).show_rows(ui, THUMB, rows_total, |ui, rows| {
+            near_end = rows.end + 3 >= rows_total;
+            for (r, row) in thumbs.chunks(columns).enumerate().skip(rows.start).take(rows.len()) {
+                ui.horizontal(|ui| {
+                    ui.add_space(margin);
+                    for (c, (url, video)) in row.iter().enumerate() {
+                        let (tile, response) = ui.allocate_exact_size(Vec2::splat(THUMB), egui::Sense::click());
+                        ui.painter().rect_filled(tile, 6.0, ui.visuals().extreme_bg_color);
+                        let url = super::downloads::display_url(&self.copies, url);
+                        self.media.request(&self.engine, &url);
+                        if let Some(State::Ready(p)) = self.media.get(&url) {
+                            super::app::paint_fit(ui, tile, &p.frames[0].texture, p.size);
+                        }
+                        if *video {
+                            ui.painter().text(tile.left_top() + Vec2::splat(8.0), egui::Align2::LEFT_TOP, "▶", egui::FontId::proportional(16.0), egui::Color32::WHITE);
+                        }
+                        if response.hovered() {
+                            ui.painter().rect_stroke(tile, 6.0, egui::Stroke::new(2.0, ui.visuals().selection.bg_fill), egui::StrokeKind::Outside);
+                        }
+                        if response.clicked() {
+                            go = Some(r * columns + c);
+                        }
+                    }
+                });
+            }
+        });
+        if near_end {
+            self.load_more();
+        }
+        if let Some(n) = go {
+            self.show_reading = false;
+            self.set_idx(n);
         }
     }
 }

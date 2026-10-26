@@ -71,6 +71,9 @@ pub struct App {
     pub show_settings: bool,
     pub tab: Tab,
     pub show_pools: bool,
+    /// The reading list page, and whether `search` is the reading list's.
+    pub show_reading: bool,
+    pub reading_list: bool,
     pub notices: Vec<(String, Instant)>,
     pub progress: String,
     pub recording: Option<(String, usize)>,
@@ -116,6 +119,8 @@ impl App {
             show_settings: false,
             tab: Tab::Appearance,
             show_pools: false,
+            show_reading: false,
+            reading_list: false,
             notices: vec![],
             progress: String::new(),
             recording: None,
@@ -140,6 +145,8 @@ impl App {
         app.downloader.schedule(Duration::from_secs(15));
         if let Ok(text) = std::env::var("MSG_SEARCH") {
             app.start_search(&text);
+        } else if app.text("frontPage") == "reading" {
+            app.open_reading();
         }
         app
     }
@@ -211,7 +218,7 @@ impl App {
         self.cur[self.mode as usize]
     }
 
-    fn set_idx(&mut self, i: usize) {
+    pub fn set_idx(&mut self, i: usize) {
         let len = self.list().len();
         self.cur[self.mode as usize] = if len == 0 { 0 } else { i.min(len - 1) };
         self.shown_at = None;
@@ -242,6 +249,7 @@ impl App {
         self.mode = Mode::Slideshow;
         self.show_pools = false;
         self.show_settings = false;
+        self.show_reading = false;
         self.generation += 1;
         let text = text.trim();
         self.query = text.to_string();
@@ -251,6 +259,7 @@ impl App {
             return;
         }
         self.search = Some(Search::new(self.generation, text, sites, &self.store));
+        self.reading_list = false;
         self.cur[Mode::Slideshow as usize] = 0;
         self.shown_at = None;
         if self.flag("storeHistory", true) && !text.is_empty() {
@@ -264,7 +273,41 @@ impl App {
         self.load_more();
     }
 
-    fn load_more(&mut self) {
+    /// The reading list page; its search starts unless it is the one already loaded.
+    pub fn open_reading(&mut self) {
+        self.mode = Mode::Slideshow;
+        self.show_pools = false;
+        self.show_settings = false;
+        self.show_reading = true;
+        if !self.reading_list {
+            self.start_reading();
+        }
+    }
+
+    /// The followed searches together, newest first (not saved in the history).
+    pub fn start_reading(&mut self) {
+        self.generation += 1;
+        self.query.clear();
+        self.search = Some(Search::many(self.generation, &session::reading_list(&self.store), &self.store));
+        self.reading_list = true;
+        self.cur[Mode::Slideshow as usize] = 0;
+        self.shown_at = None;
+        self.load_more();
+    }
+
+    /// Follows the search (on the ticked sites), or stops following it.
+    pub fn toggle_follow(&mut self, tags: &str) {
+        let mut list: Vec<Value> = self.store.get("readingList").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+        let before = list.len();
+        list.retain(|e| e["tags"].as_str() != Some(tags));
+        if list.len() == before {
+            let sites: Vec<&str> = session::ticked_sites(&self.store).iter().map(|s| s.id()).collect();
+            list.push(json!({"tags": tags, "sites": sites}));
+        }
+        self.set("readingList", Value::Array(list));
+    }
+
+    pub fn load_more(&mut self) {
         if let Some(search) = &mut self.search {
             search.load_more(&self.engine, self.tx.clone());
         }
@@ -385,6 +428,7 @@ impl App {
         self.mode = if on { Mode::Favorites } else { Mode::Slideshow };
         self.show_pools = false;
         self.show_settings = false;
+        self.show_reading = false;
         self.shown_at = None;
         if on {
             self.rebuild_favorites();
@@ -426,18 +470,25 @@ impl App {
             "openSettings" => self.show_settings = !self.show_settings,
             "setBackground" => self.use_as_background(),
             "showInterface" => self.show_controls = !self.show_controls,
-            // Back to the front page (the quick search cards); a new search starts from there as before.
+            // Back to the front page: the quick search cards (a new search starts from there as before), or the reading list read again.
+            "home" if self.text("frontPage") == "reading" => {
+                self.reading_list = false;
+                self.open_reading();
+            }
             "home" => {
                 self.mode = Mode::Slideshow;
                 self.search = None;
                 self.show_pools = false;
                 self.show_settings = false;
+                self.show_reading = false;
             }
             // From the settings page straight to the pools page.
             "openPools" => {
                 self.show_pools = !self.show_pools || self.show_settings;
                 self.show_settings = false;
             }
+            "openReadingList" if self.show_reading && !self.show_pools && !self.show_settings => self.show_reading = false,
+            "openReadingList" => self.open_reading(),
             _ => {}
         }
         ctx.request_repaint();
@@ -448,7 +499,7 @@ impl App {
             return;
         }
         let (events, wants_text) = (ctx.input(|i| i.events.clone()), ctx.egui_wants_keyboard_input());
-        let mouse = !self.show_settings && !self.show_pools;
+        let mouse = !self.show_settings && !self.show_pools && !self.show_reading;
         for action in self.hotkeys.pressed(&events, wants_text, mouse) {
             self.act(ctx, action);
         }
@@ -465,6 +516,8 @@ impl App {
                             self.show_settings = false;
                         } else if self.show_pools {
                             self.show_pools = false;
+                        } else if self.show_reading {
+                            self.show_reading = false;
                         } else if ctx.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
                         }
@@ -506,8 +559,8 @@ impl App {
     }
 
     fn tick(&mut self, ctx: &egui::Context) {
-        // The pools and settings pages cover the slideshow: the video stops and the slide's clock starts over afterwards.
-        let current = if self.show_pools || self.show_settings { None } else { self.current() };
+        // The pools, reading list and settings pages cover the slideshow: the video stops and the slide's clock starts over afterwards.
+        let current = if self.show_pools || self.show_settings || self.show_reading { None } else { self.current() };
         let wanted = current.as_ref().filter(|s| s.media_type == MediaType::Video).map(|s| self.copies_or(&s.file_url));
         self.sync_video(wanted);
         let Some(slide) = current else {
@@ -594,6 +647,10 @@ impl App {
                 if self.show_pools {
                     return self.pools_bar(ui);
                 }
+                // The reading list page keeps the search bar: it can be the front page.
+                if self.show_reading {
+                    self.reading_bar(ui);
+                }
                 let label = if self.mode == Mode::Favorites { "◀ Slideshow" } else { "♥ Favorites" };
                 if ui.button(label).clicked() {
                     self.open_favorites(self.mode == Mode::Slideshow);
@@ -612,10 +669,19 @@ impl App {
         if ui.button("📚 Pools").clicked() {
             self.show_pools = true;
         }
+        if !self.show_reading && ui.button("🔖 Reading list").clicked() {
+            self.open_reading();
+        }
         if let Some(pool) = self.search.as_ref().and_then(|s| s.pool()) {
             if ui.button("☆ Save pool").clicked() {
                 let cover = self.search.as_ref().and_then(|s| s.slides.first().map(|x| x.preview_file_url.clone())).unwrap_or_default();
                 self.save_pool(pool.0, pool.1, pool.2, cover);
+            }
+        } else if let Some(tags) = self.search.as_ref().map(|s| s.text.clone()).filter(|t| !t.is_empty() && !self.reading_list) {
+            let following = session::reading_list(&self.store).iter().any(|(t, _)| *t == tags);
+            let button = ui.button(if following { "★ Following" } else { "☆ Follow" }).on_hover_text("The reading list shows the newest posts of what you follow.");
+            if button.clicked() {
+                self.toggle_follow(&tags);
             }
         }
         if self.flag("searchSortMenu", false) {
@@ -1140,14 +1206,17 @@ impl eframe::App for App {
         self.tick(&ctx);
         self.preload();
 
-        // The settings and pools pages take the whole window below the bar (settings over pools; Back returns there).
-        if self.show_controls || self.show_pools || self.show_settings {
+        // The settings, pools and reading list pages take the whole window below the bar (settings over pools over the
+        // reading list; Back returns there).
+        if self.show_controls || self.show_pools || self.show_settings || self.show_reading {
             egui::Panel::top("bar").show(ui, |ui| self.top_bar(ui));
         }
         if self.show_settings {
             egui::CentralPanel::default().show(ui, |ui| self.settings_page(ui));
         } else if self.show_pools {
             egui::CentralPanel::default().show(ui, |ui| self.pools_page(ui));
+        } else if self.show_reading {
+            egui::CentralPanel::default().show(ui, |ui| self.reading_page(ui));
         } else {
             if self.show_controls {
                 egui::Panel::bottom("controls").show(ui, |ui| self.controls(ui));

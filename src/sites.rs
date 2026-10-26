@@ -148,6 +148,8 @@ pub struct Cursor {
     pub page: usize,
     pub exhausted: bool,
     pub pool: Option<Pool>,
+    /// A reading list entry's own search words (none: the search's).
+    pub query: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -159,7 +161,7 @@ pub struct Pool {
 
 impl Cursor {
     pub fn new(site: Site) -> Cursor {
-        Cursor { site, page: 0, exhausted: false, pool: None }
+        Cursor { site, page: 0, exhausted: false, pool: None, query: None }
     }
 }
 

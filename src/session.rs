@@ -58,6 +58,19 @@ pub fn ticked_sites(store: &Store) -> Vec<Site> {
     }
 }
 
+/// settings.json → readingList: the followed searches (artists, tags) and the sites each is searched on.
+pub fn reading_list(store: &Store) -> Vec<(String, Vec<Site>)> {
+    let list = store.get("readingList").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+    list.iter()
+        .filter_map(|e| Some((e["tags"].as_str()?.to_string(), e["sites"].as_array()?.iter().filter_map(|s| s.as_str().and_then(Site::from_id)).collect())))
+        .collect()
+}
+
+/// For each cursor, how many before it are on the same site.
+fn same_site_before(cursors: &[Cursor]) -> Vec<u32> {
+    cursors.iter().enumerate().map(|(i, c)| cursors[..i].iter().filter(|d| d.site == c.site).count() as u32).collect()
+}
+
 /// What background work tells the window.
 pub enum Msg {
     Batch(Batch),
@@ -109,6 +122,13 @@ impl Search {
         }
     }
 
+    /// The reading list: every entry searched on its own sites, the results together (newest first, a page at a time).
+    pub fn many(generation: u64, entries: &[(String, Vec<Site>)], store: &Store) -> Search {
+        let mut search = Search::new(generation, "", vec![], store);
+        search.cursors = entries.iter().flat_map(|(tags, sites)| sites.iter().map(|s| Cursor { query: Some(tags.clone()), ..Cursor::new(*s) })).collect();
+        search
+    }
+
     /// (id, name, page count) of the e621 pool being read.
     pub fn pool(&self) -> Option<(u64, String, usize)> {
         self.cursors.iter().find_map(|c| c.pool.as_ref()).map(|p| (p.id, p.name.clone(), p.post_ids.len()))
@@ -125,13 +145,21 @@ impl Search {
         }
         self.loading = true;
         let cursors = std::mem::take(&mut self.cursors);
+        let waits = same_site_before(&cursors);
         let (cfg, text, generation, engine) = (self.cfg.clone(), self.text.clone(), self.generation, engine.clone());
         engine.rt.clone().spawn(async move {
             let tasks: Vec<_> = cursors
                 .into_iter()
-                .map(|cursor| {
-                    let (engine, cfg, text) = (engine.clone(), cfg.clone(), text.clone());
-                    tokio::spawn(async move { fetch_page(&engine, &cfg, cursor, &text).await })
+                .zip(waits)
+                .map(|(cursor, wait)| {
+                    let (engine, cfg) = (engine.clone(), cfg.clone());
+                    let text = cursor.query.clone().unwrap_or_else(|| text.clone());
+                    // The reading list asks one site many times: half a second apart (e621 allows two a second).
+                    // ponytail: the batch waits for the last one (30 e621 entries ≈ 15 s); a batch per entry if that is too slow.
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(500) * wait).await;
+                        fetch_page(&engine, &cfg, cursor, &text).await
+                    })
                 })
                 .collect();
             let (mut cursors, mut slides, mut warnings) = (vec![], vec![], vec![]);
@@ -392,6 +420,17 @@ mod tests {
         assert_eq!(list.iter().map(|s| s.md5.as_str()).collect::<String>(), "bca");
         sort_slides(&mut list, Sort::ScoreAsc);
         assert_eq!(list.iter().map(|s| s.md5.as_str()).collect::<String>(), "acb");
+    }
+
+    #[test]
+    fn reading_list_cursors() {
+        let store = Store::load(std::env::temp_dir().join("msg-native-reading"), std::env::temp_dir().join("msg-native-reading-legacy"));
+        let list = serde_json::json!([{"tags": "a", "sites": ["E621", "SAFE"]}, {"tags": "b", "sites": ["E621"]}, {"tags": "c"}]);
+        store.data.lock().unwrap().insert("readingList".into(), list);
+        let search = Search::many(1, &reading_list(&store), &store);
+        let cursors: Vec<(Site, &str)> = search.cursors.iter().map(|c| (c.site, c.query.as_deref().unwrap_or(""))).collect();
+        assert_eq!(cursors, [(Site::E621, "a"), (Site::Safebooru, "a"), (Site::E621, "b")]);
+        assert_eq!(same_site_before(&search.cursors), [0, 0, 1]);
     }
 
     #[test]
