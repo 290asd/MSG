@@ -190,10 +190,13 @@ pub fn paint(ui: &egui::Ui, rect: egui::Rect, texture: &TextureHandle, size: [us
             return ctx.request_repaint();
         };
         let Some(texture) = painter.texture(id) else { return };
-        let vp = info.viewport_in_pixels();
-        let (w, h) = (vp.width_px.max(1) as f32, vp.height_px.max(1) as f32);
+        // egui fits the viewport inside the window, which squeezes a picture that is partly outside it (the pools
+        // page's bottom row): the whole rectangle is used, and the clip rectangle (scissor) cuts what is outside.
+        let (r, ppp) = (info.viewport, info.pixels_per_point);
+        let (w, h) = ((r.width() * ppp).round().max(1.0), (r.height() * ppp).round().max(1.0));
         let taps = (size[0] as f32 / w).max(size[1] as f32 / h).ceil().clamp(1.0, 16.0) as i32;
         unsafe {
+            gl.viewport((r.left() * ppp).round() as i32, (info.screen_size_px[1] as f32 - r.bottom() * ppp).round() as i32, w as i32, h as i32);
             gl.use_program(Some(program));
             gl.bind_vertex_array(Some(vao));
             gl.active_texture(glow::TEXTURE0);
