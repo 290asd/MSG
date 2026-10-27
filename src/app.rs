@@ -19,8 +19,6 @@ use std::time::{Duration, Instant};
 
 /// How many of the next slides are loaded ahead (their thumbnails, and the first few pictures).
 const AHEAD: usize = 12;
-/// A thumbnail in the strip: its width and the space between two.
-const THUMB_STEP: f32 = 56.0 + 8.0;
 /// How long (seconds) the video bar stays after the pointer stops.
 const VIDEO_BAR_SECS: f32 = 2.0;
 
@@ -796,12 +794,25 @@ impl App {
 
     fn controls(&mut self, ui: &mut egui::Ui) {
         let len = self.list().len();
-        // The next slides as thumbnails.
+        // The next slides as thumbnails, 4:3, as high as the strip's top edge is dragged.
         let i = self.idx();
+        let size = Vec2::new(4.0 / 3.0, 1.0) * self.number("thumbHeight", 42.0) as f32;
         // As many as fit in the window (and two more, for the scrolling), so only those are loaded.
-        let fit = (ui.available_width() / THUMB_STEP).ceil() as usize + 2;
+        let fit = (ui.available_width() / (size.x + 8.0)).ceil() as usize + 2;
         let thumbs: Vec<(usize, String)> = self.list().iter().enumerate().skip(i + 1).take(fit).map(|(n, s)| (n, s.preview_file_url.clone())).collect();
         if !thumbs.is_empty() && self.flag("showThumbs", true) {
+            // The top edge is dragged like a window's edge; a short line in its middle shows where.
+            let (edge, drag) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::drag());
+            let active = drag.hovered() || drag.dragged();
+            if active {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+            }
+            let stroke = if active { ui.visuals().widgets.hovered.fg_stroke } else { ui.visuals().widgets.noninteractive.bg_stroke };
+            ui.painter().hline(edge.center().x - 20.0..=edge.center().x + 20.0, edge.center().y, stroke);
+            if drag.dragged() {
+                let most = (ui.ctx().content_rect().height() / 2.0).max(24.0);
+                self.set("thumbHeight", json!((size.y - drag.drag_delta().y).clamp(24.0, most)));
+            }
             let mut jump = None;
             egui::ScrollArea::horizontal().id_salt("thumbs").show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -809,7 +820,6 @@ impl App {
                         let url = thumb_source(&self.copies_or(url));
                         // Also asks for what is missing (the list may have grown); a thumbnail in use is not let go.
                         self.media.request(&self.engine, &url);
-                        let size = Vec2::new(THUMB_STEP - 8.0, 42.0);
                         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
                         ui.painter().rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
                         if let Some(State::Ready(p)) = self.media.get(&url) {
