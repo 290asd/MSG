@@ -638,9 +638,6 @@ impl App {
                 self.sites_menu(ui);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("⚙").clicked() {
-                    self.show_settings = !self.show_settings;
-                }
                 if self.show_settings {
                     return self.settings_bar(ui);
                 }
@@ -650,10 +647,6 @@ impl App {
                 // The reading list page keeps the search bar: it can be the front page.
                 if self.show_reading {
                     self.reading_bar(ui);
-                }
-                let label = if self.mode == Mode::Favorites { "◀ Slideshow" } else { "♥ Favorites" };
-                if ui.button(label).clicked() {
-                    self.open_favorites(self.mode == Mode::Slideshow);
                 }
                 if self.mode == Mode::Slideshow {
                     self.search_bar(ui);
@@ -666,12 +659,6 @@ impl App {
 
     /// Right to left (see top_bar).
     fn search_bar(&mut self, ui: &mut egui::Ui) {
-        if ui.button("📚 Pools").clicked() {
-            self.show_pools = true;
-        }
-        if !self.show_reading && ui.button("🔖 Reading list").clicked() {
-            self.open_reading();
-        }
         if let Some(pool) = self.search.as_ref().and_then(|s| s.pool()) {
             if ui.button("☆ Save pool").clicked() {
                 let cover = self.search.as_ref().and_then(|s| s.slides.first().map(|x| x.preview_file_url.clone())).unwrap_or_default();
@@ -709,6 +696,23 @@ impl App {
         if search || enter {
             let text = self.query.clone();
             self.start_search(&text);
+        }
+    }
+
+    /// Favorites, the pools, the reading list and the settings, right to left: at the right end of the controls, and
+    /// in a bar of their own under the pages that fill the window. The page that is open shows as selected.
+    fn nav(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let (settings, pools) = (self.show_settings, self.show_pools && !self.show_settings);
+        let reading = self.show_reading && !pools && !settings;
+        for (on, text, action) in [(settings, "⚙ Settings", "openSettings"), (reading, "🔖 Reading list", "openReadingList"), (pools, "📚 Pools", "openPools")] {
+            if ui.add(egui::Button::new(text).selected(on)).clicked() {
+                self.act(&ctx, action);
+            }
+        }
+        let label = if self.mode == Mode::Favorites { "◀ Slideshow" } else { "♥ Favorites" };
+        if ui.button(label).clicked() {
+            self.open_favorites(self.mode == Mode::Slideshow);
         }
     }
 
@@ -821,46 +825,52 @@ impl App {
                 self.set_idx(n);
             }
         }
-        ui.horizontal_wrapped(|ui| {
-            if ui.button("⏮").clicked() {
-                self.move_by(-1);
-            }
-            if ui.button(if self.playing { "⏸" } else { "▶" }).clicked() {
-                self.playing = !self.playing;
-            }
-            if ui.button("⏭").clicked() {
-                self.move_by(1);
-            }
-            ui.label(if len == 0 { "0 / 0".to_string() } else { format!("{} / {}{}", i + 1, len, if self.search.as_ref().is_some_and(|s| s.has_more()) && self.mode == Mode::Slideshow { "+" } else { "" }) });
-            let mut secs = self.number("secondsPerSlide", 6.0);
-            if ui.add(egui::DragValue::new(&mut secs).range(1.0..=600.0).suffix(" s")).changed() {
-                self.set("secondsPerSlide", json!(secs));
-            }
-            let faved = self.current().is_some_and(|s| self.fav.contains(&s));
-            if ui.button(RichText::new(if faved { "♥" } else { "♡" }).color(if faved { Color32::from_rgb(230, 70, 90) } else { ui.visuals().text_color() })).clicked() {
-                self.toggle_favorite();
-            }
-            if self.flag("showDownloadButton", true) && ui.button("💾 Download").clicked() {
-                self.download_current();
-            }
-            if ui.button("Post").clicked() {
-                self.open_source();
-            }
-            if ui.selectable_label(self.show_tags, "# Tags").clicked() {
-                self.show_tags = !self.show_tags;
-                self.set("showTags", json!(self.show_tags));
-            }
-            let thumbs = self.flag("showThumbs", true);
-            if ui.selectable_label(thumbs, "Thumbnails").clicked() {
-                self.set("showThumbs", json!(!thumbs));
-            }
-            let mut fit = self.flag("autoFitSlide", true);
-            if ui.checkbox(&mut fit, "Fit").changed() {
-                self.set("autoFitSlide", json!(fit));
-            }
-            if !self.progress.is_empty() {
-                ui.label(RichText::new(&self.progress).weak());
-            }
+        // The navigation at the right end; the rest wraps to more rows in a narrow window.
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.nav(ui);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true), |ui| {
+                    if ui.button("⏮").clicked() {
+                        self.move_by(-1);
+                    }
+                    if ui.button(if self.playing { "⏸" } else { "▶" }).clicked() {
+                        self.playing = !self.playing;
+                    }
+                    if ui.button("⏭").clicked() {
+                        self.move_by(1);
+                    }
+                    ui.label(if len == 0 { "0 / 0".to_string() } else { format!("{} / {}{}", i + 1, len, if self.search.as_ref().is_some_and(|s| s.has_more()) && self.mode == Mode::Slideshow { "+" } else { "" }) });
+                    let mut secs = self.number("secondsPerSlide", 6.0);
+                    if ui.add(egui::DragValue::new(&mut secs).range(1.0..=600.0).suffix(" s")).changed() {
+                        self.set("secondsPerSlide", json!(secs));
+                    }
+                    let faved = self.current().is_some_and(|s| self.fav.contains(&s));
+                    if ui.button(RichText::new(if faved { "♥" } else { "♡" }).color(if faved { Color32::from_rgb(230, 70, 90) } else { ui.visuals().text_color() })).clicked() {
+                        self.toggle_favorite();
+                    }
+                    if self.flag("showDownloadButton", true) && ui.button("💾 Download").clicked() {
+                        self.download_current();
+                    }
+                    if ui.button("Post").clicked() {
+                        self.open_source();
+                    }
+                    if ui.selectable_label(self.show_tags, "# Tags").clicked() {
+                        self.show_tags = !self.show_tags;
+                        self.set("showTags", json!(self.show_tags));
+                    }
+                    let thumbs = self.flag("showThumbs", true);
+                    if ui.selectable_label(thumbs, "Thumbnails").clicked() {
+                        self.set("showThumbs", json!(!thumbs));
+                    }
+                    let mut fit = self.flag("autoFitSlide", true);
+                    if ui.checkbox(&mut fit, "Fit").changed() {
+                        self.set("autoFitSlide", json!(fit));
+                    }
+                    if !self.progress.is_empty() {
+                        ui.label(RichText::new(&self.progress).weak());
+                    }
+                });
+            });
         });
     }
 
@@ -1210,6 +1220,10 @@ impl eframe::App for App {
         // reading list; Back returns there).
         if self.show_controls || self.show_pools || self.show_settings || self.show_reading {
             egui::Panel::top("bar").show(ui, |ui| self.top_bar(ui));
+        }
+        // Their navigation at the bottom, where the controls have it.
+        if self.show_pools || self.show_settings || self.show_reading {
+            egui::Panel::bottom("nav").show(ui, |ui| ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.nav(ui)));
         }
         if self.show_settings {
             egui::CentralPanel::default().show(ui, |ui| self.settings_page(ui));
