@@ -11,9 +11,8 @@ use serde_json::{json, Value};
 const POOL_TILE: Vec2 = Vec2::new(160.0, 270.0);
 const POOL_COVER: f32 = 210.0;
 const POOL_GAP: f32 = 14.0;
-/// A post on the reading list page.
-const THUMB: f32 = 150.0;
-const THUMB_GAP: f32 = 8.0;
+/// The space between the reading list page's pictures.
+const THUMB_GAP: f32 = 6.0;
 
 const TABS: [(Tab, &str); 10] = [
     (Tab::Appearance, "Appearance"),
@@ -570,13 +569,31 @@ impl App {
             self.start_reading();
         }
         ui.label(RichText::new(if loading { "Loading…".to_string() } else { format!("{count} posts") }).weak());
+        ui.spacing_mut().slider_width = 100.0;
+        let mut size = self.number("readingThumbWidth", 220.0);
+        if ui.add(egui::Slider::new(&mut size, 100.0..=600.0).show_value(false)).on_hover_text("Picture size").changed() {
+            self.set("readingThumbWidth", json!(size));
+        }
+        ui.label("Size");
     }
 
-    /// The reading list's posts as thumbnails that fill the window, newest first. Only the rows on the screen are
-    /// drawn (and their pictures loaded), and near the end the next page is read. A click shows the post in the slideshow.
+    /// The reading list's posts in columns that fill the window (about the chosen width each), newest first: each
+    /// picture keeps its shape and goes under the shortest column. Only the pictures on the screen are drawn (and
+    /// loaded), and near the end the next page is read. A click shows the post in the slideshow.
     pub fn reading_page(&mut self, ui: &mut egui::Ui) {
         let rect = ui.available_rect_before_wrap();
-        let thumbs: Vec<(String, bool)> = self.search.as_ref().map(|s| s.slides.iter().map(|x| (x.preview_file_url.clone(), x.media_type == MediaType::Video)).collect()).unwrap_or_default();
+        let width = rect.width() - 16.0;
+        let target = self.number("readingThumbWidth", 220.0) as f32;
+        let columns = ((width + THUMB_GAP) / (target + THUMB_GAP)).floor().max(1.0) as usize;
+        let column = (width - THUMB_GAP * (columns - 1) as f32) / columns as f32;
+        // Wide columns get the sites' larger samples, as their thumbnails are about 150 px.
+        let big = column * ui.ctx().pixels_per_point() > 200.0;
+        // (picture, height ÷ width, video)
+        let thumbs: Vec<(String, f32, bool)> = self.search.as_ref().map(|s| s.slides.iter().map(|x| {
+            let video = x.media_type == MediaType::Video;
+            let url = x.sample_file_url.clone().filter(|u| big && !video && !u.is_empty()).unwrap_or_else(|| x.preview_file_url.clone());
+            (url, if x.width > 0 && x.height > 0 { x.height as f32 / x.width as f32 } else { 1.0 }, video)
+        }).collect()).unwrap_or_default();
         if thumbs.is_empty() {
             let text = if self.search.as_ref().is_some_and(|s| s.loading) {
                 "Loading the reading list…"
@@ -588,39 +605,44 @@ impl App {
             ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), egui::Color32::GRAY);
             return;
         }
-        // As on the pools page.
-        let width = rect.width() - 16.0;
-        let columns = ((width + THUMB_GAP) / (THUMB + THUMB_GAP)).floor().max(1.0) as usize;
-        let margin = ((width + THUMB_GAP - columns as f32 * (THUMB + THUMB_GAP)) / 2.0).max(0.0);
-        let rows_total = thumbs.len().div_ceil(columns);
+        // The places in content coordinates. Very tall or wide pictures are kept within 1:4 and 3:1 (letterboxed).
+        let mut heights = vec![0.0f32; columns];
+        let cells: Vec<egui::Rect> = thumbs
+            .iter()
+            .map(|(_, ratio, _)| {
+                let c = (0..columns).min_by(|a, b| heights[*a].total_cmp(&heights[*b])).unwrap_or(0);
+                let cell = egui::Rect::from_min_size(egui::pos2(c as f32 * (column + THUMB_GAP), heights[c]), Vec2::new(column, column * ratio.clamp(0.25, 3.0)));
+                heights[c] = cell.bottom() + THUMB_GAP;
+                cell
+            })
+            .collect();
+        let total = heights.iter().copied().fold(0.0, f32::max);
         let (mut go, mut near_end) = (None, false);
         // A list read again starts from the top.
         let generation = self.search.as_ref().map_or(0, |s| s.generation);
-        ui.spacing_mut().item_spacing = Vec2::splat(THUMB_GAP);
-        egui::ScrollArea::vertical().id_salt(("reading", generation)).auto_shrink(false).show_rows(ui, THUMB, rows_total, |ui, rows| {
-            near_end = rows.end + 3 >= rows_total;
-            for (r, row) in thumbs.chunks(columns).enumerate().skip(rows.start).take(rows.len()) {
-                ui.horizontal(|ui| {
-                    ui.add_space(margin);
-                    for (c, (url, video)) in row.iter().enumerate() {
-                        let (tile, response) = ui.allocate_exact_size(Vec2::splat(THUMB), egui::Sense::click());
-                        ui.painter().rect_filled(tile, 6.0, ui.visuals().extreme_bg_color);
-                        let url = super::downloads::display_url(&self.copies, url);
-                        self.media.request(&self.engine, &url);
-                        if let Some(State::Ready(p)) = self.media.get(&url) {
-                            super::app::paint_fit(ui, tile, &p.frames[0].texture, p.size);
-                        }
-                        if *video {
-                            ui.painter().text(tile.left_top() + Vec2::splat(8.0), egui::Align2::LEFT_TOP, "▶", egui::FontId::proportional(16.0), egui::Color32::WHITE);
-                        }
-                        if response.hovered() {
-                            ui.painter().rect_stroke(tile, 6.0, egui::Stroke::new(2.0, ui.visuals().selection.bg_fill), egui::StrokeKind::Outside);
-                        }
-                        if response.clicked() {
-                            go = Some(r * columns + c);
-                        }
-                    }
-                });
+        egui::ScrollArea::vertical().id_salt(("reading", generation)).auto_shrink(false).show_viewport(ui, |ui, viewport| {
+            ui.set_height(total);
+            near_end = viewport.bottom() + rect.height() >= total;
+            let origin = ui.max_rect().min.to_vec2();
+            for (n, cell) in cells.iter().enumerate().filter(|(_, c)| c.intersects(viewport)) {
+                let (url, _, video) = &thumbs[n];
+                let tile = cell.translate(origin);
+                let response = ui.interact(tile, ui.id().with(("post", n)), egui::Sense::click());
+                ui.painter().rect_filled(tile, 4.0, ui.visuals().extreme_bg_color);
+                let url = super::downloads::display_url(&self.copies, url);
+                self.media.request(&self.engine, &url);
+                if let Some(State::Ready(p)) = self.media.get(&url) {
+                    super::app::paint_fit(ui, tile, &p.frames[0].texture, p.size);
+                }
+                if *video {
+                    ui.painter().text(tile.left_top() + Vec2::splat(8.0), egui::Align2::LEFT_TOP, "▶", egui::FontId::proportional(16.0), egui::Color32::WHITE);
+                }
+                if response.hovered() {
+                    ui.painter().rect_stroke(tile, 4.0, egui::Stroke::new(2.0, ui.visuals().selection.bg_fill), egui::StrokeKind::Inside);
+                }
+                if response.clicked() {
+                    go = Some(n);
+                }
             }
         });
         if near_end {
