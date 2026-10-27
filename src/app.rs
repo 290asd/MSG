@@ -19,6 +19,8 @@ use std::time::{Duration, Instant};
 
 /// How many of the next slides are loaded ahead (their thumbnails, and the first few pictures).
 const AHEAD: usize = 12;
+/// How long a removal from the favorites waits for the second press.
+const UNFAVE_WAIT: Duration = Duration::from_secs(4);
 /// How long (seconds) the video bar stays after the pointer stops.
 const VIDEO_BAR_SECS: f32 = 2.0;
 
@@ -73,6 +75,8 @@ pub struct App {
     pub show_reading: bool,
     pub reading_list: bool,
     pub notices: Vec<(String, Instant)>,
+    /// The favorite (its file) that ♥ was pressed on once while browsing the favorites, and when.
+    unfave: Option<(String, Instant)>,
     pub progress: String,
     pub recording: Option<(String, usize)>,
     pub pool_filter: String,
@@ -120,6 +124,7 @@ impl App {
             show_reading: false,
             reading_list: false,
             notices: vec![],
+            unfave: None,
             progress: String::new(),
             recording: None,
             pool_filter: String::new(),
@@ -361,6 +366,12 @@ impl App {
 
     pub fn toggle_favorite(&mut self) {
         let Some(slide) = self.current() else { return };
+        // Browsing the favorites, a removal takes a second press: the post leaves the list, and there is no undoing it.
+        if self.mode == Mode::Favorites && self.fav.contains(&slide) && !self.unfave_armed(&slide) {
+            self.unfave = Some((slide.file_url.clone(), Instant::now()));
+            return self.notice("Press ♥ again to remove it from the favorites.");
+        }
+        self.unfave = None;
         let faved = self.fav.toggle(&slide);
         self.fav.save(&self.store);
         favorites::sync_e621(&self.engine, &self.tx, &slide, faved);
@@ -370,6 +381,11 @@ impl App {
             self.set_idx(i);
         }
         self.downloader.schedule(Duration::from_secs(5));
+    }
+
+    /// ♥ was pressed once on this favorite, a moment ago.
+    fn unfave_armed(&self, slide: &Slide) -> bool {
+        self.unfave.as_ref().is_some_and(|(url, at)| *url == slide.file_url && at.elapsed() < UNFAVE_WAIT)
     }
 
     fn open_source(&self) {
@@ -855,7 +871,13 @@ impl App {
                         self.set("secondsPerSlide", json!(secs));
                     }
                     let faved = self.current().is_some_and(|s| self.fav.contains(&s));
-                    if ui.button(RichText::new(if faved { "♥" } else { "♡" }).color(if faved { Color32::from_rgb(230, 70, 90) } else { ui.visuals().text_color() })).clicked() {
+                    let armed = self.current().is_some_and(|s| self.unfave_armed(&s));
+                    if let Some((_, at)) = self.unfave.as_ref().filter(|_| armed) {
+                        // Back to ♥ when the wait is over.
+                        ui.ctx().request_repaint_after(UNFAVE_WAIT.saturating_sub(at.elapsed()));
+                    }
+                    let heart = if armed { "♥ Remove?" } else if faved { "♥" } else { "♡" };
+                    if ui.button(RichText::new(heart).color(if faved { Color32::from_rgb(230, 70, 90) } else { ui.visuals().text_color() })).clicked() {
                         self.toggle_favorite();
                     }
                     if self.flag("showDownloadButton", true) && ui.button("💾 Download").clicked() {
