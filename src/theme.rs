@@ -259,6 +259,75 @@ pub fn icon_button_tinted(ui: &mut egui::Ui, icon: char, tip: &str, on: bool, co
     response.on_hover_text(tip)
 }
 
+/// One page of the rail: the icon and its name under it.
+pub fn rail_item(ui: &mut egui::Ui, rect: egui::Rect, icon: char, label: &str, on: bool) -> egui::Response {
+    let response = ui.interact(rect, ui.id().with(label), if ui.is_enabled() { Sense::click() } else { Sense::hover() });
+    let t = tok(ui.ctx());
+    let hover = ui.ctx().animate_bool_with_time(response.id.with("hover"), response.hovered() && ui.is_enabled(), quick());
+    let shape = rect.shrink(2.0);
+    if !on && hover > 0.0 {
+        ui.painter().rect_filled(shape, RADIUS_M, t.control.gamma_multiply(hover));
+    }
+    let color = if !ui.is_enabled() { t.muted.gamma_multiply(0.6) } else if on { t.accent } else { t.text2.lerp_to_gamma(t.text, hover) };
+    ui.painter().text(egui::pos2(rect.center().x, rect.top() + 21.0), egui::Align2::CENTER_CENTER, icon.to_string(), FontId::new(20.0, family("icons")), color);
+    ui.painter().text(egui::pos2(rect.center().x, rect.top() + 42.0), egui::Align2::CENTER_CENTER, label, medium(10.5), color);
+    focus_ring(ui, &response, RADIUS_M);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label));
+    response
+}
+
+/// The app's mark, in white: painted in a colour through the tint.
+pub fn logo(ctx: &egui::Context) -> egui::TextureHandle {
+    let picture = image::load_from_memory(include_bytes!("../img/msg_icon_white_48.png")).expect("the icon is part of the program").to_rgba8();
+    let size = [picture.width() as usize, picture.height() as usize];
+    ctx.load_texture("logo", egui::ColorImage::from_rgba_unmultiplied(size, picture.as_raw()), egui::TextureOptions::LINEAR)
+}
+
+pub fn icon_font(size: f32) -> FontId {
+    FontId::new(size, family("icons"))
+}
+
+pub fn glyph_text(icon: char) -> String {
+    icon.to_string()
+}
+
+/// A favorite's heart is filled; the font has only the outline, the filled one comes from egui's own fonts.
+pub fn heart_text(faved: bool) -> String {
+    if faved { "\u{2665}".to_string() } else { icon::HEART.to_string() }
+}
+
+pub fn heart_font(faved: bool, size: f32) -> FontId {
+    if faved { FontId::proportional(size * 1.2) } else { icon_font(size) }
+}
+
+/// A small mark on a picture: a dark disc that keeps the sign readable on any picture.
+pub fn badge(ui: &egui::Ui, rect: egui::Rect, text: String, font: FontId, color: Color32) {
+    ui.painter().rect_filled(rect, RADIUS_S, Color32::from_black_alpha(150));
+    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, font, color);
+}
+
+/// A button on a picture.
+pub fn overlay_button(ui: &mut egui::Ui, rect: egui::Rect, id: egui::Id, text: String, font: FontId, color: Color32, tip: &str) -> egui::Response {
+    let response = ui.interact(rect, id, Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
+    ui.painter().rect_filled(rect, RADIUS_S, Color32::from_black_alpha(if response.hovered() { 200 } else { 150 }));
+    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, font, color);
+    response.on_hover_text(tip)
+}
+
+/// A name in the bottom corner of a picture; cut with … if the picture is narrow.
+pub fn overlay_chip(ui: &mut egui::Ui, tile: egui::Rect, id: egui::Id, text: &str) -> egui::Response {
+    let mut job = egui::text::LayoutJob::simple(text.to_string(), medium(11.5), Color32::WHITE, tile.width() - 32.0);
+    job.wrap.max_rows = 1;
+    job.wrap.break_anywhere = true;
+    let galley = ui.painter().layout_job(job);
+    let size = galley.size() + Vec2::new(16.0, 8.0);
+    let rect = egui::Rect::from_min_size(egui::pos2(tile.left() + 6.0, tile.bottom() - 6.0 - size.y), size);
+    let response = ui.interact(rect, id, Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
+    ui.painter().rect_filled(rect, RADIUS_S, Color32::from_black_alpha(if response.hovered() { 210 } else { 150 }));
+    ui.painter().galley(rect.min + Vec2::new(8.0, 4.0), galley, Color32::WHITE);
+    response.on_hover_text("Search for this artist")
+}
+
 /// A switch for on and off.
 pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
     let (rect, mut response) = ui.allocate_exact_size(Vec2::new(36.0, 20.0), Sense::click());

@@ -5,6 +5,7 @@ mod app;
 mod downloads;
 mod favorites;
 mod files;
+mod glass;
 mod hotkeys;
 mod media;
 mod net;

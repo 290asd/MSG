@@ -3,9 +3,12 @@
 use super::downloads::{self, Downloader};
 use super::favorites::{self, Favorites};
 use super::files;
+use super::glass;
 use super::hotkeys::Hotkeys;
+use super::theme::{self, icon, tok};
 use super::media::{self, MediaCache, State};
 use super::session::{self, Engine, Msg, Search};
+use super::settings_ui::masonry;
 use super::sites::Site;
 use super::video::Player;
 use super::slide::{MediaType, Slide};
@@ -23,8 +26,14 @@ const AHEAD: usize = 12;
 const UNFAVE_WAIT: Duration = Duration::from_secs(4);
 /// How long (seconds) the video bar stays after the pointer stops.
 const VIDEO_BAR_SECS: f32 = 2.0;
-/// The mark of a favorite: the heart, and the edge of its picture.
-pub const FAVE_RED: Color32 = Color32::from_rgb(230, 70, 90);
+/// The width of the rail on the pages, its distance from the window's edge, and the room it takes.
+const RAIL_W: f32 = 72.0;
+const RAIL_MARGIN: f32 = 6.0;
+const RAIL_SPACE: f32 = RAIL_W + RAIL_MARGIN * 2.0;
+/// Where a page's content starts, below the toolbar floating over it.
+pub const TOP_INSET: f32 = 60.0;
+/// How long (seconds) the picture behind everything takes to change.
+const AMBIENT_FADE: f32 = 0.45;
 
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum Mode {
@@ -118,6 +127,9 @@ pub struct App {
     unfave: Option<(String, Instant)>,
     pub progress: String,
     pub recording: Option<(String, usize)>,
+    logo: egui::TextureHandle,
+    /// The picture blurred behind everything, the one before it, and when it changed.
+    ambient: (String, String, Instant),
     pub pool_filter: String,
     pub video: Option<Player>,
     covers: HashMap<usize, Slide>,
@@ -171,6 +183,8 @@ impl App {
             unfave: None,
             progress: String::new(),
             recording: None,
+            logo: theme::logo(&cc.egui_ctx),
+            ambient: (String::new(), String::new(), Instant::now()),
             pool_filter: String::new(),
             video: None,
             covers: HashMap::new(),
@@ -311,6 +325,11 @@ impl App {
     /// The reading list's mosaic is the page on top.
     pub fn on_reading(&self) -> bool {
         self.on_mosaic() && self.reading_list && self.mode == Mode::Slideshow
+    }
+
+    /// The front page is showing, in either of its forms.
+    pub fn on_home(&self) -> bool {
+        self.on_reading() || (!self.covered() && self.mode == Mode::Slideshow && self.search.is_none())
     }
 
     /// From the mosaic to the slideshow, running from the first post.
@@ -533,7 +552,12 @@ impl App {
     // ---------- actions ----------
 
     pub fn toggle_favorite(&mut self) {
-        let Some(slide) = self.current() else { return };
+        if let Some(slide) = self.current() {
+            self.toggle_favorite_of(slide);
+        }
+    }
+
+    pub fn toggle_favorite_of(&mut self, slide: Slide) {
         // Browsing the favorites, a removal takes a second press: the post leaves the list, and there is no undoing it.
         if self.mode == Mode::Favorites && self.fav.contains(&slide) && !self.unfave_armed(&slide) {
             self.unfave = Some((slide.file_url.clone(), Instant::now()));
@@ -685,6 +709,12 @@ impl App {
                 self.go_back();
             }
             "openReadingList" => self.open_reading(),
+            // Back to the slideshow where it was left.
+            "showSlideshow" => {
+                self.show_pools = false;
+                self.show_settings = false;
+                self.show_mosaic = false;
+            }
             // Esc: the screen before; with none left, out of fullscreen.
             "back" => {
                 if !self.go_back() && ctx.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
@@ -842,18 +872,15 @@ impl App {
     /// One row: the buttons are laid out from the right end, and the search box takes the width that is left.
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if ui.button("🏠").on_hover_text("Front page").clicked() {
-                self.act(&ui.ctx().clone(), "home");
-            }
             if self.mode == Mode::Slideshow && !self.show_pools && !self.show_settings {
                 self.sites_menu(ui);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if self.show_settings {
-                    return self.settings_bar(ui);
-                }
                 if self.show_pools {
                     return self.pools_bar(ui);
+                }
+                if self.on_home() {
+                    self.home_switch(ui);
                 }
                 // The mosaic keeps the search bar (or the favorites bar).
                 if self.show_mosaic {
@@ -866,6 +893,17 @@ impl App {
                 }
             });
         });
+    }
+
+    /// The two forms of the front page; the choice is the Front page setting.
+    fn home_switch(&mut self, ui: &mut egui::Ui) {
+        let chosen = if self.on_reading() { 0 } else { 1 };
+        if let Some(n) = theme::segmented(ui, &[(icon::MOSAIC, "Mosaic"), (icon::SAVED, "Saved searches")], chosen) {
+            if n != chosen {
+                self.set("frontPage", json!(if n == 0 { "reading" } else { "search" }));
+                self.act(&ui.ctx().clone(), "home");
+            }
+        }
     }
 
     /// Right to left (see top_bar).
@@ -910,6 +948,88 @@ impl App {
         }
     }
 
+    /// The toolbar floating over the top of a page: what scrolls under it shows through the glass.
+    fn toolbar(&mut self, ctx: &egui::Context) {
+        let rect = ctx.content_rect();
+        let width = rect.width() - RAIL_SPACE - theme::S2;
+        egui::Area::new(egui::Id::new("toolbar")).order(egui::Order::Middle).fixed_pos(egui::pos2(rect.left() + RAIL_SPACE, rect.top() + theme::S2)).show(ctx, |ui| {
+            glass::card(ui, glass::bar(ctx), egui::Margin::same(6), |ui| {
+                ui.set_width(width - 12.0);
+                ui.set_min_height(32.0);
+                self.top_bar(ui);
+            });
+        });
+    }
+
+    /// The pages, on a glass card down the left edge of the window. The one open is marked.
+    fn rail(&mut self, ui: &mut egui::Ui) {
+        const ITEM: f32 = 56.0;
+        let ctx = ui.ctx().clone();
+        let t = tok(&ctx);
+        let column = ui.max_rect();
+        let card = egui::Rect::from_min_max(column.min + Vec2::splat(RAIL_MARGIN), egui::pos2(column.left() + RAIL_MARGIN + RAIL_W, column.bottom() - RAIL_MARGIN));
+        glass::panel(ui, card, glass::bar(&ctx));
+        let logo = egui::Rect::from_center_size(egui::pos2(card.center().x, card.top() + 24.0), Vec2::splat(26.0));
+        ui.painter().image(self.logo.id(), logo, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), t.accent);
+        let (settings, pools) = (self.show_settings, self.show_pools && !self.show_settings);
+        let favorites = self.mode == Mode::Favorites && !pools && !settings;
+        let results = self.on_mosaic() && !self.on_reading() && self.mode == Mode::Slideshow;
+        let items = [
+            (icon::HOME, "Home", "home", self.on_home(), true),
+            (icon::SLIDESHOW, "Slideshow", "showSlideshow", results, !self.list().is_empty()),
+            (icon::POOLS, "Pools", "openPools", pools, true),
+            (icon::HEART, "Favorites", "openFavorites", favorites, true),
+            (icon::SETTINGS, "Settings", "openSettings", settings, true),
+        ];
+        let place = |n: usize| {
+            let top = if n == items.len() - 1 { card.bottom() - ITEM - 6.0 } else { card.top() + 48.0 + n as f32 * ITEM };
+            egui::Rect::from_min_size(egui::pos2(card.left() + 4.0, top), Vec2::new(RAIL_W - 8.0, ITEM))
+        };
+        // The mark slides from page to page.
+        if let Some(n) = items.iter().position(|i| i.3) {
+            let y = ctx.animate_value_with_time(egui::Id::new("rail mark"), place(n).top(), theme::smooth());
+            ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(place(n).left(), y), place(n).size()).shrink(2.0), theme::RADIUS_M, t.press);
+        }
+        for (n, (glyph, label, action, on, enabled)) in items.into_iter().enumerate() {
+            if ui.add_enabled_ui(enabled, |ui| theme::rail_item(ui, place(n), glyph, label, on)).inner.clicked() {
+                self.act(&ctx, action);
+            }
+        }
+    }
+
+    /// Behind everything: the picture being looked at, blurred and dimmed, so that the glass has something to show.
+    /// Without one, the window's own colour and a faint glow.
+    fn ambient(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+        let ctx = ui.ctx().clone();
+        let t = tok(&ctx);
+        ui.painter().rect_filled(rect, 0.0, t.base);
+        ui.painter().circle_filled(egui::pos2(rect.right() - rect.width() * 0.2, rect.top()), rect.height() * 0.45, t.accent.gamma_multiply(0.16));
+        ui.painter().circle_filled(egui::pos2(rect.left() + rect.width() * 0.15, rect.bottom()), rect.height() * 0.4, t.lavender.gamma_multiply(0.10));
+        // Under the settings and the pools the last one stays.
+        if !self.show_settings && !self.show_pools {
+            if let Some(url) = self.current().map(|s| self.copies_or(&s.preview_file_url)) {
+                self.media.request(&self.engine, &url);
+                if url != self.ambient.0 && matches!(self.media.get(&url), Some(State::Ready(_))) {
+                    self.ambient = (url, std::mem::take(&mut self.ambient.0), Instant::now());
+                }
+            }
+        }
+        let k = if theme::smooth() > 0.0 { (self.ambient.2.elapsed().as_secs_f32() / AMBIENT_FADE).min(1.0) } else { 1.0 };
+        if k < 1.0 {
+            ctx.request_repaint();
+        }
+        let (now, was) = (self.ambient.0.clone(), self.ambient.1.clone());
+        for (url, alpha) in [(was, 1.0), (now, k)] {
+            if let Some(State::Ready(p)) = self.media.get(&url) {
+                let (w, h) = (p.size[0] as f32, p.size[1] as f32);
+                let scale = (rect.width() / w).max(rect.height() / h);
+                let whole = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                ui.painter().image(p.frames[0].texture.id(), egui::Rect::from_center_size(rect.center(), Vec2::new(w, h) * scale), whole, Color32::WHITE.gamma_multiply(alpha));
+            }
+        }
+        ui.painter().add(glass::frost(&ctx, rect, glass::Look { radius: 0.0, tint: t.ambient, passes: 6 }, 1.0));
+    }
+
     /// Favorites, the pools, the reading list and the settings, right to left: at the right end of the controls, and
     /// in a bar of their own under the pages that fill the window. The page that is open shows as selected.
     fn nav(&mut self, ui: &mut egui::Ui) {
@@ -925,7 +1045,7 @@ impl App {
     }
 
     fn sites_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button("Sites", |ui| {
+        ui.menu_button((theme::glyph(icon::SITES, 14.0), "Sites"), |ui| {
             let ticked = session::ticked_sites(&self.store);
             for site in Site::ALL {
                 let mut on = ticked.contains(&site);
@@ -935,7 +1055,7 @@ impl App {
                 }
             }
         });
-        ui.menu_button("Filters", |ui| {
+        ui.menu_button((theme::glyph(icon::FILTERS, 14.0), "Filters"), |ui| {
             for (key, default, label) in [
                 ("includeImages", true, "Images"), ("includeGifs", true, "GIFs"), ("includeWebms", true, "Videos"),
                 ("includeSafe", true, "Safe"), ("includeQuestionable", false, "Questionable"), ("includeExplicit", false, "Explicit"),
@@ -1034,7 +1154,7 @@ impl App {
                         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
                         ui.painter().rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
                         if let Some(State::Ready(p)) = self.media.get(&url) {
-                            paint_fit(ui, rect, &p.frames[0].texture, p.size);
+                            paint_fit(ui, rect, &p.frames[0].texture, p.size, 1.0, 4.0);
                         }
                         if response.clicked() {
                             jump = Some(*n);
@@ -1076,7 +1196,7 @@ impl App {
                         ui.ctx().request_repaint_after(UNFAVE_WAIT.saturating_sub(at.elapsed()));
                     }
                     let heart = if armed { "♥ Remove?" } else if faved { "♥" } else { "♡" };
-                    if ui.button(RichText::new(heart).color(if faved { FAVE_RED } else { ui.visuals().text_color() })).clicked() {
+                    if ui.button(RichText::new(heart).color(if faved { tok(ui.ctx()).accent } else { ui.visuals().text_color() })).clicked() {
                         self.toggle_favorite();
                     }
                     if self.flag("showDownloadButton", true) && ui.button("💾 Download").clicked() {
@@ -1149,9 +1269,9 @@ impl App {
                 let (w, h) = (picture.size[0] as f32, picture.size[1] as f32);
                 let scale = if fit { (rect.width() / w).min(rect.height() / h) } else { 1.0f32.min(max_w / w).min(max_h / h) };
                 let image_rect = egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale));
-                media::paint(ui, image_rect, &frame.texture, picture.size);
+                media::paint(ui, image_rect, &frame.texture, picture.size, 1.0, 0.0);
                 if faved {
-                    ui.painter().rect_stroke(image_rect, 0.0, egui::Stroke::new(2.0, FAVE_RED), egui::StrokeKind::Outside);
+                    ui.painter().rect_stroke(image_rect, 0.0, egui::Stroke::new(2.0, tok(ui.ctx()).accent), egui::StrokeKind::Outside);
                 }
                 if let Some(after) = picture.next_frame_in(elapsed) {
                     ui.ctx().request_repaint_after(after);
@@ -1164,7 +1284,7 @@ impl App {
             _ => {
                 // The thumbnail is usually here already: it stands in until the picture itself has arrived.
                 if let Some(State::Ready(thumb)) = self.media.get(&thumb_source(&self.copies_or(&slide.preview_file_url))) {
-                    paint_fit(ui, rect, &thumb.frames[0].texture, thumb.size);
+                    paint_fit(ui, rect, &thumb.frames[0].texture, thumb.size, 1.0, 0.0);
                 }
                 for (shift, color) in [(1.0, Color32::BLACK), (0.0, Color32::WHITE)] {
                     ui.painter().text(rect.center() + Vec2::splat(shift), egui::Align2::CENTER_CENTER, "Loading…", egui::FontId::proportional(18.0), color);
@@ -1242,8 +1362,9 @@ impl App {
     }
 
     fn front_page(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+        let t = tok(ui.ctx());
         if self.mode == Mode::Favorites {
-            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "No favorites to show.", egui::FontId::proportional(18.0), Color32::GRAY);
+            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "No favorites to show.", egui::FontId::proportional(16.0), t.text2);
             return;
         }
         let background = self.text("backgroundImage");
@@ -1258,15 +1379,16 @@ impl App {
             }
         }
         let searching = self.search.as_ref().is_some_and(|s| s.loading);
-        let text = if searching { "Searching…" } else { "Type a search above." };
-        ui.painter().text(egui::pos2(rect.center().x, rect.top() + 40.0), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(22.0), Color32::GRAY);
-        if !searching && self.search.is_none() && self.flag("quickCards", true) {
-            self.quick_cards(ui, rect);
+        let cards = !searching && self.search.is_none() && self.flag("quickCards", true) && self.quick_cards(ui, rect);
+        if !cards {
+            let text = if searching { "Searching…" } else { "Type a search above." };
+            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(18.0), t.text2);
         }
     }
 
-    /// The quick searches as cards (two to a row): the first picture of the results and the main tags. Click runs the search.
-    fn quick_cards(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+    /// The quick searches in the mosaic's columns: the first picture of the results with the name on glass over it.
+    /// Click runs the search. Says whether there are any.
+    fn quick_cards(&mut self, ui: &mut egui::Ui, rect: egui::Rect) -> bool {
         let quick: Vec<Value> = self.store.get("quickSearches").and_then(|v| v.as_array().cloned()).unwrap_or_default();
         let cards: Vec<(usize, Vec<Site>, String)> = quick
             .iter()
@@ -1277,7 +1399,7 @@ impl App {
             })
             .collect();
         if cards.is_empty() {
-            return;
+            return false;
         }
         if !self.covers_asked && !self.flag("offlineMode", false) {
             self.covers_asked = true;
@@ -1291,58 +1413,50 @@ impl App {
                 });
             }
         }
-        let width = ((rect.width() - 60.0) / 2.0).clamp(200.0, 420.0);
-        let area = egui::Rect::from_min_size(egui::pos2(rect.center().x - width - 6.0, rect.top() + 90.0), Vec2::new(width * 2.0 + 12.0, rect.height() - 100.0));
+        // A picture is at least this tall for its width, so that the glass plate fits on it.
+        let ratios: Vec<f32> = cards.iter().map(|(n, ..)| self.covers.get(n).filter(|s| s.width > 0 && s.height > 0).map_or(0.8, |s| (s.height as f32 / s.width as f32).max(0.6))).collect();
+        let target = (self.number("readingThumbWidth", 220.0) as f32).max(260.0);
+        let (cells, total, column) = masonry(&ratios, rect.width() - theme::S2, target);
+        let big = column * ui.ctx().pixels_per_point() > 200.0;
+        let t = tok(ui.ctx());
         let mut run = None;
-        ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for pair in cards.chunks(2) {
-                    ui.horizontal(|ui| {
-                        for (n, sites, tags) in pair {
-                            let (card, response) = ui.allocate_exact_size(Vec2::new(width, 112.0), Sense::click());
-                            let painter = ui.painter();
-                            painter.rect_filled(card, 8.0, ui.visuals().faint_bg_color.gamma_multiply(2.0));
-                            if response.hovered() {
-                                painter.rect_stroke(card, 8.0, egui::Stroke::new(1.5, ui.visuals().selection.bg_fill), egui::StrokeKind::Inside);
-                            }
-                            let picture = egui::Rect::from_min_size(card.min + Vec2::splat(8.0), Vec2::splat(96.0));
-                            let mut main_tags = String::new();
-                            if let Some(slide) = self.covers.get(n).cloned() {
-                                let url = self.copies_or(&slide.preview_file_url);
-                                self.media.request(&self.engine, &url);
-                                if let Some(State::Ready(p)) = self.media.get(&url) {
-                                    paint_fit(ui, picture, &p.frames[0].texture, p.size);
-                                }
-                                if let Some(groups) = &slide.tag_groups {
-                                    let picked: Vec<&str> = ["artist", "character", "copyright"].iter().filter_map(|c| groups.get(*c)?.as_array()).flatten().filter_map(Value::as_str).take(3).collect();
-                                    main_tags = picked.join(" ");
-                                }
-                            }
-                            let text_x = card.left() + 116.0;
-                            let title = if tags.is_empty() { "(what is in the box)".to_string() } else { tags.clone() };
-                            let names: Vec<&str> = sites.iter().map(|s| s.name()).collect();
-                            let painter = ui.painter();
-                            // One row each, cut with … at the card's edge.
-                            let line = |text: String, y: f32, size: f32, color: Color32| {
-                                let mut job = egui::text::LayoutJob::simple(text, egui::FontId::proportional(size), color, card.right() - 12.0 - text_x);
-                                job.wrap.max_rows = 1;
-                                job.wrap.break_anywhere = true;
-                                painter.galley(egui::pos2(text_x, card.top() + y), painter.layout_job(job), color);
-                            };
-                            line(format!("{}  {}", (n + 1) % 10, title), 14.0, 15.0, ui.visuals().strong_text_color());
-                            line(names.join(", "), 40.0, 12.0, Color32::GRAY);
-                            line(main_tags.replace('_', " "), 62.0, 12.0, Color32::GRAY);
-                            if response.on_hover_text(&title).clicked() {
-                                run = Some(*n);
-                            }
-                        }
+        ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+            egui::ScrollArea::vertical().id_salt("saved searches").auto_shrink(false).show_viewport(ui, |ui, viewport| {
+                ui.set_height(total);
+                let origin = ui.max_rect().min.to_vec2();
+                for (i, (n, sites, tags)) in cards.iter().enumerate().filter(|(i, _)| cells[*i].intersects(viewport)) {
+                    let tile = cells[i].translate(origin);
+                    let id = ui.id().with(("saved", *n));
+                    let cover = self.covers.get(n).cloned();
+                    let url = cover.as_ref().map_or(String::new(), |s| s.sample_file_url.clone().filter(|u| big && !u.is_empty()).unwrap_or_else(|| s.preview_file_url.clone()));
+                    let title = if tags.is_empty() { "(what is in the box)".to_string() } else { tags.clone() };
+                    if self.tile(ui, tile, id, &url).on_hover_text(&title).clicked() {
+                        run = Some(*n);
+                    }
+                    theme::badge(ui, egui::Rect::from_min_size(tile.min + Vec2::splat(6.0), Vec2::splat(24.0)), ((n + 1) % 10).to_string(), theme::medium(12.5), Color32::WHITE);
+                    let plate = egui::Rect::from_min_max(egui::pos2(tile.left() + 6.0, tile.bottom() - 66.0), tile.right_bottom() - Vec2::splat(6.0));
+                    ui.painter().add(glass::frost(ui.ctx(), plate, glass::Look { radius: theme::RADIUS_M as f32, tint: t.glass, passes: 3 }, 1.0));
+                    let names: Vec<&str> = sites.iter().map(|s| s.name()).collect();
+                    let main_tags = cover.and_then(|s| s.tag_groups).map_or(String::new(), |groups| {
+                        ["artist", "character", "copyright"].iter().filter_map(|c| groups.get(*c)?.as_array()).flatten().filter_map(Value::as_str).take(3).collect::<Vec<_>>().join(" ").replace('_', " ")
                     });
+                    // One row each, cut with … at the plate's edge.
+                    let line = |text: String, y: f32, font: egui::FontId, color: Color32| {
+                        let mut job = egui::text::LayoutJob::simple(text, font, color, plate.width() - 20.0);
+                        job.wrap.max_rows = 1;
+                        job.wrap.break_anywhere = true;
+                        ui.painter().galley(egui::pos2(plate.left() + 10.0, plate.top() + y), ui.painter().layout_job(job), color);
+                    };
+                    line(title, 7.0, theme::semibold(14.0), t.text);
+                    line(names.join(", "), 27.0, egui::FontId::proportional(11.5), t.text2);
+                    line(main_tags, 42.0, egui::FontId::proportional(11.5), t.muted);
                 }
             });
         });
         if let Some(n) = run {
             self.run_quick_search(n);
         }
+        true
     }
 
     fn test_script(&mut self, ctx: &egui::Context) {
@@ -1420,10 +1534,10 @@ fn thumb_source(url: &str) -> String {
     url.to_string()
 }
 
-pub fn paint_fit(ui: &egui::Ui, rect: egui::Rect, texture: &egui::TextureHandle, size: [usize; 2]) {
+pub fn paint_fit(ui: &egui::Ui, rect: egui::Rect, texture: &egui::TextureHandle, size: [usize; 2], alpha: f32, radius: f32) {
     let (w, h) = (size[0] as f32, size[1] as f32);
     let scale = (rect.width() / w).min(rect.height() / h);
-    media::paint(ui, egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale)), texture, size);
+    media::paint(ui, egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale)), texture, size, alpha, radius);
 }
 
 fn category_color(category: &str, dark: bool) -> Color32 {
@@ -1456,22 +1570,29 @@ impl eframe::App for App {
         self.tick(&ctx);
         self.preload();
 
-        // The settings, pools and mosaic pages take the whole window below the bar (settings over pools over the
-        // mosaic; Back returns there).
-        if self.show_controls || self.covered() {
-            egui::Panel::top("bar").show(ui, |ui| self.top_bar(ui));
-        }
-        // Their navigation at the bottom, where the controls have it.
-        if self.covered() {
-            egui::Panel::bottom("nav").show(ui, |ui| ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.nav(ui)));
-        }
-        if self.show_settings {
-            egui::CentralPanel::default().show(ui, |ui| self.settings_page(ui));
-        } else if self.show_pools {
-            egui::CentralPanel::default().show(ui, |ui| self.pools_page(ui));
-        } else if self.show_mosaic {
-            egui::CentralPanel::default().show(ui, |ui| self.mosaic_page(ui));
+        self.ambient(ui, ctx.content_rect());
+        // The pages have the rail, and a toolbar over them (settings over pools over the mosaic; Back returns there).
+        if self.covered() || self.current().is_none() {
+            egui::Panel::left("rail").exact_size(RAIL_SPACE).resizable(false).show_separator_line(false).frame(egui::Frame::NONE).show(ui, |ui| self.rail(ui));
+            egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
+                if self.show_settings {
+                    self.settings_page(ui);
+                } else if self.show_pools {
+                    ui.add_space(TOP_INSET);
+                    self.pools_page(ui);
+                } else if self.show_mosaic {
+                    self.mosaic_page(ui);
+                } else {
+                    self.viewer(ui);
+                }
+            });
+            if !self.show_settings {
+                self.toolbar(&ctx);
+            }
         } else {
+            if self.show_controls {
+                egui::Panel::top("bar").show(ui, |ui| self.top_bar(ui));
+            }
             if self.show_controls {
                 egui::Panel::bottom("controls").show(ui, |ui| self.controls(ui));
             }

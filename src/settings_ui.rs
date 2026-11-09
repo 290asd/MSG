@@ -1,9 +1,10 @@
 // The settings page, the saved pools page and the mosaic page.
-use super::app::{App, Mode, Tab};
+use super::app::{App, Mode, Tab, TOP_INSET};
 use super::hotkeys::{self, ACTIONS};
 use super::media::State;
 use super::sites::Site;
-use super::slide::MediaType;
+use super::slide::{MediaType, Slide};
+use super::theme::{self, icon, tok};
 use eframe::egui::{self, RichText, Vec2};
 use serde_json::{json, Value};
 
@@ -13,6 +14,7 @@ const POOL_COVER: f32 = 210.0;
 const POOL_GAP: f32 = 14.0;
 /// The space between the mosaic's pictures.
 const THUMB_GAP: f32 = 6.0;
+const TILE_RADIUS: u8 = 8;
 
 const TABS: [(Tab, &str); 10] = [
     (Tab::Appearance, "Appearance"),
@@ -51,19 +53,15 @@ impl App {
         rfd::FileDialog::new().set_title(title).pick_folder().map(|p| p.to_string_lossy().into_owned())
     }
 
-    /// The settings page's part of the top bar, right to left (see top_bar).
-    pub fn settings_bar(&mut self, ui: &mut egui::Ui) {
-        if ui.button("◀ Back").clicked() {
-            self.go_back();
-        }
-    }
-
     /// The settings as a page that fills the window below the bar: the sections on the left, the chosen one beside them.
     pub fn settings_page(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_min_width(150.0);
+                if theme::icon_button(ui, icon::BACK, "Back", false).clicked() {
+                    self.go_back();
+                }
                 for (tab, name) in TABS {
                     if ui.selectable_label(self.tab == tab, name).clicked() {
                         self.tab = tab;
@@ -516,7 +514,7 @@ impl App {
                         let cover = super::downloads::display_url(&self.copies, pool["cover"].as_str().unwrap_or(""));
                         self.media.request(&self.engine, &cover);
                         if let Some(State::Ready(p)) = self.media.get(&cover) {
-                            super::app::paint_fit(ui, cover_rect, &p.frames[0].texture, p.size);
+                            super::app::paint_fit(ui, cover_rect, &p.frames[0].texture, p.size, 1.0, 6.0);
                         }
                         if hovered {
                             ui.painter().rect_stroke(cover_rect, 6.0, egui::Stroke::new(2.0, ui.visuals().selection.bg_fill), egui::StrokeKind::Outside);
@@ -553,14 +551,13 @@ impl App {
 
     /// The mosaic's part of the top bar, right to left (see top_bar); the search or favorites bar comes after it.
     pub fn mosaic_bar(&mut self, ui: &mut egui::Ui) {
-        let (count, loading) = (self.list().len(), self.search.as_ref().is_some_and(|s| s.loading));
-        if ui.add_enabled(count > 0, egui::Button::new("▶ Slideshow")).clicked() {
+        if ui.add_enabled(!self.list().is_empty(), egui::Button::new((theme::glyph(icon::PLAY, 14.0), "Slideshow"))).clicked() {
             self.start_slideshow();
         }
         if self.on_reading() {
             let list = super::session::reading_list(&self.store);
             let mut remove = None;
-            ui.menu_button(format!("Following ({})", list.len()), |ui| {
+            ui.menu_button((theme::glyph(icon::FOLLOW, 14.0), format!("Following ({})", list.len())), |ui| {
                 if list.is_empty() {
                     ui.label("Search for an artist or tag and press ☆ Follow.");
                 }
@@ -579,15 +576,30 @@ impl App {
                 self.start_reading();
             }
         }
-        if self.mode == Mode::Slideshow {
-            ui.label(RichText::new(if loading { "Loading…".to_string() } else { format!("{count} posts") }).weak());
+    }
+
+    /// One picture of a mosaic: on the surface colour until it has come, then fading in; under the pointer it lifts.
+    pub fn tile(&mut self, ui: &mut egui::Ui, rect: egui::Rect, id: egui::Id, url: &str) -> egui::Response {
+        let response = ui.interact(rect, id, egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let ctx = ui.ctx().clone();
+        let t = tok(&ctx);
+        let lift = ctx.animate_bool_with_time(id.with("lift"), ui.rect_contains_pointer(rect), theme::quick());
+        let shown = rect.expand(3.0 * lift);
+        if lift > 0.0 {
+            let shadow = egui::Shadow { offset: [0, 6], blur: 20, spread: 0, color: egui::Color32::from_black_alpha((120.0 * lift) as u8) };
+            ui.painter().add(shadow.as_shape(shown, TILE_RADIUS));
         }
-        ui.spacing_mut().slider_width = 100.0;
-        let mut size = self.number("readingThumbWidth", 220.0);
-        if ui.add(egui::Slider::new(&mut size, 100.0..=600.0).show_value(false)).on_hover_text("Picture size").changed() {
-            self.set("readingThumbWidth", json!(size));
+        let url = super::downloads::display_url(&self.copies, url);
+        self.media.request(&self.engine, &url);
+        let ready = matches!(self.media.get(&url), Some(State::Ready(_)));
+        let fade = ctx.animate_bool_with_time(id.with("in"), ready, theme::smooth());
+        if fade < 1.0 {
+            ui.painter().rect_filled(shown, TILE_RADIUS, t.surface);
         }
-        ui.label("Size");
+        if let Some(State::Ready(p)) = self.media.get(&url) {
+            super::app::paint_fit(ui, shown, &p.frames[0].texture, p.size, fade, TILE_RADIUS as f32);
+        }
+        response
     }
 
     /// The posts being shown in columns that fill the window (about the chosen width each), in their order: each
@@ -596,44 +608,25 @@ impl App {
     pub fn mosaic_page(&mut self, ui: &mut egui::Ui) {
         let favorites = self.mode == Mode::Favorites;
         let rect = ui.available_rect_before_wrap();
-        let width = rect.width() - 16.0;
-        let target = self.number("readingThumbWidth", 220.0) as f32;
-        let columns = ((width + THUMB_GAP) / (target + THUMB_GAP)).floor().max(1.0) as usize;
-        let column = (width - THUMB_GAP * (columns - 1) as f32) / columns as f32;
-        // Wide columns get the sites' larger samples, as their thumbnails are about 150 px.
-        let big = column * ui.ctx().pixels_per_point() > 200.0;
-        // (picture, height ÷ width, video)
-        let thumbs: Vec<(String, f32, bool)> = self.list().iter().map(|x| {
-            let video = x.media_type == MediaType::Video;
-            let url = x.sample_file_url.clone().filter(|u| big && !video && !u.is_empty()).unwrap_or_else(|| x.preview_file_url.clone());
-            (url, if x.width > 0 && x.height > 0 { x.height as f32 / x.width as f32 } else { 1.0 }, video)
-        }).collect();
-        if thumbs.is_empty() {
+        let ratios: Vec<f32> = self.list().iter().map(|x| if x.width > 0 && x.height > 0 { x.height as f32 / x.width as f32 } else { 1.0 }).collect();
+        if ratios.is_empty() {
             let text = if favorites {
                 "No favorites to show."
             } else if self.search.as_ref().is_some_and(|s| s.loading) {
                 "Loading…"
             } else if self.reading_list && super::session::reading_list(&self.store).is_empty() {
-                "Nothing followed yet. Search for an artist or tag and press ☆ Follow."
+                "Nothing followed yet. Search for an artist or tag and press Follow."
             } else {
                 "No posts."
             };
-            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), egui::Color32::GRAY);
+            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), tok(ui.ctx()).text2);
             return;
         }
-        // The places in content coordinates. Very tall or wide pictures are kept within 1:4 and 3:1 (letterboxed).
-        let mut heights = vec![0.0f32; columns];
-        let cells: Vec<egui::Rect> = thumbs
-            .iter()
-            .map(|(_, ratio, _)| {
-                let c = (0..columns).min_by(|a, b| heights[*a].total_cmp(&heights[*b])).unwrap_or(0);
-                let cell = egui::Rect::from_min_size(egui::pos2(c as f32 * (column + THUMB_GAP), heights[c]), Vec2::new(column, column * ratio.clamp(0.25, 3.0)));
-                heights[c] = cell.bottom() + THUMB_GAP;
-                cell
-            })
-            .collect();
-        let total = heights.iter().copied().fold(0.0, f32::max);
-        let (mut go, mut near_end) = (None, false);
+        let target = self.number("readingThumbWidth", 220.0) as f32;
+        let (cells, total, column) = masonry(&ratios, rect.width() - theme::S2, target);
+        // Wide columns get the sites' larger samples, as their thumbnails are about 150 px.
+        let big = column * ui.ctx().pixels_per_point() > 200.0;
+        let (mut go, mut near_end, mut fave, mut artist_search) = (None, false, None, None);
         // A list read again starts from the top.
         let generation = if favorites { self.fav_view } else { self.search.as_ref().map_or(0, |s| s.generation) };
         egui::ScrollArea::vertical().id_salt(("mosaic", self.mode as usize, generation)).auto_shrink(false).show_viewport(ui, |ui, viewport| {
@@ -645,24 +638,32 @@ impl App {
                     ui.scroll_to_rect(cell.translate(origin), Some(egui::Align::Center));
                 }
             }
+            let t = tok(ui.ctx());
             for (n, cell) in cells.iter().enumerate().filter(|(_, c)| c.intersects(viewport)) {
-                let (url, _, video) = &thumbs[n];
+                let slide = self.list()[n].clone();
+                let video = slide.media_type == MediaType::Video;
+                let url = slide.sample_file_url.clone().filter(|u| big && !video && !u.is_empty()).unwrap_or_else(|| slide.preview_file_url.clone());
                 let tile = cell.translate(origin);
-                let response = ui.interact(tile, ui.id().with(("post", n)), egui::Sense::click());
-                ui.painter().rect_filled(tile, 4.0, ui.visuals().extreme_bg_color);
-                let url = super::downloads::display_url(&self.copies, url);
-                self.media.request(&self.engine, &url);
-                if let Some(State::Ready(p)) = self.media.get(&url) {
-                    super::app::paint_fit(ui, tile, &p.frames[0].texture, p.size);
+                let id = ui.id().with(("post", n));
+                let response = self.tile(ui, tile, id, &url);
+                let faved = self.fav.contains(&slide);
+                if !favorites && faved {
+                    ui.painter().rect_stroke(tile, TILE_RADIUS, egui::Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
                 }
-                if *video {
-                    ui.painter().text(tile.left_top() + Vec2::splat(8.0), egui::Align2::LEFT_TOP, "▶", egui::FontId::proportional(16.0), egui::Color32::WHITE);
+                if video {
+                    theme::badge(ui, egui::Rect::from_min_size(tile.min + Vec2::splat(6.0), Vec2::splat(24.0)), theme::glyph_text(icon::PLAY), theme::icon_font(12.0), egui::Color32::WHITE);
                 }
-                if !favorites && self.fav.contains(&self.list()[n]) {
-                    ui.painter().rect_stroke(tile, 4.0, egui::Stroke::new(2.0, super::app::FAVE_RED), egui::StrokeKind::Inside);
-                }
-                if response.hovered() {
-                    ui.painter().rect_stroke(tile, 4.0, egui::Stroke::new(2.0, ui.visuals().selection.bg_fill), egui::StrokeKind::Inside);
+                if ui.rect_contains_pointer(tile) {
+                    let corner = egui::Rect::from_min_size(egui::pos2(tile.right() - 34.0, tile.top() + 6.0), Vec2::splat(28.0));
+                    let tip = if faved { "Remove from the favorites" } else { "Add to the favorites" };
+                    if theme::overlay_button(ui, corner, id.with("heart"), theme::heart_text(faved), theme::heart_font(faved, 15.0), if faved { t.accent } else { egui::Color32::WHITE }, tip).clicked() {
+                        fave = Some(slide.clone());
+                    }
+                    if let Some(name) = artist_of(&slide) {
+                        if theme::overlay_chip(ui, tile, id.with("artist"), &name.replace('_', " ")).clicked() {
+                            artist_search = Some(name);
+                        }
+                    }
                 }
                 if response.clicked() {
                     go = Some(n);
@@ -672,10 +673,74 @@ impl App {
         if near_end && !favorites {
             self.load_more();
         }
-        if let Some(n) = go {
+        self.size_pill(ui.ctx());
+        if let Some(slide) = fave {
+            self.toggle_favorite_of(slide);
+        }
+        if let Some(name) = artist_search {
+            self.start_search(&name);
+        } else if let Some(n) = go {
             self.show_mosaic = false;
             self.playing = false;
             self.set_idx(n);
         }
+    }
+
+    /// The picture size and the number of posts, floating at the mosaic's corner.
+    fn size_pill(&mut self, ctx: &egui::Context) {
+        let (count, loading) = (self.list().len(), self.search.as_ref().is_some_and(|s| s.loading));
+        egui::Area::new(egui::Id::new("size pill")).order(egui::Order::Middle).anchor(egui::Align2::RIGHT_BOTTOM, [-theme::S3, -theme::S3]).show(ctx, |ui| {
+            super::glass::card(ui, super::glass::bar(ctx), egui::Margin::symmetric(12, 6), |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(if loading { "Loading…".to_string() } else { format!("{count} posts") }).small().weak());
+                    ui.spacing_mut().slider_width = 100.0;
+                    let mut size = self.number("readingThumbWidth", 220.0);
+                    if ui.add(egui::Slider::new(&mut size, 100.0..=600.0).show_value(false)).on_hover_text("Picture size").changed() {
+                        self.set("readingThumbWidth", json!(size));
+                    }
+                });
+            });
+        });
+    }
+}
+
+/// Where pictures go in columns that fill `width`, each column about `target` wide: every picture under the shortest
+/// column, starting below the toolbar. Very tall or wide ones are kept within 1:4 and 3:1 (letterboxed).
+/// Returns the places, the height of them all and the width of a column.
+pub fn masonry(ratios: &[f32], width: f32, target: f32) -> (Vec<egui::Rect>, f32, f32) {
+    let columns = ((width + THUMB_GAP) / (target + THUMB_GAP)).floor().max(1.0) as usize;
+    let column = (width - THUMB_GAP * (columns - 1) as f32) / columns as f32;
+    let mut heights = vec![TOP_INSET; columns];
+    let cells = ratios
+        .iter()
+        .map(|ratio| {
+            let c = (0..columns).min_by(|a, b| heights[*a].total_cmp(&heights[*b])).unwrap_or(0);
+            let cell = egui::Rect::from_min_size(egui::pos2(c as f32 * (column + THUMB_GAP), heights[c]), Vec2::new(column, column * ratio.clamp(0.25, 3.0)));
+            heights[c] = cell.bottom() + THUMB_GAP;
+            cell
+        })
+        .collect();
+    (cells, heights.iter().copied().fold(0.0, f32::max) + theme::S3, column)
+}
+
+/// The post's artist, where the site says who that is.
+fn artist_of(slide: &Slide) -> Option<String> {
+    let artists = slide.tag_groups.as_ref()?.get("artist")?.as_array()?;
+    artists.iter().filter_map(Value::as_str).find(|a| super::favorites::is_artist(a)).map(String::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn masonry_fills_the_shortest_column_and_keeps_within_the_width() {
+        let (cells, total, column) = masonry(&[1.0, 2.0, 1.0, 1.0], 206.0, 100.0);
+        assert_eq!(column, 100.0);
+        assert_eq!(cells[0].left(), 0.0);
+        assert_eq!(cells[1].left(), 106.0);
+        // The first column is the shorter one by then.
+        assert_eq!((cells[2].left(), cells[2].top()), (0.0, TOP_INSET + 106.0));
+        assert!(cells.iter().all(|c| c.right() <= 206.0 && c.bottom() < total));
     }
 }

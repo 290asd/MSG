@@ -141,6 +141,11 @@ pub fn matches_filter(tags: &str, filter: &str) -> bool {
 // e621 and Danbooru file these notices under "artist" too (and every *_warning).
 const NOT_ARTISTS: [&str; 8] = ["conditional_dnp", "avoid_posting", "third-party_edit", "unknown_artist", "unknown_artist_signature", "anonymous_artist", "banned_artist", "creator_unknown"];
 
+/// Whether a tag filed under "artist" is one.
+pub fn is_artist(tag: &str) -> bool {
+    !tag.ends_with("_warning") && !NOT_ARTISTS.contains(&tag)
+}
+
 /// The artists with the most favorites, most first (ties by name), as (tag, the sites the favorites came from): an
 /// artist's name only means something on the sites it was seen on. Sites that don't say which tags are artists don't
 /// count, and one favorite isn't enough.
@@ -149,7 +154,7 @@ pub fn top_artists(items: &[Slide], skip: &HashSet<String>, limit: usize) -> Vec
     for item in items {
         let artists = item.tag_groups.as_ref().and_then(|g| g.get("artist")?.as_array());
         for artist in artists.into_iter().flatten().filter_map(Value::as_str) {
-            if !artist.ends_with("_warning") && !NOT_ARTISTS.contains(&artist) && !skip.contains(artist) {
+            if is_artist(artist) && !skip.contains(artist) {
                 let (count, sites) = counts.entry(artist).or_default();
                 *count += 1;
                 sites.insert(&item.site_id);

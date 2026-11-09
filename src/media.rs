@@ -227,6 +227,8 @@ const SHRINK_SHADER: &str = "in vec2 uv;
 uniform sampler2D tex;
 uniform vec2 pixel;
 uniform int taps;
+uniform float radius;
+uniform float alpha;
 out vec4 color;
 void main() {
     vec2 corner = vec2(uv.x, 1.0 - uv.y) - pixel * 0.5;
@@ -234,16 +236,20 @@ void main() {
     for (int y = 0; y < taps; y++)
         for (int x = 0; x < taps; x++)
             sum += texture(tex, corner + pixel * (vec2(x, y) + 0.5) / float(taps));
-    color = sum / float(taps * taps);
+    vec2 size = 1.0 / pixel;
+    vec2 q = abs(uv - 0.5) * size - size * 0.5 + radius;
+    float cover = clamp(0.5 - (length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius), 0.0, 1.0);
+    color = sum / float(taps * taps) * alpha * cover;
 }";
 static SHRINK: OnceLock<Option<(glow::Program, glow::VertexArray)>> = OnceLock::new();
 
-/// Draws a picture into `rect`.
-pub fn paint(ui: &egui::Ui, rect: egui::Rect, texture: &TextureHandle, size: [usize; 2]) {
+/// Draws a picture into `rect`, as see-through as `alpha` and with corners of `radius` points.
+pub fn paint(ui: &egui::Ui, rect: egui::Rect, texture: &TextureHandle, size: [usize; 2], alpha: f32, radius: f32) {
     let texels_per_pixel = size[0] as f32 / (rect.width() * ui.ctx().pixels_per_point());
     // Not shrunk, or the shader didn't compile: egui draws it.
     if texels_per_pixel <= 1.0 || matches!(SHRINK.get(), Some(None)) {
-        ui.painter().image(texture.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+        let whole = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+        ui.painter().add(egui::epaint::RectShape::filled(rect, radius, egui::Color32::WHITE.gamma_multiply(alpha)).with_texture(texture.id(), whole));
         return;
     }
     let (id, ctx) = (texture.id(), ui.ctx().clone());
@@ -266,6 +272,8 @@ pub fn paint(ui: &egui::Ui, rect: egui::Rect, texture: &TextureHandle, size: [us
             gl.bind_texture(glow::TEXTURE_2D, Some(texture));
             gl.uniform_2_f32(gl.get_uniform_location(program, "pixel").as_ref(), 1.0 / w, 1.0 / h);
             gl.uniform_1_i32(gl.get_uniform_location(program, "taps").as_ref(), taps);
+            gl.uniform_1_f32(gl.get_uniform_location(program, "radius").as_ref(), radius * ppp);
+            gl.uniform_1_f32(gl.get_uniform_location(program, "alpha").as_ref(), alpha);
             gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
         }
     });
