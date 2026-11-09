@@ -15,7 +15,7 @@ pub struct Action {
     pub defaults: &'static [u32],
 }
 
-pub const ACTIONS: [Action; 18] = [
+pub const ACTIONS: [Action; 17] = [
     Action { id: "previous", label: "Previous", defaults: &[37, 65] },
     Action { id: "next", label: "Next", defaults: &[39, 68] },
     Action { id: "back10", label: "Back 10", defaults: &[87] },
@@ -28,7 +28,6 @@ pub const ACTIONS: [Action; 18] = [
     Action { id: "toggleTags", label: "Show / hide tags", defaults: &[82] },
     Action { id: "openFavorites", label: "Favorites", defaults: &[CTRL + 70] },
     Action { id: "openSettings", label: "Open / close settings", defaults: &[CTRL + 83] },
-    Action { id: "setBackground", label: "Use the image as background", defaults: &[CTRL + 76] },
     Action { id: "showInterface", label: "Show / hide the controls", defaults: &[85] },
     Action { id: "home", label: "Front page", defaults: &[36] },
     Action { id: "openPools", label: "Saved pools", defaults: &[80] },
@@ -80,6 +79,11 @@ pub fn mouse_code_of(event: &Event) -> Option<u32> {
         _ => return None,
     };
     Some(base + if m.ctrl || m.command { CTRL } else { 0 } + if m.shift { SHIFT } else { 0 } + if m.alt { ALT } else { 0 })
+}
+
+/// The wheel, without modifiers.
+pub fn is_wheel(code: u32) -> bool {
+    code == 205 || code == 206
 }
 
 /// "Ctrl+F", "Left" ...

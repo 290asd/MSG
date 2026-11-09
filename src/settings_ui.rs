@@ -118,24 +118,16 @@ impl App {
                 self.set("appTheme", json!(choices[2 - n]));
                 self.apply_theme(ctx);
             }
-            theme::row(ui, "Background image of the start screen", |ui| {
-                if ui.button("Clear").clicked() {
-                        self.set("backgroundImage", json!(""));
-                    }
-                    if ui.button("Choose…").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().add_filter("Images", &["jpg", "jpeg", "png", "webp", "gif", "bmp"]).pick_file() {
-                            let dir = super::app::user_dir();
-                            let _ = std::fs::create_dir_all(&dir);
-                            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-                            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("jpg").to_lowercase();
-                            let target = dir.join(format!("background-{stamp}.{ext}"));
-                            match std::fs::copy(&path, &target) {
-                                Ok(_) => self.set("backgroundImage", json!(target.to_string_lossy())),
-                                Err(e) => self.notice(format!("Couldn't use that file: {e}")),
-                            }
-                        }
-                    }
-            });
+            let chosen = match self.text("animations").as_str() {
+                "off" => 0,
+                "slow" => 2,
+                _ => 1,
+            };
+            if let Some(n) = theme::row(ui, "Animations", |ui| theme::choice(ui, &["Off", "Fast", "Slow"], chosen)) {
+                let speed = ["off", "fast", "slow"][n];
+                self.set("animations", json!(speed));
+                theme::set_motion(ctx, speed);
+            }
         });
         theme::group(ui, "Front page", |ui| {
             let reading = self.reading_home();
@@ -143,6 +135,11 @@ impl App {
                 self.set("frontPage", json!(if n == 0 { "reading" } else { "search" }));
             }
             self.check(ui, "quickCards", true, "Saved searches on the front page");
+            let mut limit = self.auto_follow_limit();
+            let hover = "The artists you have the most favorites from, two at least. Each one adds about half a second to loading the mosaic. An artist you stop following stays out.";
+            if theme::row(ui, "Artists the mosaic follows automatically (0 = off)", |ui| ui.add(egui::DragValue::new(&mut limit).range(0.0..=100.0).speed(0.2).fixed_decimals(0)).on_hover_text(hover).changed()) {
+                self.set("autoFollowArtists", json!(limit.round()));
+            }
             self.check(ui, "mosaicFirst", true, "Open searches and favorites as a mosaic (off: straight to the slideshow)");
         });
         theme::group(ui, "Browsing", |ui| {
@@ -379,13 +376,6 @@ impl App {
                 }
             });
         });
-        theme::group(ui, "Reading list", |ui| {
-            let mut limit = self.auto_follow_limit();
-            let hover = "The artists with the most favorites, two at least. Each one adds about half a second to loading the list. An artist you stop following stays out.";
-            if theme::row(ui, "Follow your top artists automatically (0 = off)", |ui| ui.add(egui::DragValue::new(&mut limit).range(0.0..=100.0).speed(0.2).fixed_decimals(0)).on_hover_text(hover).changed()) {
-                self.set("autoFollowArtists", json!(limit.round()));
-            }
-        });
         theme::group(ui, "Offline copies (in the background, into the download folder)", |ui| {
             if self.check(ui, "autoDownloadFavorites", false, "Download every favorite") {
                 self.settings_changed();
@@ -576,7 +566,7 @@ impl App {
 
     /// The mosaic's part of the top bar, right to left (see top_bar); the search or favorites bar comes after it.
     pub fn mosaic_bar(&mut self, ui: &mut egui::Ui) {
-        if ui.add_enabled(!self.list().is_empty(), egui::Button::new((theme::glyph(icon::PLAY, 14.0), if self.compact(ui) { "" } else { "Slideshow" }))).clicked() {
+        if self.mode != Mode::Favorites && ui.add_enabled(!self.list().is_empty(), egui::Button::new((theme::glyph(icon::PLAY, 14.0), if self.compact(ui) { "" } else { "Slideshow" }))).clicked() {
             self.start_slideshow();
         }
         if self.on_reading() {
@@ -604,17 +594,20 @@ impl App {
         }
     }
 
-    /// One picture of a mosaic: on the surface colour until it has come, then fading in; under the pointer it lifts.
+    /// Ctrl and the wheel over a mosaic: bigger or smaller pictures.
+    pub fn zoom_mosaic(&mut self, ui: &egui::Ui) {
+        let zoom = ui.input(|i| i.zoom_delta());
+        if zoom != 1.0 {
+            self.set("readingThumbWidth", json!((self.number("readingThumbWidth", 220.0) * zoom as f64).clamp(100.0, 600.0)));
+        }
+    }
+
+    /// One picture of a mosaic: on the surface colour until it has come, then fading in.
     pub fn tile(&mut self, ui: &mut egui::Ui, rect: egui::Rect, id: egui::Id, url: &str) -> egui::Response {
         let response = ui.interact(rect, id, egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
         let ctx = ui.ctx().clone();
         let t = tok(&ctx);
-        let lift = ctx.animate_bool_with_time(id.with("lift"), ui.rect_contains_pointer(rect), theme::quick());
-        let shown = rect.expand(3.0 * lift);
-        if lift > 0.0 {
-            let shadow = egui::Shadow { offset: [0, 6], blur: 20, spread: 0, color: egui::Color32::from_black_alpha((120.0 * lift) as u8) };
-            ui.painter().add(shadow.as_shape(shown, TILE_RADIUS));
-        }
+        let shown = rect;
         let url = super::downloads::display_url(&self.copies, url);
         self.media.request(&self.engine, &url);
         let ready = matches!(self.media.get(&url), Some(State::Ready(_)));
@@ -636,6 +629,7 @@ impl App {
     /// picture keeps its shape and goes under the shortest column. Only the pictures on the screen are drawn (and
     /// loaded), and near the end the next page is read. A click shows the post in the slideshow.
     pub fn mosaic_page(&mut self, ui: &mut egui::Ui) {
+        self.zoom_mosaic(ui);
         let favorites = self.mode == Mode::Favorites;
         let rect = ui.available_rect_before_wrap();
         let ratios: Vec<f32> = self.list().iter().map(|x| if x.width > 0 && x.height > 0 { x.height as f32 / x.width as f32 } else { self.ratios.get(&x.preview_file_url).copied().unwrap_or(1.0) }).collect();
@@ -664,8 +658,10 @@ impl App {
             near_end = viewport.bottom() + rect.height() >= total;
             let origin = ui.max_rect().min.to_vec2();
             if std::mem::take(&mut self.mosaic_seek) {
-                if let Some(cell) = cells.get(self.idx()).filter(|c| !viewport.contains_rect(**c)) {
-                    ui.scroll_to_rect(cell.translate(origin), Some(egui::Align::Center));
+                // The post the slideshow was on comes up about a third of the way down the window.
+                if let Some(cell) = cells.get(self.idx()) {
+                    let top = egui::Rect::from_min_size(egui::pos2(cell.left(), cell.center().y - rect.height() / 3.0), Vec2::new(1.0, 1.0));
+                    ui.scroll_to_rect_animation(top.translate(origin), Some(egui::Align::Min), egui::style::ScrollAnimation::none());
                 }
             }
             let t = tok(ui.ctx());

@@ -16,7 +16,9 @@ use std::time::Duration;
 // Bigger pictures are shrunk: a GPU texture has a size limit (and 8K RGBA is 130 MB).
 const MAX_SIDE: u32 = 4096;
 const MAX_GIF_FRAMES: usize = 400;
-const KEEP: usize = 90;
+// What has been loaded stays for the session, up to this many files and this much picture data (on the graphics card).
+const KEEP: usize = 3000;
+const KEEP_BYTES: usize = 1536 << 20;
 // At most this many downloads at once, so a row of thumbnails doesn't hammer a site's image server;
 // the rest wait their turn in the order they were asked for (the picture on the screen comes first).
 const AT_ONCE: usize = 6;
@@ -209,11 +211,21 @@ impl MediaCache {
             }
             wanted
         });
-        if self.entries.len() > KEEP {
+        let bytes_of = |state: &State| match state {
+            State::Ready(p) => p.size[0] * p.size[1] * 4 * p.frames.len(),
+            _ => 0,
+        };
+        let mut bytes: usize = self.entries.values().map(|(state, _)| bytes_of(state)).sum();
+        if self.entries.len() > KEEP || bytes > KEEP_BYTES {
             let mut by_use: Vec<_> = self.entries.iter().filter(|(_, (_, used))| *used <= self.frame).map(|(k, (_, used))| (*used, k.clone())).collect();
             by_use.sort();
-            for (_, key) in by_use.into_iter().take(self.entries.len() - KEEP) {
-                self.entries.remove(&key);
+            for (_, key) in by_use {
+                if self.entries.len() <= KEEP && bytes <= KEEP_BYTES {
+                    break;
+                }
+                if let Some((state, _)) = self.entries.remove(&key) {
+                    bytes -= bytes_of(&state);
+                }
             }
         }
         self.frame = self.tick;

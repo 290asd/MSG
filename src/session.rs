@@ -87,6 +87,34 @@ pub enum Msg {
     Pools(Vec<Value>),
     /// The tag categories of e621 favorites saved without them (post id → categories).
     TagGroups(HashMap<String, Map<String, Value>>),
+    /// Tags for the word being typed in the search box; `token` tells which typing they answer.
+    Suggestions { token: u64, tags: Vec<(String, u64)> },
+}
+
+/// Asks the sites for tags starting with `word`: together, the most used first. A site that fails is just left out.
+pub fn suggest_tags(engine: &Engine, tx: Sender<Msg>, sites: Vec<Site>, word: String, token: u64) {
+    let engine = engine.clone();
+    engine.rt.clone().spawn(async move {
+        let tasks: Vec<_> = sites
+            .into_iter()
+            .filter_map(|site| sites::tag_suggestions_url(site, &word))
+            .map(|url| {
+                let engine = engine.clone();
+                tokio::spawn(async move { net::get_text(&engine.client, &engine.store, &url).await.map(|body| sites::parse_tag_suggestions(&body)).unwrap_or_default() })
+            })
+            .collect();
+        let mut counts: HashMap<String, u64> = HashMap::new();
+        for task in tasks {
+            for (tag, count) in task.await.unwrap_or_default() {
+                *counts.entry(tag).or_default() += count;
+            }
+        }
+        let mut tags: Vec<(String, u64)> = counts.into_iter().collect();
+        tags.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        tags.truncate(10);
+        let _ = tx.send(Msg::Suggestions { token, tags });
+        engine.wake();
+    });
 }
 
 pub struct Batch {
@@ -96,6 +124,7 @@ pub struct Batch {
     pub warnings: Vec<String>,
 }
 
+#[derive(Clone)]
 pub struct Search {
     pub generation: u64,
     pub text: String,

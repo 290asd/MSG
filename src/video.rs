@@ -268,11 +268,17 @@ impl Player {
         self.set("mute", if muted { "yes" } else { "no" });
     }
 
+    /// The video's shape on the screen, once its first frame is known.
+    pub fn display_size(&self) -> Option<[f32; 2]> {
+        let number = |name: &str| self.get(name)?.parse::<f32>().ok().filter(|v| *v > 0.0);
+        Some([number("video-params/dw")?, number("video-params/dh")?])
+    }
+
     /// Puts the video in `rect` (points) with a paint callback.
     pub fn paint(&self, ui: &egui::Ui, rect: egui::Rect) {
         let (api, render, target) = (self.api.clone(), self.render, self.target.clone());
         // mpv keeps the last frame of the previous video until the new one has its first: that would show for a
-        // moment, so until the new file has video parameters (they go with the first frame) the box stays black.
+        // moment, so until the new file has video parameters (they go with the first frame) nothing is drawn.
         let has_frame = !self.url.is_empty() && self.get("video-params/w").is_some();
         let callback = eframe::egui_glow::CallbackFn::new(move |info, painter| {
             let gl = painter.gl();
@@ -309,12 +315,6 @@ impl Player {
                     gl.bind_texture(glow::TEXTURE_2D, t.texture);
                     gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
                     gl.bind_texture(glow::TEXTURE_2D, None);
-                } else {
-                    // Only the video's box is cleared (mpv leaves the scissor box at its own size).
-                    let clip = info.clip_rect_in_pixels();
-                    gl.scissor(clip.left_px, clip.from_bottom_px, clip.width_px, clip.height_px);
-                    gl.clear_color(0.0, 0.0, 0.0, 1.0);
-                    gl.clear(glow::COLOR_BUFFER_BIT);
                 }
             }
         });

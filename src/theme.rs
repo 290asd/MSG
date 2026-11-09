@@ -2,7 +2,7 @@
 use eframe::egui::epaint::text::VariationCoords;
 use eframe::egui::style::{ScrollStyle, TextCursorStyle, WidgetVisuals};
 use eframe::egui::{self, Color32, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, FontTweak, Margin, RichText, Sense, Shadow, Stroke, TextStyle, Theme, Vec2, Visuals};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
 /// The spacing scale (4 px steps).
@@ -126,15 +126,37 @@ pub fn tok(ctx: &egui::Context) -> &'static Tokens {
     if ctx.theme() == Theme::Light { &LIGHT } else { &DARK }
 }
 
-static STILL: AtomicBool = AtomicBool::new(false);
+/// The Animations setting: 0 off, 1 fast, 2 slow.
+static SPEED: AtomicU8 = AtomicU8::new(1);
 
-/// How long a small change takes (seconds), and a larger one. Zero when Windows is set to show no animations.
+/// How long a small change takes (seconds), a larger one, and the picture behind everything.
 pub fn quick() -> f32 {
-    if STILL.load(Ordering::Relaxed) { 0.0 } else { 0.15 }
+    [0.0, 0.05, 0.15][SPEED.load(Ordering::Relaxed) as usize]
 }
 
 pub fn smooth() -> f32 {
-    if STILL.load(Ordering::Relaxed) { 0.0 } else { 0.22 }
+    [0.0, 0.09, 0.22][SPEED.load(Ordering::Relaxed) as usize]
+}
+
+pub fn fade() -> f32 {
+    [0.0, 0.14, 0.45][SPEED.load(Ordering::Relaxed) as usize]
+}
+
+/// Takes the Animations setting into use. Not set: fast, or off if Windows is set to show no animations.
+pub fn set_motion(ctx: &egui::Context, setting: &str) {
+    const GET_CLIENT_AREA_ANIMATION: u32 = 0x1042;
+    let speed = match setting {
+        "off" => 0,
+        "slow" => 2,
+        "fast" => 1,
+        _ => {
+            let mut animate = 1i32;
+            let read = unsafe { SystemParametersInfoW(GET_CLIENT_AREA_ANIMATION, 0, (&raw mut animate).cast(), 0) } != 0;
+            if read && animate == 0 { 0 } else { 1 }
+        }
+    };
+    SPEED.store(speed, Ordering::Relaxed);
+    ctx.all_styles_mut(|style| style.animation_time = quick());
 }
 
 fn family(name: &str) -> FontFamily {
@@ -227,12 +249,6 @@ pub fn paint_title_bar(window: isize, t: &Tokens, dark: bool) {
 
 /// The fonts and the styles of both themes. Once, at the start.
 pub fn install(ctx: &egui::Context) {
-    const GET_CLIENT_AREA_ANIMATION: u32 = 0x1042;
-    let mut animate = 1i32;
-    // Windows' own setting for fewer animations; if it can't be read they stay on.
-    if unsafe { SystemParametersInfoW(GET_CLIENT_AREA_ANIMATION, 0, (&raw mut animate).cast(), 0) } != 0 {
-        STILL.store(animate == 0, Ordering::Relaxed);
-    }
     ctx.set_fonts(fonts());
     ctx.set_visuals_of(Theme::Dark, visuals(&DARK, true));
     ctx.set_visuals_of(Theme::Light, visuals(&LIGHT, false));
@@ -255,7 +271,6 @@ pub fn install(ctx: &egui::Context) {
         spacing.icon_width_inner = 10.0;
         spacing.icon_spacing = 8.0;
         spacing.scroll = ScrollStyle { bar_width: 10.0, floating_width: 4.0, handle_min_length: 32.0, ..ScrollStyle::floating() };
-        style.animation_time = quick();
     });
 }
 
@@ -304,6 +319,25 @@ pub fn rail_item(ui: &mut egui::Ui, rect: egui::Rect, icon: char, label: &str, o
     ui.painter().text(egui::pos2(rect.center().x, rect.top() + 42.0), egui::Align2::CENTER_CENTER, label, medium(10.5), color);
     focus_ring(ui, &response, RADIUS_M);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label));
+    response
+}
+
+/// A row of the search box's list; `note` goes at its right end.
+pub fn drop_row(ui: &mut egui::Ui, text: &str, note: &str, on: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.0), Sense::click());
+    let t = tok(ui.ctx());
+    if on {
+        ui.painter().rect_filled(rect, RADIUS_S, t.press);
+    } else if response.hovered() {
+        ui.painter().rect_filled(rect, RADIUS_S, t.control);
+    }
+    let note_x = if note.is_empty() { rect.right() } else { rect.right() - 64.0 };
+    ui.painter().text(egui::pos2(rect.right() - 8.0, rect.center().y), egui::Align2::RIGHT_CENTER, note, FontId::proportional(11.5), t.muted);
+    let mut job = egui::text::LayoutJob::simple(text.to_string(), FontId::proportional(13.0), if on { t.accent } else { t.text }, note_x - rect.left() - 16.0);
+    job.wrap.max_rows = 1;
+    job.wrap.break_anywhere = true;
+    let galley = ui.painter().layout_job(job);
+    ui.painter().galley(egui::pos2(rect.left() + 8.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
     response
 }
 
@@ -375,6 +409,21 @@ pub fn overlay_chip(ui: &mut egui::Ui, tile: egui::Rect, id: egui::Id, text: &st
     ui.painter().rect_filled(rect, RADIUS_S, Color32::from_black_alpha(if response.hovered() { 210 } else { 150 }));
     ui.painter().galley(rect.min + Vec2::new(8.0, 4.0), galley, Color32::WHITE);
     response.on_hover_text("Search for this artist")
+}
+
+/// The heart button: outlined, or filled for a favorite.
+pub fn heart_button(ui: &mut egui::Ui, faved: bool, tip: &str, armed: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(32.0), Sense::click());
+    let t = tok(ui.ctx());
+    if armed {
+        ui.painter().rect_filled(rect, RADIUS_S, t.press);
+    } else if response.hovered() {
+        ui.painter().rect_filled(rect, RADIUS_S, t.hover);
+    }
+    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, heart_text(faved), heart_font(faved, 17.0), if faved { t.accent } else { t.text2 });
+    focus_ring(ui, &response, RADIUS_S);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tip));
+    response.on_hover_text(tip)
 }
 
 /// A switch for on and off.

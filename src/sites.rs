@@ -218,6 +218,34 @@ fn enc(s: &str) -> String {
     urlencoding::encode(s).into_owned()
 }
 
+/// Where a site lists the tags starting with `word`. None: your folders have no tag list.
+pub fn tag_suggestions_url(site: Site, word: &str) -> Option<String> {
+    let (base, w) = (site.url(), enc(word));
+    Some(match site {
+        Site::E621 | Site::Danbooru => format!("{base}/tags.json?search%5Bname_matches%5D={w}*&search%5Border%5D=count&limit=10"),
+        Site::Konachan | Site::Yandere => format!("{base}/tag.json?name={w}*&order=count&limit=10"),
+        Site::Gelbooru => format!("{base}/index.php?page=autocomplete2&term={w}&type=tag_query&limit=10"),
+        Site::Rule34 => format!("https://api.rule34.xxx/autocomplete.php?q={w}"),
+        Site::Safebooru | Site::Xbooru => format!("{base}/autocomplete.php?q={w}"),
+        Site::Derpibooru | Site::Tantabus => format!("{base}/api/v1/json/search/tags?q={w}*&per_page=10"),
+        Site::Local => return None,
+    })
+}
+
+/// (tag, how many posts have it) from any site's answer: the fields differ, the shape is a list of tags.
+pub fn parse_tag_suggestions(body: &str) -> Vec<(String, u64)> {
+    let Ok(value) = serde_json::from_str::<Value>(body) else { return vec![] };
+    let list = value.as_array().or_else(|| value["tags"].as_array());
+    list.into_iter().flatten().filter_map(|tag| {
+        let name = tag["name"].as_str().or_else(|| tag["value"].as_str())?;
+        let number = |v: &Value| v.as_u64().or_else(|| v.as_str()?.parse().ok());
+        // Some give the count only in the label: "landscape (9927)".
+        let in_label = || tag["label"].as_str()?.rsplit_once('(')?.1.trim_end_matches(')').parse().ok();
+        let count = number(&tag["post_count"]).or_else(|| number(&tag["count"])).or_else(|| number(&tag["images"])).or_else(in_label).unwrap_or(0);
+        Some((name.replace(' ', "_"), count))
+    }).collect()
+}
+
 /// An e621 pool search: "pool:123" or a pool link.
 pub fn pool_id(search: &str) -> Option<u64> {
     let re = regex::Regex::new(r"(?i)^(?:pool:|https?://(?:www\.)?e621\.net/pools/)(\d+)(?:[/?#]\S*)?$").unwrap();
@@ -493,6 +521,16 @@ fn dapi(c: &Config, site: Site, body: &str) -> Result<(Vec<Slide>, usize), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tag_suggestions_of_every_kind_of_answer() {
+        assert_eq!(parse_tag_suggestions(r#"[{"name":"landscape","post_count":41}]"#), [("landscape".to_string(), 41)]);
+        assert_eq!(parse_tag_suggestions(r#"[{"name":"sky","count":7}]"#), [("sky".to_string(), 7)]);
+        assert_eq!(parse_tag_suggestions(r#"[{"value":"sea","post_count":"12"}]"#), [("sea".to_string(), 12)]);
+        assert_eq!(parse_tag_suggestions(r#"[{"label":"landsknecht_(a) (62)","value":"landsknecht_(a)"}]"#), [("landsknecht_(a)".to_string(), 62)]);
+        assert_eq!(parse_tag_suggestions(r#"{"tags":[{"name":"long hair","images":3}]}"#), [("long_hair".to_string(), 3)]);
+        assert!(parse_tag_suggestions(r#"{"tags":[]}"#).is_empty() && parse_tag_suggestions("<html>").is_empty());
+    }
 
     fn config() -> Config {
         Config { images: true, gifs: true, videos: true, blacklist: ["bad".to_string()].into(), ..Default::default() }

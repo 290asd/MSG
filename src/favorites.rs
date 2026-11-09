@@ -21,6 +21,15 @@ pub struct Favorites {
     pub site: Option<String>,
     pub filter: String,
     pub random: bool,
+    pub order: Order,
+}
+
+/// The order of the favorites when they aren't random: as saved, or by the post's date.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Order {
+    Saved,
+    Newest,
+    Oldest,
 }
 
 impl Favorites {
@@ -29,7 +38,7 @@ impl Favorites {
             Some(Value::Array(list)) => list.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect(),
             _ => vec![],
         };
-        let mut favorites = Favorites { items, keys: HashSet::new(), md5s: HashSet::new(), view: vec![], site: None, filter: String::new(), random: false };
+        let mut favorites = Favorites { items, keys: HashSet::new(), md5s: HashSet::new(), view: vec![], site: None, filter: String::new(), random: false, order: Order::Saved };
         favorites.reindex();
         favorites.rebuild(&|_| true);
         favorites
@@ -105,6 +114,10 @@ impl Favorites {
         self.view = self.items.iter().filter(|s| site.as_ref().map_or(true, |x| *x == s.site_id) && keep(s) && matches_filter(&s.tags, &filter)).cloned().collect();
         if random {
             self.view.shuffle(&mut rand::thread_rng());
+        } else if self.order == Order::Newest {
+            self.view.sort_by_key(|s| std::cmp::Reverse(s.timestamp()));
+        } else if self.order == Order::Oldest {
+            self.view.sort_by_key(Slide::timestamp);
         }
     }
 }

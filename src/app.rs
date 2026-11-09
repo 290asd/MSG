@@ -2,9 +2,8 @@
 // slideshow lives here; the settings and pools pages are in settings_ui.rs.
 use super::downloads::{self, Downloader};
 use super::favorites::{self, Favorites};
-use super::files;
 use super::glass;
-use super::hotkeys::Hotkeys;
+use super::hotkeys::{self, Hotkeys};
 use super::theme::{self, icon, tok};
 use super::media::{self, MediaCache, State};
 use super::session::{self, Engine, Msg, Search};
@@ -23,6 +22,7 @@ use std::time::{Duration, Instant};
 
 /// How many of the next slides are loaded ahead (their thumbnails, and the first few pictures).
 const AHEAD: usize = 12;
+const BEHIND: usize = 3;
 /// How long a removal from the favorites waits for the second press.
 const UNFAVE_WAIT: Duration = Duration::from_secs(4);
 /// How long (seconds) the player stays after the pointer stops.
@@ -37,8 +37,22 @@ const RAIL_MARGIN: f32 = 6.0;
 const RAIL_SPACE: f32 = RAIL_W + RAIL_MARGIN * 2.0;
 /// Where a page's content starts, below the toolbar floating over it.
 pub const TOP_INSET: f32 = 60.0;
-/// How long (seconds) the picture behind everything takes to change.
-const AMBIENT_FADE: f32 = 0.45;
+/// How long the reading list is kept to come back to, before Home reads it again.
+const HOME_KEEP: Duration = Duration::from_secs(600);
+/// How long typing has to pause before the sites are asked for tags.
+const SUGGEST_WAIT: Duration = Duration::from_millis(180);
+
+/// The search box's list: tags for the word being typed, or the earlier searches.
+#[derive(Default)]
+struct Suggest {
+    tags: Vec<(String, u64)>,
+    picked: Option<usize>,
+    /// Which typing the answers have to be for.
+    token: u64,
+    /// The word waiting for the typing to pause, and since when.
+    waiting: Option<(String, Instant)>,
+    history: bool,
+}
 
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum Mode {
@@ -148,6 +162,11 @@ pub struct App {
     pub progress: String,
     pub recording: Option<(String, usize)>,
     logo: egui::TextureHandle,
+    suggest: Suggest,
+    /// The reading list as it was left (and the slide it was on), so that Home is there at once.
+    home_kept: Option<(Search, usize, Instant)>,
+    /// Smooth scrolling's distance towards the next slide.
+    wheel: f32,
     /// Where the player is (nothing while hidden), whether the drawer is out, and the test script's order to keep it out.
     player_rect: egui::Rect,
     drawer_open: bool,
@@ -216,6 +235,9 @@ impl App {
             progress: String::new(),
             recording: None,
             logo: theme::logo(&cc.egui_ctx),
+            suggest: Suggest::default(),
+            home_kept: None,
+            wheel: 0.0,
             player_rect: egui::Rect::NOTHING,
             drawer_open: false,
             drawer_forced: false,
@@ -245,7 +267,10 @@ impl App {
         }
         app.show_tags = app.flag("showTags", false);
         super::theme::install(&cc.egui_ctx);
+        theme::set_motion(&cc.egui_ctx, &app.text("animations"));
         app.apply_theme(&cc.egui_ctx);
+        app.apply_favorite_order();
+        app.rebuild_favorites();
         app.refresh_copies();
         media::clear_video_files();
         app.downloader.schedule(Duration::from_secs(15));
@@ -412,6 +437,11 @@ impl App {
 
     /// The search is about to be replaced: Esc can bring it back.
     fn set_aside_search(&mut self) {
+        if self.reading_list {
+            if let Some(search) = self.search.as_ref().filter(|s| !s.loading) {
+                self.home_kept = Some((search.clone(), self.cur[Mode::Slideshow as usize], Instant::now()));
+            }
+        }
         self.replaced = self.search.take().map(|s| (s, self.cur[Mode::Slideshow as usize]));
     }
 
@@ -446,6 +476,7 @@ impl App {
         self.show_settings = false;
         self.show_mosaic = self.mosaic_first();
         self.generation += 1;
+        self.close_search_list();
         let text = text.trim();
         self.query = text.to_string();
         let sites = session::ticked_sites(&self.store);
@@ -475,20 +506,31 @@ impl App {
         self.show_pools = false;
         self.show_settings = false;
         self.show_mosaic = true;
-        if self.refresh_auto_follow() || !self.reading_list {
+        if self.refresh_auto_follow() {
+            self.home_kept = None;
+            self.start_reading();
+        } else if !self.reading_list {
             self.start_reading();
         }
     }
 
     /// The followed searches together, newest first (not saved in the history).
     pub fn start_reading(&mut self) {
+        // Coming back from elsewhere soon: as it was left. Asked for on the list itself: read again.
+        let kept = if self.reading_list { None } else { self.home_kept.take().filter(|k| k.2.elapsed() < HOME_KEEP) };
         self.generation += 1;
         self.query.clear();
         self.set_aside_search();
-        self.search = Some(Search::many(self.generation, &session::reading_list(&self.store), &self.store));
+        self.home_kept = None;
         self.reading_list = true;
-        self.cur[Mode::Slideshow as usize] = 0;
         self.shown_at = None;
+        if let Some((search, slide, _)) = kept {
+            self.search = Some(search);
+            self.cur[Mode::Slideshow as usize] = slide;
+            return;
+        }
+        self.search = Some(Search::many(self.generation, &session::reading_list(&self.store), &self.store));
+        self.cur[Mode::Slideshow as usize] = 0;
         self.load_more();
     }
 
@@ -513,6 +555,7 @@ impl App {
 
     /// Follows the search (on the ticked sites), or stops following it; what is unfollowed isn't followed automatically again.
     pub fn toggle_follow(&mut self, tags: &str) {
+        self.home_kept = None;
         let mut list: Vec<Value> = self.store.get("readingList").and_then(|v| v.as_array().cloned()).unwrap_or_default();
         let mut ignored: Vec<Value> = self.store.get("readingListIgnored").and_then(|v| v.as_array().cloned()).unwrap_or_default();
         let before = list.len();
@@ -537,9 +580,17 @@ impl App {
     fn handle_messages(&mut self) {
         while let Ok(msg) = self.rx.try_recv() {
             match msg {
+                Msg::Suggestions { token, tags } => {
+                    if token == self.suggest.token {
+                        self.suggest.tags = tags;
+                        self.suggest.picked = None;
+                    }
+                }
                 Msg::Batch(batch) => {
-                    // A search left while it was loading takes its answer all the same, for Esc.
-                    if let Some(left) = self.back.iter_mut().filter_map(|(_, left)| left.as_mut()).find(|left| left.0.generation == batch.generation) {
+                    // A search left while it was loading takes its answer all the same, for Esc. (The one on the screen
+                    // comes first: Home can bring back a copy of one that is also waiting for Esc.)
+                    let on_screen = self.search.as_ref().is_some_and(|s| s.generation == batch.generation);
+                    if let Some(left) = self.back.iter_mut().filter_map(|(_, left)| left.as_mut()).find(|left| !on_screen && left.0.generation == batch.generation) {
                         left.0.accept(batch);
                         continue;
                     }
@@ -640,16 +691,6 @@ impl App {
         }
     }
 
-    pub fn use_as_background(&mut self) {
-        let Some(slide) = self.current() else { return };
-        let target = self.copies_or(&slide.file_url);
-        if !super::net::web_url(&target).is_some() {
-            self.set("backgroundImage", json!(target));
-            return self.notice("Background set.");
-        }
-        self.notice("Only pictures that are on the disk (downloaded copies, your folders) can be the background.");
-    }
-
     fn copies_or(&self, url: &str) -> String {
         downloads::display_url(&self.copies, url)
     }
@@ -666,9 +707,16 @@ impl App {
         }
     }
 
+    /// The Favorites page's order (favoritesSort): newest post first unless chosen otherwise.
+    pub fn apply_favorite_order(&mut self) {
+        let sort = self.text("favoritesSort");
+        self.fav.random = sort == "random";
+        self.fav.order = if sort == "oldest" { favorites::Order::Oldest } else { favorites::Order::Newest };
+    }
+
     pub fn apply_favorite_filter(&mut self) {
         self.fav.filter = self.fav_filter_box.trim().to_string();
-        self.fav.random = false;
+        self.apply_favorite_order();
         self.rebuild_favorites();
         self.fav_view += 1;
         self.cur[Mode::Favorites as usize] = 0;
@@ -708,7 +756,7 @@ impl App {
                 }
             }
             // Under a page there is no slide for these to act on.
-            "previous" | "next" | "back10" | "forward10" | "playPause" | "autoFit" | "openSource" | "download" | "favorite" | "toggleTags" | "setBackground" if self.covered() => {}
+            "previous" | "next" | "back10" | "forward10" | "playPause" | "autoFit" | "openSource" | "download" | "favorite" | "toggleTags" if self.covered() => {}
             "previous" => self.move_by(-1),
             "next" => self.move_by(1),
             "back10" => self.move_by(-10),
@@ -728,7 +776,6 @@ impl App {
             // From under a page the button means the favorites, whichever list is under it.
             "openFavorites" => self.open_favorites(self.mode == Mode::Slideshow || self.show_pools || self.show_settings),
             "openSettings" => self.show_settings = !self.show_settings,
-            "setBackground" => self.use_as_background(),
             "showInterface" => self.show_controls = !self.show_controls,
             // Back to the front page: the quick search cards (a new search starts from there as before), or the reading list read again.
             "home" if self.reading_home() => {
@@ -752,12 +799,6 @@ impl App {
                 self.go_back();
             }
             "openReadingList" => self.open_reading(),
-            // Back to the slideshow where it was left.
-            "showSlideshow" => {
-                self.show_pools = false;
-                self.show_settings = false;
-                self.show_mosaic = false;
-            }
             // Esc: the screen before; with none left, out of fullscreen.
             "back" => {
                 if !self.go_back() && ctx.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
@@ -787,7 +828,7 @@ impl App {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
                     }
                     // An open menu closes by itself on this press.
-                    egui::Key::Escape if !egui::Popup::is_any_open(ctx) => self.act(ctx, "back"),
+                    egui::Key::Escape if !egui::Popup::is_any_open(ctx) && !self.search_list_open() => self.act(ctx, "back"),
                     egui::Key::Enter if !wants_text && !modifiers.any() => self.act(ctx, "playPause"),
                     _ if !wants_text && !modifiers.any() && self.mode == Mode::Slideshow => {
                         let digit = match key {
@@ -891,8 +932,9 @@ impl App {
             .list()
             .iter()
             .enumerate()
-            .skip(i)
-            .take(AHEAD)
+            // A few behind too, for going back after opening a post from the mosaic.
+            .skip(i.saturating_sub(BEHIND))
+            .take(AHEAD + BEHIND)
             .map(|(n, s)| (if n < i + 4 && s.media_type != MediaType::Video { s.file_url.clone() } else { String::new() }, s.preview_file_url.clone()))
             .collect();
         for (full, preview) in wanted {
@@ -978,28 +1020,138 @@ impl App {
 
     /// The search box with its buttons, right to left: the box takes the width that is left.
     fn search_field(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let field = egui::Id::new("search box");
         let search = theme::icon_button(ui, icon::SEARCH, "Search", false).clicked();
         let history: Vec<String> = self.store.get("searchHistory").and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().rev().filter_map(|v| v.as_str().map(String::from)).collect();
-        if !history.is_empty() {
-            ui.menu_button(theme::glyph(icon::HISTORY, 15.0), |ui| {
-                egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                    for item in history.iter().take(40) {
-                        if ui.button(item).clicked() {
-                            let item = item.clone();
-                            ui.close();
-                            self.start_search(&item);
+        let history_button = (!history.is_empty()).then(|| theme::icon_button(ui, icon::HISTORY, "Earlier searches", self.suggest.history));
+        if history_button.as_ref().is_some_and(|b| b.clicked()) {
+            let open = !self.suggest.history;
+            self.close_search_list();
+            self.suggest.history = open;
+        }
+        // The keys of the list go first, or the box would use them.
+        let count = self.suggest.tags.len();
+        let mut chosen = None;
+        if count > 0 {
+            let (down, up) = ctx.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown), i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)));
+            let picked = self.suggest.picked;
+            if down {
+                self.suggest.picked = Some(picked.map_or(0, |n| (n + 1) % count));
+            }
+            if up {
+                self.suggest.picked = Some(picked.map_or(count - 1, |n| (n + count - 1) % count));
+            }
+            if self.suggest.picked.is_some() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)) {
+                chosen = self.suggest.picked;
+            }
+        }
+        if self.search_list_open() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            self.close_search_list();
+        }
+        if let Some(n) = chosen {
+            self.take_suggestion(&ctx, field, n);
+        }
+        let mut query = std::mem::take(&mut self.query);
+        let response = ui.add(egui::TextEdit::singleline(&mut query).id(field).hint_text("Search tags…").desired_width(f32::INFINITY).margin(egui::Margin::symmetric(10, 7)));
+        self.query = query;
+        if response.changed() {
+            self.word_typed();
+        }
+        self.ask_for_tags(&ctx);
+        // The list opens under the box, as its continuation.
+        let (mut clicked, mut earlier) = (None, None);
+        if self.search_list_open() {
+            let t = tok(&ctx);
+            let width = response.rect.width();
+            let tags = self.suggest.tags.clone();
+            let picked = self.suggest.picked;
+            let list = egui::Area::new(egui::Id::new("search list")).order(egui::Order::Foreground).fixed_pos(response.rect.left_bottom() + Vec2::new(0.0, theme::S1)).show(&ctx, |ui| {
+                egui::Frame::popup(ui.style()).fill(t.raised).show(ui, |ui| {
+                    ui.set_width(width - 14.0);
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    if !tags.is_empty() {
+                        for (n, (tag, posts)) in tags.iter().enumerate() {
+                            if theme::drop_row(ui, &tag.replace('_', " "), &posts.to_string(), picked == Some(n)).clicked() {
+                                clicked = Some(n);
+                            }
                         }
+                    } else {
+                        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                            for item in history.iter().take(40) {
+                                if theme::drop_row(ui, item, "", false).clicked() {
+                                    earlier = Some(item.clone());
+                                }
+                            }
+                        });
                     }
                 });
             });
+            let clicked_elsewhere = ctx.input(|i| i.pointer.any_click()) && !list.response.contains_pointer() && !response.contains_pointer() && !history_button.as_ref().is_some_and(|b| b.contains_pointer());
+            if self.suggest.history && clicked_elsewhere {
+                self.suggest.history = false;
+            }
         }
-        let mut query = std::mem::take(&mut self.query);
-        let response = ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search tags…").desired_width(f32::INFINITY).margin(egui::Margin::symmetric(10, 7)));
-        self.query = query;
-        let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        if search || enter {
+        if let Some(n) = clicked {
+            self.take_suggestion(&ctx, field, n);
+            ctx.memory_mut(|m| m.request_focus(field));
+        } else if response.lost_focus() && !self.suggest.history {
+            self.close_search_list();
+        }
+        let enter = response.lost_focus() && clicked.is_none() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if let Some(item) = earlier {
+            self.start_search(&item);
+        } else if search || enter {
             let text = self.query.clone();
             self.start_search(&text);
+        }
+    }
+
+    fn search_list_open(&self) -> bool {
+        self.suggest.history || !self.suggest.tags.is_empty()
+    }
+
+    fn close_search_list(&mut self) {
+        // Answers still on their way no longer count.
+        self.suggest = Suggest { token: self.suggest.token + 1, ..Suggest::default() };
+    }
+
+    /// The tag in place of the word being typed, and the cursor after it: Enter now searches.
+    fn take_suggestion(&mut self, ctx: &egui::Context, field: egui::Id, n: usize) {
+        let Some((tag, _)) = self.suggest.tags.get(n).cloned() else { return };
+        self.query = with_tag(&self.query, &tag);
+        self.close_search_list();
+        if let Some(mut state) = egui::TextEdit::load_state(ctx, field) {
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(self.query.chars().count()))));
+            state.store(ctx, field);
+        }
+    }
+
+    fn word_typed(&mut self) {
+        let word = typed_word(&self.query);
+        self.suggest.token += 1;
+        self.suggest.picked = None;
+        self.suggest.history = false;
+        // The old list stays until the new one comes, so that it doesn't blink at every key.
+        match word.filter(|w| w.chars().count() >= 2 && !w.contains(':')) {
+            Some(word) => self.suggest.waiting = Some((word.to_lowercase(), Instant::now())),
+            None => {
+                self.suggest.tags.clear();
+                self.suggest.waiting = None;
+            }
+        }
+    }
+
+    fn ask_for_tags(&mut self, ctx: &egui::Context) {
+        let Some((word, since)) = self.suggest.waiting.clone() else { return };
+        if since.elapsed() < SUGGEST_WAIT {
+            // A timed repaint brings one frame, and this is the frame that asks.
+            ctx.request_repaint_after(SUGGEST_WAIT - since.elapsed());
+            return;
+        }
+        self.suggest.waiting = None;
+        if !self.flag("offlineMode", false) {
+            session::suggest_tags(&self.engine, self.tx.clone(), session::ticked_sites(&self.store), word, self.suggest.token);
         }
     }
 
@@ -1028,14 +1180,7 @@ impl App {
         ui.painter().image(self.logo.id(), logo, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), t.accent);
         let (settings, pools) = (self.show_settings, self.show_pools && !self.show_settings);
         let favorites = self.mode == Mode::Favorites && !pools && !settings;
-        let results = self.on_mosaic() && !self.on_reading() && self.mode == Mode::Slideshow;
-        let items = [
-            (icon::HOME, "Home", "home", self.on_home(), true),
-            (icon::SLIDESHOW, "Slideshow", "showSlideshow", results, !self.list().is_empty()),
-            (icon::POOLS, "Pools", "openPools", pools, true),
-            (icon::HEART, "Favorites", "openFavorites", favorites, true),
-            (icon::SETTINGS, "Settings", "openSettings", settings, true),
-        ];
+        let items = [(icon::HOME, "Home", "home", self.on_home()), (icon::POOLS, "Pools", "openPools", pools), (icon::HEART, "Favorites", "openFavorites", favorites), (icon::SETTINGS, "Settings", "openSettings", settings)];
         let place = |n: usize| {
             let top = if n == items.len() - 1 { card.bottom() - ITEM - 6.0 } else { card.top() + 48.0 + n as f32 * ITEM };
             egui::Rect::from_min_size(egui::pos2(card.left() + 4.0, top), Vec2::new(RAIL_W - 8.0, ITEM))
@@ -1045,8 +1190,8 @@ impl App {
             let y = ctx.animate_value_with_time(egui::Id::new("rail mark"), place(n).top(), theme::smooth());
             ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(place(n).left(), y), place(n).size()).shrink(2.0), theme::RADIUS_M, t.press);
         }
-        for (n, (glyph, label, action, on, enabled)) in items.into_iter().enumerate() {
-            if ui.add_enabled_ui(enabled, |ui| theme::rail_item(ui, place(n), glyph, label, on)).inner.clicked() {
+        for (n, (glyph, label, action, on)) in items.into_iter().enumerate() {
+            if theme::rail_item(ui, place(n), glyph, label, on).clicked() {
                 self.act(&ctx, action);
             }
         }
@@ -1062,14 +1207,17 @@ impl App {
         ui.painter().circle_filled(egui::pos2(rect.left() + rect.width() * 0.15, rect.bottom()), rect.height() * 0.4, t.lavender.gamma_multiply(0.10));
         // Under the settings and the pools the last one stays.
         if !self.show_settings && !self.show_pools {
-            if let Some(url) = self.current().map(|s| self.copies_or(&s.preview_file_url)) {
+            // On the mosaic its first picture (on the saved searches the first cover), in the slideshow the one showing.
+            let cover = self.covers.iter().min_by_key(|(n, _)| **n).map(|(_, s)| s.clone());
+            let shown = if self.show_mosaic { self.list().first().cloned() } else { self.current().or(cover) };
+            if let Some(url) = shown.map(|s| self.copies_or(&s.preview_file_url)) {
                 self.media.request(&self.engine, &url);
                 if url != self.ambient.0 && matches!(self.media.get(&url), Some(State::Ready(_))) {
                     self.ambient = (url, std::mem::take(&mut self.ambient.0), Instant::now());
                 }
             }
         }
-        let k = if theme::smooth() > 0.0 { (self.ambient.2.elapsed().as_secs_f32() / AMBIENT_FADE).min(1.0) } else { 1.0 };
+        let k = if theme::fade() > 0.0 { (self.ambient.2.elapsed().as_secs_f32() / theme::fade()).min(1.0) } else { 1.0 };
         if k < 1.0 {
             ctx.request_repaint();
         }
@@ -1147,14 +1295,17 @@ impl App {
                 }
             }
         });
-        if ui.button((theme::glyph(icon::RANDOM, 14.0), "Random")).clicked() {
-            self.fav.filter = self.fav_filter_box.trim().to_string();
-            self.fav.random = true;
-            self.rebuild_favorites();
-            self.fav_view += 1;
-            self.cur[Mode::Favorites as usize] = 0;
-            self.shown_at = None;
-        }
+        let sort = self.text("favoritesSort");
+        let names = [("newest", "Newest"), ("random", "Random"), ("oldest", "Oldest")];
+        let label = names.iter().find(|(v, _)| *v == sort).map_or("Newest", |(_, n)| *n);
+        egui::ComboBox::from_id_salt("favsort").selected_text(label).show_ui(ui, |ui| {
+            for (value, name) in names {
+                if ui.selectable_label(label == name, name).clicked() {
+                    self.set("favoritesSort", json!(value));
+                    self.apply_favorite_filter();
+                }
+            }
+        });
     }
 
     /// The filter box with its button, right to left.
@@ -1177,6 +1328,8 @@ impl App {
         let fit = (ui.available_width() / (size.x + 8.0)).ceil() as usize + 2;
         let thumbs: Vec<(usize, String)> = self.list().iter().enumerate().skip(i + 1).take(fit).map(|(n, s)| (n, s.preview_file_url.clone())).collect();
         if thumbs.is_empty() {
+            // The last slide: the same room, so that the buttons stay where they are.
+            ui.add_space(6.0 + ui.spacing().item_spacing.y + size.y);
             return;
         }
         // The top edge is dragged like a window's edge; a short line in its middle shows where.
@@ -1237,16 +1390,14 @@ impl App {
         }
         let left = area.left() + if self.show_tags { DRAWER_SPACE } else { 0.0 };
         let width = (area.right() - left - 2.0 * theme::S4).min(760.0);
-        let wide = status.is_some() || self.flag("showThumbs", true);
         let (mut pause, mut seek, mut audio) = (None, None, false);
         let (mut volume, mut muted) = (self.number("videoVolume", 0.5), self.flag("videoMuted", false));
         let pos = egui::pos2((left + area.right()) / 2.0, area.bottom() - theme::S4 + (1.0 - k) * theme::S3);
         let shown = egui::Area::new(egui::Id::new("player area")).order(egui::Order::Middle).pivot(egui::Align2::CENTER_BOTTOM).fixed_pos(pos).interactable(k > 0.5).show(ctx, |ui| {
             ui.set_opacity(k);
             glass::card(ui, glass::bar(ctx), egui::Margin::same(8), |ui| {
-                if wide {
-                    ui.set_width(width - 16.0);
-                }
+                // Always this wide and on one row, so that a video's controls move nothing that is already there.
+                ui.set_width(width - 16.0);
                 if self.flag("showThumbs", true) {
                     self.thumb_strip(ui);
                 }
@@ -1262,18 +1413,24 @@ impl App {
                     if theme::icon_button(ui, icon::NEXT, "Next", false).clicked() {
                         self.move_by(1);
                     }
+                    let faved = self.current().is_some_and(|s| self.fav.contains(&s));
+                    let armed = self.current().is_some_and(|s| self.unfave_armed(&s));
+                    if let Some((_, at)) = self.unfave.as_ref().filter(|_| armed) {
+                        // Back to ♥ when the wait is over.
+                        ui.ctx().request_repaint_after(UNFAVE_WAIT.saturating_sub(at.elapsed()));
+                    }
+                    let tip = if armed { "Press again to remove it" } else if faved { "Remove from the favorites" } else { "Add to the favorites" };
+                    if theme::heart_button(ui, faved, tip, armed).clicked() {
+                        self.toggle_favorite();
+                    }
                     ui.add_space(theme::S1);
                     ui.label(RichText::new(if len == 0 { "0 / 0".to_string() } else { format!("{} / {}{}", self.idx() + 1, len, if self.search.as_ref().is_some_and(|s| s.has_more()) && self.mode == Mode::Slideshow { "+" } else { "" }) }).font(theme::medium(12.5)));
                     let mut secs = self.number("secondsPerSlide", 6.0);
                     if ui.add(egui::DragValue::new(&mut secs).range(1.0..=600.0).suffix(" s")).on_hover_text("Seconds per slide").changed() {
                         self.set("secondsPerSlide", json!(secs));
                     }
-                    let what = if self.mode == Mode::Favorites { "Favorites".to_string() } else if self.reading_list { "Reading list".to_string() } else { self.search.as_ref().map_or(String::new(), |s| s.text.chars().take(48).collect()) };
                     ui.add_space(theme::S1);
-                    ui.label(RichText::new(what).small().color(t.text2));
-                });
-                if let Some(status) = &status {
-                    ui.horizontal(|ui| {
+                    if let Some(status) = &status {
                         if theme::icon_button(ui, if status.paused { icon::PLAY } else { icon::PAUSE }, if status.paused { "Play the video" } else { "Pause the video" }, false).clicked() {
                             pause = Some(!status.paused);
                         }
@@ -1288,14 +1445,17 @@ impl App {
                                 muted = !muted;
                                 audio = true;
                             }
-                            ui.spacing_mut().slider_width = ui.available_width() - 8.0;
+                            ui.spacing_mut().slider_width = (ui.available_width() - 8.0).max(30.0);
                             let mut at = status.position;
                             if ui.add(egui::Slider::new(&mut at, 0.0..=status.duration.max(0.1)).show_value(false).trailing_fill(true)).changed() {
                                 seek = Some(at);
                             }
                         });
-                    });
-                }
+                    } else {
+                        let what = if self.mode == Mode::Favorites { "Favorites".to_string() } else if self.reading_list { "Reading list".to_string() } else { self.search.as_ref().map_or(String::new(), |s| s.text.chars().take(48).collect()) };
+                        ui.label(RichText::new(what).small().color(t.text2));
+                    }
+                });
             });
         });
         self.player_rect = shown.response.rect;
@@ -1321,7 +1481,7 @@ impl App {
         let pointer = ctx.input(|i| i.pointer.hover_pos());
         let at_edge = pointer.is_some_and(|p| p.x <= area.left() + DRAWER_EDGE);
         let on_it = self.drawer_open && pointer.is_some_and(|p| p.x <= area.left() + DRAWER_SPACE + theme::S4);
-        let held = self.drawer_open && (egui::Popup::is_any_open(ctx) || ctx.egui_wants_keyboard_input());
+        let held = self.drawer_open && (egui::Popup::is_any_open(ctx) || ctx.egui_wants_keyboard_input() || self.search_list_open());
         self.drawer_open = self.show_tags || self.drawer_forced || at_edge || on_it || held;
         let k = ctx.animate_bool_with_time(egui::Id::new("drawer"), self.drawer_open, theme::smooth());
         let t = tok(ctx);
@@ -1363,16 +1523,6 @@ impl App {
         ui.separator();
         // What can be done with the slide.
         ui.horizontal(|ui| {
-            let faved = self.current().is_some_and(|s| self.fav.contains(&s));
-            let armed = self.current().is_some_and(|s| self.unfave_armed(&s));
-            if let Some((_, at)) = self.unfave.as_ref().filter(|_| armed) {
-                // Back to ♥ when the wait is over.
-                ui.ctx().request_repaint_after(UNFAVE_WAIT.saturating_sub(at.elapsed()));
-            }
-            let tip = if armed { "Press again to remove it" } else if faved { "Remove from the favorites" } else { "Add to the favorites" };
-            if theme::icon_button_tinted(ui, icon::HEART, tip, armed, faved.then_some(t.accent)).clicked() {
-                self.toggle_favorite();
-            }
             if self.flag("showDownloadButton", true) && theme::icon_button(ui, icon::DOWNLOAD, "Download", false).clicked() {
                 self.download_current();
             }
@@ -1466,14 +1616,15 @@ impl App {
             self.front_page(ui, rect);
             return;
         };
+        self.wheel_slides(ui, &response);
         let t = tok(ui.ctx());
         let url = self.copies_or(&slide.file_url);
         let faved = self.fav.contains(&slide);
         if slide.media_type == MediaType::Video {
             self.on_screen = OnScreen::default();
-            self.video_view(ui, rect, &response);
+            let place = self.video_view(ui, rect, &response);
             if faved {
-                fave_mark(ui, rect);
+                fave_mark(ui, place);
             }
             return;
         }
@@ -1531,20 +1682,49 @@ impl App {
         }
     }
 
-    fn video_view(&mut self, ui: &mut egui::Ui, rect: egui::Rect, response: &egui::Response) {
+    /// The wheel goes from slide to slide over the picture, unless a hotkey has the wheel. Down is the next one.
+    fn wheel_slides(&mut self, ui: &egui::Ui, response: &egui::Response) {
+        if !response.hovered() || self.hotkeys.map.values().flatten().any(|code| hotkeys::is_wheel(*code)) {
+            return;
+        }
+        for event in ui.input(|i| i.events.clone()) {
+            let egui::Event::MouseWheel { unit, delta, modifiers, .. } = event else { continue };
+            if modifiers.any() || delta.y == 0.0 {
+                continue;
+            }
+            // A mouse's notch is a step; a touchpad's many small moves add up to one.
+            if unit == egui::MouseWheelUnit::Point {
+                self.wheel += delta.y;
+                if self.wheel.abs() >= 60.0 {
+                    self.move_by(if self.wheel < 0.0 { 1 } else { -1 });
+                    self.wheel = 0.0;
+                }
+            } else {
+                self.move_by(if delta.y < 0.0 { 1 } else { -1 });
+            }
+        }
+    }
+
+    /// The video in its own shape, the blurred picture around it. Returns where it is.
+    fn video_view(&mut self, ui: &mut egui::Ui, rect: egui::Rect, response: &egui::Response) -> egui::Rect {
         let Some(player) = &self.video else {
             let text = self.video_error.clone().unwrap_or_else(|| "Video playback is not available.".into());
             ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), tok(ui.ctx()).text2);
             if response.clicked() {
                 self.open_source();
             }
-            return;
+            return rect;
         };
-        player.paint(ui, rect);
+        let place = player.display_size().map_or(rect, |[w, h]| {
+            let scale = (rect.width() / w).min(rect.height() / h);
+            egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale))
+        });
+        player.paint(ui, place);
         if response.clicked() {
             player.set_paused(!player.status().paused);
         }
         ui.ctx().request_repaint_after(Duration::from_millis(250));
+        place
     }
 
     fn front_page(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
@@ -1552,17 +1732,6 @@ impl App {
         if self.mode == Mode::Favorites {
             ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "No favorites to show.", egui::FontId::proportional(16.0), t.text2);
             return;
-        }
-        let background = self.text("backgroundImage");
-        if !background.is_empty() {
-            self.media.request(&self.engine, &background);
-            if let Some(State::Ready(p)) = self.media.get(&background) {
-                let (w, h) = (p.size[0] as f32, p.size[1] as f32);
-                let scale = (rect.width() / w).max(rect.height() / h);
-                let size = Vec2::new(w * scale, h * scale);
-                let painter = ui.painter().with_clip_rect(rect);
-                painter.image(p.frames[0].texture.id(), egui::Rect::from_center_size(rect.center(), size), egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::from_white_alpha(120));
-            }
         }
         let searching = self.search.as_ref().is_some_and(|s| s.loading);
         let cards = !searching && self.search.is_none() && self.flag("quickCards", true) && self.quick_cards(ui, rect);
@@ -1601,6 +1770,7 @@ impl App {
         }
         // A picture is at least this tall for its width, so that the glass plate fits on it.
         let ratios: Vec<f32> = cards.iter().map(|(n, ..)| self.covers.get(n).filter(|s| s.width > 0 && s.height > 0).map_or(0.8, |s| (s.height as f32 / s.width as f32).max(0.6))).collect();
+        self.zoom_mosaic(ui);
         let target = (self.number("readingThumbWidth", 220.0) as f32).max(260.0);
         let (cells, total, column) = masonry(&ratios, rect.width() - theme::S2, target);
         let big = column * ui.ctx().pixels_per_point() > 200.0;
@@ -1749,6 +1919,19 @@ pub fn paint_fit(ui: &egui::Ui, rect: egui::Rect, texture: &egui::TextureHandle,
     media::paint(ui, egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale)), texture, size, alpha, radius);
 }
 
+/// The word being typed at the end of the search (without its - or ~). None after a space.
+fn typed_word(query: &str) -> Option<&str> {
+    let word = query.rsplit(char::is_whitespace).next()?.trim_start_matches(['-', '~']);
+    (!word.is_empty()).then_some(word)
+}
+
+/// The search with the tag in place of the word being typed, and a space after it for the next one.
+fn with_tag(query: &str, tag: &str) -> String {
+    let start = query.char_indices().rev().find(|(_, c)| c.is_whitespace()).map_or(0, |(i, c)| i + c.len_utf8());
+    let prefix: String = query[start..].chars().take_while(|c| *c == '-' || *c == '~').collect();
+    format!("{}{prefix}{tag} ", &query[..start])
+}
+
 /// The heart of a favorite, in the corner of its picture.
 fn fave_mark(ui: &egui::Ui, picture: egui::Rect) {
     let t = tok(ui.ctx());
@@ -1834,14 +2017,18 @@ impl eframe::App for App {
     }
 }
 
-// So the settings page (another file) can name it.
-pub fn user_dir() -> std::path::PathBuf {
-    files::user_data()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_suggestion_replaces_the_word_being_typed() {
+        assert_eq!(typed_word("cat -do"), Some("do"));
+        assert_eq!(typed_word("cat "), None);
+        assert_eq!(with_tag("land", "landscape"), "landscape ");
+        assert_eq!(with_tag("cat -do", "dog"), "cat -dog ");
+        assert_eq!(with_tag("cat ~ö", "öland"), "cat ~öland ");
+    }
 
     #[test]
     fn closing_a_page_is_a_step_back_and_a_replaced_search_is_kept() {
