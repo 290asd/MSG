@@ -576,13 +576,14 @@ impl App {
 
     /// The mosaic's part of the top bar, right to left (see top_bar); the search or favorites bar comes after it.
     pub fn mosaic_bar(&mut self, ui: &mut egui::Ui) {
-        if ui.add_enabled(!self.list().is_empty(), egui::Button::new((theme::glyph(icon::PLAY, 14.0), "Slideshow"))).clicked() {
+        if ui.add_enabled(!self.list().is_empty(), egui::Button::new((theme::glyph(icon::PLAY, 14.0), if self.compact(ui) { "" } else { "Slideshow" }))).clicked() {
             self.start_slideshow();
         }
         if self.on_reading() {
             let list = super::session::reading_list(&self.store);
             let mut remove = None;
-            ui.menu_button((theme::glyph(icon::FOLLOW, 14.0), format!("Following ({})", list.len())), |ui| {
+            let label = if self.compact(ui) { list.len().to_string() } else { format!("Following ({})", list.len()) };
+            ui.menu_button((theme::glyph(icon::FOLLOW, 14.0), label), |ui| {
                 if list.is_empty() {
                     ui.label("Search for an artist or tag and press ☆ Follow.");
                 }
@@ -721,7 +722,9 @@ impl App {
         egui::Area::new(egui::Id::new("size pill")).order(egui::Order::Middle).anchor(egui::Align2::RIGHT_BOTTOM, [-theme::S3, -theme::S3]).show(ctx, |ui| {
             super::glass::card(ui, super::glass::bar(ctx), egui::Margin::symmetric(12, 6), |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(if loading { "Loading…".to_string() } else { format!("{count} posts") }).small().weak());
+                    if self.mode == Mode::Slideshow {
+                        ui.label(RichText::new(if loading { "Loading…".to_string() } else { format!("{count} posts") }).small().weak());
+                    }
                     ui.spacing_mut().slider_width = 100.0;
                     let mut size = self.number("readingThumbWidth", 220.0);
                     if ui.add(egui::Slider::new(&mut size, 100.0..=600.0).show_value(false)).on_hover_text("Picture size").changed() {

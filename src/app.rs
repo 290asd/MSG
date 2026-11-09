@@ -158,7 +158,7 @@ pub struct App {
     /// The window for Windows' title bar, and the theme it was last painted for.
     window: Option<isize>,
     title_theme: Option<egui::Theme>,
-    /// Height Ã· width of pictures whose site doesn't say (your folders), by file.
+    /// Height ÷ width of pictures whose site doesn't say (your folders), by file.
     pub ratios: HashMap<String, f32>,
     /// The picture blurred behind everything, the one before it, and when it changed.
     ambient: (String, String, Instant),
@@ -940,10 +940,15 @@ impl App {
         });
     }
 
+    /// In a narrow window the toolbar's buttons are icons only.
+    pub fn compact(&self, ui: &egui::Ui) -> bool {
+        ui.ctx().content_rect().width() < 900.0
+    }
+
     /// The two forms of the front page; the choice is the Front page setting.
     fn home_switch(&mut self, ui: &mut egui::Ui) {
         let chosen = if self.on_reading() { 0 } else { 1 };
-        if let Some(n) = theme::segmented(ui, &[(icon::MOSAIC, "Mosaic"), (icon::SAVED, "Saved searches")], chosen) {
+        if let Some(n) = theme::segmented(ui, &if self.compact(ui) { [(icon::MOSAIC, ""), (icon::SAVED, "")] } else { [(icon::MOSAIC, "Mosaic"), (icon::SAVED, "Saved searches")] }, chosen) {
             if n != chosen {
                 self.set("frontPage", json!(if n == 0 { "reading" } else { "search" }));
                 self.act(&ui.ctx().clone(), "home");
@@ -960,7 +965,8 @@ impl App {
             }
         } else if let Some(tags) = self.search.as_ref().map(|s| s.text.clone()).filter(|t| !t.is_empty() && !self.reading_list) {
             let following = session::reading_list(&self.store).iter().any(|(t, _)| *t == tags);
-            let text = if following { (theme::glyph(icon::FOLLOWING, 14.0), "Following") } else { (theme::glyph(icon::FOLLOW, 14.0), "Follow") };
+            let word = if self.compact(ui) { "" } else if following { "Following" } else { "Follow" };
+            let text = (theme::glyph(if following { icon::FOLLOWING } else { icon::FOLLOW }, 14.0), word);
             if ui.button(text).on_hover_text("The reading list shows the newest posts of what you follow.").clicked() {
                 self.toggle_follow(&tags);
             }
@@ -988,7 +994,7 @@ impl App {
             });
         }
         let mut query = std::mem::take(&mut self.query);
-        let response = ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search tagsâ€¦").desired_width(f32::INFINITY).margin(egui::Margin::symmetric(10, 7)));
+        let response = ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search tags…").desired_width(f32::INFINITY).margin(egui::Margin::symmetric(10, 7)));
         self.query = query;
         let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         if search || enter {
@@ -1080,7 +1086,8 @@ impl App {
     }
 
     fn sites_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button((theme::glyph(icon::SITES, 14.0), "Sites"), |ui| {
+        let compact = self.compact(ui);
+        ui.menu_button((theme::glyph(icon::SITES, 14.0), if compact { "" } else { "Sites" }), |ui| {
             let ticked = session::ticked_sites(&self.store);
             for site in Site::ALL {
                 let mut on = ticked.contains(&site);
@@ -1090,7 +1097,7 @@ impl App {
                 }
             }
         });
-        ui.menu_button((theme::glyph(icon::FILTERS, 14.0), "Filters"), |ui| {
+        ui.menu_button((theme::glyph(icon::FILTERS, 14.0), if compact { "" } else { "Filters" }), |ui| {
             for (key, default, label) in [
                 ("includeImages", true, "Images"), ("includeGifs", true, "GIFs"), ("includeWebms", true, "Videos"),
                 ("includeSafe", true, "Safe"), ("includeQuestionable", false, "Questionable"), ("includeExplicit", false, "Explicit"),
