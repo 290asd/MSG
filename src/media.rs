@@ -73,6 +73,8 @@ struct Decoded {
 
 pub struct MediaCache {
     entries: HashMap<String, (State, u64)>,
+    // The downloads under way, to be called off when nobody asks for them any more.
+    loading: HashMap<String, tokio::task::AbortHandle>,
     tx: Sender<(String, Result<Decoded, String>)>,
     rx: Receiver<(String, Result<Decoded, String>)>,
     tick: u64,
@@ -84,7 +86,7 @@ pub struct MediaCache {
 impl MediaCache {
     pub fn new() -> MediaCache {
         let (tx, rx) = channel();
-        MediaCache { entries: HashMap::new(), tx, rx, tick: 0, frame: 0, limit: Arc::new(tokio::sync::Semaphore::new(AT_ONCE)) }
+        MediaCache { entries: HashMap::new(), loading: HashMap::new(), tx, rx, tick: 0, frame: 0, limit: Arc::new(tokio::sync::Semaphore::new(AT_ONCE)) }
     }
 
     pub fn get(&mut self, url: &str) -> Option<&State> {
@@ -107,8 +109,9 @@ impl MediaCache {
             return;
         }
         self.entries.insert(url.to_string(), (State::Loading, self.tick));
+        let key = url.to_string();
         let (tx, engine, url, limit) = (self.tx.clone(), engine.clone(), url.to_string(), self.limit.clone());
-        engine.rt.clone().spawn(async move {
+        let task = engine.rt.clone().spawn(async move {
             let bytes = if net::web_url(&url).is_some() {
                 let _turn = limit.acquire().await;
                 net::get_bytes(&engine.client, &engine.store, &url).await
@@ -122,12 +125,14 @@ impl MediaCache {
             let _ = tx.send((url, result));
             engine.wake();
         });
+        self.loading.insert(key, task.abort_handle());
     }
 
     /// Moves what has arrived into textures, and lets the oldest go when there are too many. What the last
     /// frame drew stays, however many (a screen full of pool covers), or it would be loaded again and again.
     pub fn poll(&mut self, ctx: &egui::Context) {
         while let Ok((url, result)) = self.rx.try_recv() {
+            self.loading.remove(&url);
             let state = match result {
                 Ok(decoded) => {
                     let size = decoded.frames[0].0.size;
@@ -146,6 +151,17 @@ impl MediaCache {
                 entry.0 = state;
             }
         }
+        // Every picture still needed is asked for on every frame. The rest (slides that went by, an old search)
+        // would only hold up the one on the screen, so they are called off, in the queue or halfway down.
+        let (entries, frame) = (&mut self.entries, self.frame);
+        self.loading.retain(|url, task| {
+            let wanted = entries.get(url).is_some_and(|(_, used)| *used > frame);
+            if !wanted {
+                task.abort();
+                entries.remove(url);
+            }
+            wanted
+        });
         if self.entries.len() > KEEP {
             let mut by_use: Vec<_> = self.entries.iter().filter(|(_, (_, used))| *used <= self.frame).map(|(k, (_, used))| (*used, k.clone())).collect();
             by_use.sort();
@@ -241,4 +257,25 @@ fn shrink(image: image::DynamicImage) -> image::DynamicImage {
 fn to_color(image: image::DynamicImage) -> ColorImage {
     let rgba = image.to_rgba8();
     ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_download_nobody_asks_for_is_called_off() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let mut cache = MediaCache::new();
+        let (passed, wanted) = (rt.spawn(std::future::pending::<()>()), rt.spawn(std::future::pending::<()>()));
+        cache.entries.insert("passed".into(), (State::Loading, 1));
+        cache.entries.insert("wanted".into(), (State::Loading, 2));
+        cache.loading.insert("passed".into(), passed.abort_handle());
+        cache.loading.insert("wanted".into(), wanted.abort_handle());
+        cache.frame = 1; // The last frame asked for "wanted" only.
+        cache.poll(&egui::Context::default());
+        assert!(rt.block_on(passed).unwrap_err().is_cancelled());
+        assert!(!wanted.is_finished());
+        assert!(cache.entries.contains_key("wanted") && !cache.entries.contains_key("passed"));
+    }
 }
