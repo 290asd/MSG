@@ -1,5 +1,5 @@
-// The settings page, the saved pools page and the reading list page.
-use super::app::{App, Tab};
+// The settings page, the saved pools page and the mosaic page.
+use super::app::{App, Mode, Tab};
 use super::hotkeys::{self, ACTIONS};
 use super::media::State;
 use super::sites::Site;
@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 const POOL_TILE: Vec2 = Vec2::new(160.0, 270.0);
 const POOL_COVER: f32 = 210.0;
 const POOL_GAP: f32 = 14.0;
-/// The space between the reading list page's pictures.
+/// The space between the mosaic's pictures.
 const THUMB_GAP: f32 = 6.0;
 
 const TABS: [(Tab, &str); 10] = [
@@ -125,6 +125,7 @@ impl App {
             }
         });
         self.check(ui, "quickCards", true, "Quick search cards on the front page");
+        self.check(ui, "mosaicFirst", true, "Open searches and favorites as a mosaic (off: straight to the slideshow)");
         ui.separator();
         ui.label("Background image (the start screen)");
         ui.horizontal(|ui| {
@@ -550,35 +551,37 @@ impl App {
         }
     }
 
-    /// The reading list page's part of the top bar, right to left (see top_bar); the search bar comes after it.
-    pub fn reading_bar(&mut self, ui: &mut egui::Ui) {
-        let (count, loading) = self.search.as_ref().map_or((0, false), |s| (s.slides.len(), s.loading));
+    /// The mosaic's part of the top bar, right to left (see top_bar); the search or favorites bar comes after it.
+    pub fn mosaic_bar(&mut self, ui: &mut egui::Ui) {
+        let (count, loading) = (self.list().len(), self.search.as_ref().is_some_and(|s| s.loading));
         if ui.add_enabled(count > 0, egui::Button::new("▶ Slideshow")).clicked() {
-            self.show_reading = false;
-            self.set_idx(0);
-            self.playing = true;
+            self.start_slideshow();
         }
-        let list = super::session::reading_list(&self.store);
-        let mut remove = None;
-        ui.menu_button(format!("Following ({})", list.len()), |ui| {
-            if list.is_empty() {
-                ui.label("Search for an artist or tag and press ☆ Follow.");
+        if self.on_reading() {
+            let list = super::session::reading_list(&self.store);
+            let mut remove = None;
+            ui.menu_button(format!("Following ({})", list.len()), |ui| {
+                if list.is_empty() {
+                    ui.label("Search for an artist or tag and press ☆ Follow.");
+                }
+                for (tags, sites) in &list {
+                    ui.horizontal(|ui| {
+                        if ui.small_button("✕").on_hover_text("Stop following").clicked() {
+                            remove = Some(tags.clone());
+                        }
+                        let names: Vec<&str> = sites.iter().map(|s| s.name()).collect();
+                        ui.label(format!("{tags} · {}", names.join(", ")));
+                    });
+                }
+            });
+            if let Some(tags) = remove {
+                self.toggle_follow(&tags);
+                self.start_reading();
             }
-            for (tags, sites) in &list {
-                ui.horizontal(|ui| {
-                    if ui.small_button("✕").on_hover_text("Stop following").clicked() {
-                        remove = Some(tags.clone());
-                    }
-                    let names: Vec<&str> = sites.iter().map(|s| s.name()).collect();
-                    ui.label(format!("{tags} · {}", names.join(", ")));
-                });
-            }
-        });
-        if let Some(tags) = remove {
-            self.toggle_follow(&tags);
-            self.start_reading();
         }
-        ui.label(RichText::new(if loading { "Loading…".to_string() } else { format!("{count} posts") }).weak());
+        if self.mode == Mode::Slideshow {
+            ui.label(RichText::new(if loading { "Loading…".to_string() } else { format!("{count} posts") }).weak());
+        }
         ui.spacing_mut().slider_width = 100.0;
         let mut size = self.number("readingThumbWidth", 220.0);
         if ui.add(egui::Slider::new(&mut size, 100.0..=600.0).show_value(false)).on_hover_text("Picture size").changed() {
@@ -587,10 +590,11 @@ impl App {
         ui.label("Size");
     }
 
-    /// The reading list's posts in columns that fill the window (about the chosen width each), newest first: each
+    /// The posts being shown in columns that fill the window (about the chosen width each), in their order: each
     /// picture keeps its shape and goes under the shortest column. Only the pictures on the screen are drawn (and
     /// loaded), and near the end the next page is read. A click shows the post in the slideshow.
-    pub fn reading_page(&mut self, ui: &mut egui::Ui) {
+    pub fn mosaic_page(&mut self, ui: &mut egui::Ui) {
+        let favorites = self.mode == Mode::Favorites;
         let rect = ui.available_rect_before_wrap();
         let width = rect.width() - 16.0;
         let target = self.number("readingThumbWidth", 220.0) as f32;
@@ -599,15 +603,17 @@ impl App {
         // Wide columns get the sites' larger samples, as their thumbnails are about 150 px.
         let big = column * ui.ctx().pixels_per_point() > 200.0;
         // (picture, height ÷ width, video)
-        let thumbs: Vec<(String, f32, bool)> = self.search.as_ref().map(|s| s.slides.iter().map(|x| {
+        let thumbs: Vec<(String, f32, bool)> = self.list().iter().map(|x| {
             let video = x.media_type == MediaType::Video;
             let url = x.sample_file_url.clone().filter(|u| big && !video && !u.is_empty()).unwrap_or_else(|| x.preview_file_url.clone());
             (url, if x.width > 0 && x.height > 0 { x.height as f32 / x.width as f32 } else { 1.0 }, video)
-        }).collect()).unwrap_or_default();
+        }).collect();
         if thumbs.is_empty() {
-            let text = if self.search.as_ref().is_some_and(|s| s.loading) {
-                "Loading the reading list…"
-            } else if super::session::reading_list(&self.store).is_empty() {
+            let text = if favorites {
+                "No favorites to show."
+            } else if self.search.as_ref().is_some_and(|s| s.loading) {
+                "Loading…"
+            } else if self.reading_list && super::session::reading_list(&self.store).is_empty() {
                 "Nothing followed yet. Search for an artist or tag and press ☆ Follow."
             } else {
                 "No posts."
@@ -630,10 +636,15 @@ impl App {
         let (mut go, mut near_end) = (None, false);
         // A list read again starts from the top.
         let generation = self.search.as_ref().map_or(0, |s| s.generation);
-        egui::ScrollArea::vertical().id_salt(("reading", generation)).auto_shrink(false).show_viewport(ui, |ui, viewport| {
+        egui::ScrollArea::vertical().id_salt(("mosaic", self.mode as usize, generation)).auto_shrink(false).show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
             near_end = viewport.bottom() + rect.height() >= total;
             let origin = ui.max_rect().min.to_vec2();
+            if std::mem::take(&mut self.mosaic_seek) {
+                if let Some(cell) = cells.get(self.idx()).filter(|c| !viewport.contains_rect(**c)) {
+                    ui.scroll_to_rect(cell.translate(origin), Some(egui::Align::Center));
+                }
+            }
             for (n, cell) in cells.iter().enumerate().filter(|(_, c)| c.intersects(viewport)) {
                 let (url, _, video) = &thumbs[n];
                 let tile = cell.translate(origin);
@@ -647,6 +658,9 @@ impl App {
                 if *video {
                     ui.painter().text(tile.left_top() + Vec2::splat(8.0), egui::Align2::LEFT_TOP, "▶", egui::FontId::proportional(16.0), egui::Color32::WHITE);
                 }
+                if !favorites && self.fav.contains(&self.list()[n]) {
+                    ui.painter().rect_stroke(tile, 4.0, egui::Stroke::new(2.0, super::app::FAVE_RED), egui::StrokeKind::Inside);
+                }
                 if response.hovered() {
                     ui.painter().rect_stroke(tile, 4.0, egui::Stroke::new(2.0, ui.visuals().selection.bg_fill), egui::StrokeKind::Inside);
                 }
@@ -655,11 +669,12 @@ impl App {
                 }
             }
         });
-        if near_end {
+        if near_end && !favorites {
             self.load_more();
         }
         if let Some(n) = go {
-            self.show_reading = false;
+            self.show_mosaic = false;
+            self.playing = false;
             self.set_idx(n);
         }
     }

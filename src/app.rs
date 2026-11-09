@@ -23,6 +23,8 @@ const AHEAD: usize = 12;
 const UNFAVE_WAIT: Duration = Duration::from_secs(4);
 /// How long (seconds) the video bar stays after the pointer stops.
 const VIDEO_BAR_SECS: f32 = 2.0;
+/// The mark of a favorite: the heart, and the edge of its picture.
+pub const FAVE_RED: Color32 = Color32::from_rgb(230, 70, 90);
 
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum Mode {
@@ -37,7 +39,7 @@ struct Screen {
     mode: Mode,
     settings: bool,
     pools: bool,
-    reading: bool,
+    mosaic: bool,
     reading_list: bool,
     search: Option<String>,
 }
@@ -99,9 +101,11 @@ pub struct App {
     pub show_settings: bool,
     pub tab: Tab,
     pub show_pools: bool,
-    /// The reading list page, and whether `search` is the reading list's.
-    pub show_reading: bool,
+    /// The mosaic page over the slideshow, and whether `search` is the reading list's.
+    pub show_mosaic: bool,
     pub reading_list: bool,
+    /// Just back from the slideshow: the mosaic brings up the post it was on.
+    pub mosaic_seek: bool,
     /// The screens left behind, for Esc, with the search when the next screen replaced it.
     // ponytail: no cap; a kept search is only its posts' details (the pictures are in `media`). Cap it if a session's memory grows.
     back: Vec<(Screen, Option<Left>)>,
@@ -154,8 +158,9 @@ impl App {
             show_settings: false,
             tab: Tab::Appearance,
             show_pools: false,
-            show_reading: false,
+            show_mosaic: false,
             reading_list: false,
+            mosaic_seek: false,
             back: vec![],
             here: Screen::default(),
             replaced: None,
@@ -223,6 +228,11 @@ impl App {
         self.text("frontPage") != "search"
     }
 
+    /// Searches open as a mosaic, not straight as a slideshow.
+    pub fn mosaic_first(&self) -> bool {
+        self.flag("mosaicFirst", true)
+    }
+
     pub fn set(&self, key: &str, value: Value) {
         self.store.data.lock().unwrap().insert(key.to_string(), value);
         self.store.save();
@@ -261,14 +271,14 @@ impl App {
 
     // ---------- the list being shown ----------
 
-    fn list(&self) -> &[Slide] {
+    pub fn list(&self) -> &[Slide] {
         match self.mode {
             Mode::Slideshow => self.search.as_ref().map(|s| s.slides.as_slice()).unwrap_or(&[]),
             Mode::Favorites => &self.fav.view,
         }
     }
 
-    fn idx(&self) -> usize {
+    pub fn idx(&self) -> usize {
         self.cur[self.mode as usize]
     }
 
@@ -282,6 +292,28 @@ impl App {
 
     pub fn current(&self) -> Option<Slide> {
         self.list().get(self.idx()).cloned()
+    }
+
+    /// A page is over the slideshow: no clock, no video, no downloads for it, and no keys that act on its slide.
+    pub fn covered(&self) -> bool {
+        self.show_pools || self.show_settings || self.show_mosaic
+    }
+
+    /// The mosaic is the page on top.
+    pub fn on_mosaic(&self) -> bool {
+        self.show_mosaic && !self.show_pools && !self.show_settings
+    }
+
+    /// The reading list's mosaic is the page on top.
+    pub fn on_reading(&self) -> bool {
+        self.on_mosaic() && self.reading_list && self.mode == Mode::Slideshow
+    }
+
+    /// From the mosaic to the slideshow, running from the first post.
+    pub fn start_slideshow(&mut self) {
+        self.show_mosaic = false;
+        self.set_idx(0);
+        self.playing = true;
     }
 
     pub fn move_by(&mut self, delta: i64) {
@@ -306,7 +338,7 @@ impl App {
             mode: self.mode,
             settings: self.show_settings,
             pools: self.show_pools,
-            reading: self.show_reading,
+            mosaic: self.show_mosaic,
             reading_list: self.reading_list,
             search: self.search.as_ref().map(|s| s.text.clone()),
         }
@@ -332,7 +364,8 @@ impl App {
         self.mode = screen.mode;
         self.show_settings = screen.settings;
         self.show_pools = screen.pools;
-        self.show_reading = screen.reading;
+        self.mosaic_seek = screen.mosaic && !self.show_mosaic;
+        self.show_mosaic = screen.mosaic;
         self.reading_list = screen.reading_list;
         self.shown_at = None;
         self.here = screen;
@@ -345,7 +378,7 @@ impl App {
         self.mode = Mode::Slideshow;
         self.show_pools = false;
         self.show_settings = false;
-        self.show_reading = false;
+        self.show_mosaic = self.mosaic_first();
         self.generation += 1;
         let text = text.trim();
         self.query = text.to_string();
@@ -375,7 +408,7 @@ impl App {
         self.mode = Mode::Slideshow;
         self.show_pools = false;
         self.show_settings = false;
-        self.show_reading = true;
+        self.show_mosaic = true;
         if self.refresh_auto_follow() || !self.reading_list {
             self.start_reading();
         }
@@ -573,7 +606,7 @@ impl App {
         self.mode = if on { Mode::Favorites } else { Mode::Slideshow };
         self.show_pools = false;
         self.show_settings = false;
-        self.show_reading = false;
+        self.show_mosaic = false;
         self.shown_at = None;
         if on {
             self.rebuild_favorites();
@@ -595,6 +628,14 @@ impl App {
 
     fn act(&mut self, ctx: &egui::Context, action: &str) {
         match action {
+            // On the mosaic Space and Enter start the slideshow.
+            "playPause" if self.on_mosaic() => {
+                if !self.list().is_empty() {
+                    self.start_slideshow();
+                }
+            }
+            // Under a page there is no slide for these to act on.
+            "previous" | "next" | "back10" | "forward10" | "playPause" | "autoFit" | "openSource" | "download" | "favorite" | "toggleTags" | "setBackground" if self.covered() => {}
             "previous" => self.move_by(-1),
             "next" => self.move_by(1),
             "back10" => self.move_by(-10),
@@ -626,14 +667,16 @@ impl App {
                 self.reading_list = false;
                 self.show_pools = false;
                 self.show_settings = false;
-                self.show_reading = false;
+                self.show_mosaic = false;
             }
             // From the settings page straight to the pools page.
             "openPools" => {
                 self.show_pools = !self.show_pools || self.show_settings;
                 self.show_settings = false;
             }
-            "openReadingList" if self.show_reading && !self.show_pools && !self.show_settings => self.show_reading = false,
+            "openReadingList" if self.on_reading() => {
+                self.go_back();
+            }
             "openReadingList" => self.open_reading(),
             // Esc: the screen before; with none left, out of fullscreen.
             "back" => {
@@ -651,7 +694,7 @@ impl App {
             return;
         }
         let (events, wants_text) = (ctx.input(|i| i.events.clone()), ctx.egui_wants_keyboard_input());
-        let mouse = !self.show_settings && !self.show_pools && !self.show_reading;
+        let mouse = !self.covered();
         for action in self.hotkeys.pressed(&events, wants_text, mouse) {
             self.act(ctx, action);
         }
@@ -665,7 +708,7 @@ impl App {
                     }
                     // An open menu closes by itself on this press.
                     egui::Key::Escape if !egui::Popup::is_any_open(ctx) => self.act(ctx, "back"),
-                    egui::Key::Enter if !wants_text && !modifiers.any() => self.playing = !self.playing,
+                    egui::Key::Enter if !wants_text && !modifiers.any() => self.act(ctx, "playPause"),
                     _ if !wants_text && !modifiers.any() && self.mode == Mode::Slideshow => {
                         let digit = match key {
                             egui::Key::Num1 => Some(0), egui::Key::Num2 => Some(1), egui::Key::Num3 => Some(2), egui::Key::Num4 => Some(3),
@@ -708,8 +751,8 @@ impl App {
     }
 
     fn tick(&mut self, ctx: &egui::Context) {
-        // The pools, reading list and settings pages cover the slideshow: the video stops and the slide's clock starts over afterwards.
-        let current = if self.show_pools || self.show_settings || self.show_reading { None } else { self.current() };
+        // A page over the slideshow: the video stops and the slide's clock starts over afterwards.
+        let current = if self.covered() { None } else { self.current() };
         let wanted = current.as_ref().filter(|s| s.media_type == MediaType::Video).map(|s| self.copies_or(&s.file_url));
         self.sync_video(wanted);
         let Some(slide) = current else {
@@ -759,6 +802,10 @@ impl App {
     }
 
     fn preload(&mut self) {
+        // What is under a page waits: the mosaic asks for its own pictures, and these would hold them up.
+        if self.covered() {
+            return;
+        }
         let i = self.idx();
         let wanted: Vec<(String, String)> = self
             .list()
@@ -801,9 +848,9 @@ impl App {
                 if self.show_pools {
                     return self.pools_bar(ui);
                 }
-                // The reading list page keeps the search bar: it can be the front page.
-                if self.show_reading {
-                    self.reading_bar(ui);
+                // The mosaic keeps the search bar (or the favorites bar).
+                if self.show_mosaic {
+                    self.mosaic_bar(ui);
                 }
                 if self.mode == Mode::Slideshow {
                     self.search_bar(ui);
@@ -861,7 +908,7 @@ impl App {
     fn nav(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let (settings, pools) = (self.show_settings, self.show_pools && !self.show_settings);
-        let reading = self.show_reading && !pools && !settings;
+        let reading = self.on_reading();
         for (on, text, action) in [(settings, "⚙ Settings", "openSettings"), (reading, "🔖 Reading list", "openReadingList"), (pools, "📚 Pools", "openPools")] {
             if ui.add(egui::Button::new(text).selected(on)).clicked() {
                 self.act(&ctx, action);
@@ -999,6 +1046,10 @@ impl App {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 self.nav(ui);
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true), |ui| {
+                    if ui.add_enabled(len > 0, egui::Button::new("◀ Mosaic")).clicked() {
+                        self.show_mosaic = true;
+                        self.mosaic_seek = true;
+                    }
                     if ui.button("⏮").clicked() {
                         self.move_by(-1);
                     }
@@ -1020,7 +1071,7 @@ impl App {
                         ui.ctx().request_repaint_after(UNFAVE_WAIT.saturating_sub(at.elapsed()));
                     }
                     let heart = if armed { "♥ Remove?" } else if faved { "♥" } else { "♡" };
-                    if ui.button(RichText::new(heart).color(if faved { Color32::from_rgb(230, 70, 90) } else { ui.visuals().text_color() })).clicked() {
+                    if ui.button(RichText::new(heart).color(if faved { FAVE_RED } else { ui.visuals().text_color() })).clicked() {
                         self.toggle_favorite();
                     }
                     if self.flag("showDownloadButton", true) && ui.button("💾 Download").clicked() {
@@ -1095,7 +1146,7 @@ impl App {
                 let image_rect = egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale));
                 media::paint(ui, image_rect, &frame.texture, picture.size);
                 if faved {
-                    ui.painter().rect_stroke(image_rect, 0.0, egui::Stroke::new(2.0, Color32::from_rgb(230, 70, 90)), egui::StrokeKind::Outside);
+                    ui.painter().rect_stroke(image_rect, 0.0, egui::Stroke::new(2.0, FAVE_RED), egui::StrokeKind::Outside);
                 }
                 if let Some(after) = picture.next_frame_in(elapsed) {
                     ui.ctx().request_repaint_after(after);
@@ -1400,21 +1451,21 @@ impl eframe::App for App {
         self.tick(&ctx);
         self.preload();
 
-        // The settings, pools and reading list pages take the whole window below the bar (settings over pools over the
-        // reading list; Back returns there).
-        if self.show_controls || self.show_pools || self.show_settings || self.show_reading {
+        // The settings, pools and mosaic pages take the whole window below the bar (settings over pools over the
+        // mosaic; Back returns there).
+        if self.show_controls || self.covered() {
             egui::Panel::top("bar").show(ui, |ui| self.top_bar(ui));
         }
         // Their navigation at the bottom, where the controls have it.
-        if self.show_pools || self.show_settings || self.show_reading {
+        if self.covered() {
             egui::Panel::bottom("nav").show(ui, |ui| ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| self.nav(ui)));
         }
         if self.show_settings {
             egui::CentralPanel::default().show(ui, |ui| self.settings_page(ui));
         } else if self.show_pools {
             egui::CentralPanel::default().show(ui, |ui| self.pools_page(ui));
-        } else if self.show_reading {
-            egui::CentralPanel::default().show(ui, |ui| self.reading_page(ui));
+        } else if self.show_mosaic {
+            egui::CentralPanel::default().show(ui, |ui| self.mosaic_page(ui));
         } else {
             if self.show_controls {
                 egui::Panel::bottom("controls").show(ui, |ui| self.controls(ui));
