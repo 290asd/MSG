@@ -181,6 +181,7 @@ impl App {
         app.show_tags = app.flag("showTags", false);
         app.apply_theme(&cc.egui_ctx);
         app.refresh_copies();
+        media::clear_video_files();
         app.downloader.schedule(Duration::from_secs(15));
         if app.auto_follow_limit() > 0.0 {
             favorites::fetch_tag_groups(&app.engine, app.tx.clone(), &app.fav.items);
@@ -693,7 +694,13 @@ impl App {
                 let referer = super::net::web_url(&url).and_then(|u| super::net::referer_for(&u));
                 player.set_volume(volume, muted);
                 player.set_hwdec(hardware);
-                player.load(&url, referer, !to_end, autoplay);
+                // A video fetched ahead starts at once; any other is read from the site as it plays.
+                let file = match self.media.get(&url) {
+                    Some(State::File(file)) => file.path(),
+                    _ => None,
+                };
+                player.load(file.as_deref().unwrap_or(&url), referer, !to_end, autoplay);
+                player.url = url;
             }
             None => player.stop(),
             _ => {}
@@ -765,6 +772,11 @@ impl App {
             let (full, preview) = (self.copies_or(&full), self.copies_or(&preview));
             self.media.request(&self.engine, &full);
             self.media.request(&self.engine, &thumb_source(&preview));
+        }
+        // The next videos come ahead of their turn; the one on the screen is mpv's.
+        let videos: Vec<String> = self.list().iter().skip(i + 1).take(3).filter(|s| s.media_type == MediaType::Video).map(|s| self.copies_or(&s.file_url)).collect();
+        for url in videos.iter().filter(|url| super::net::web_url(url).is_some()) {
+            self.media.request_video(&self.engine, url);
         }
         if self.mode == Mode::Slideshow && self.search.as_ref().is_some_and(|s| s.has_more() && s.slides.len() < i + 25) {
             self.load_more();
@@ -1424,6 +1436,7 @@ impl eframe::App for App {
         if let Some(player) = self.video.as_mut() {
             player.shutdown(gl);
         }
+        media::clear_video_files();
         self.store.flush();
     }
 }

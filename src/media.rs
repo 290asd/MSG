@@ -6,7 +6,9 @@ use super::video;
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use eframe::glow::{self, HasContext};
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Cursor;
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -18,6 +20,8 @@ const KEEP: usize = 90;
 // At most this many downloads at once, so a row of thumbnails doesn't hammer a site's image server;
 // the rest wait their turn in the order they were asked for (the picture on the screen comes first).
 const AT_ONCE: usize = 6;
+// A bigger video isn't fetched ahead: mpv reads it from the site as it plays.
+const MAX_VIDEO: u64 = 200 << 20;
 
 pub struct Frame {
     pub texture: TextureHandle,
@@ -65,10 +69,39 @@ pub enum State {
     Loading,
     Ready(Picture),
     Failed(String),
+    File(TempVideo),
 }
 
-struct Decoded {
-    frames: Vec<(ColorImage, Duration)>,
+/// A video fetched ahead, in the temporary folder. It goes when the cache lets go of it.
+// ponytail: up to KEEP files stay until then; a limit in bytes if the temporary folder ever fills up.
+pub struct TempVideo(PathBuf);
+
+impl TempVideo {
+    /// None if it is gone (a second window clears the folder when it starts).
+    pub fn path(&self) -> Option<String> {
+        self.0.exists().then(|| self.0.to_string_lossy().into_owned())
+    }
+}
+
+impl Drop for TempVideo {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn video_dir() -> PathBuf {
+    std::env::temp_dir().join("MSG-video")
+}
+
+/// What a crash left behind goes when the program starts.
+pub fn clear_video_files() {
+    let _ = std::fs::remove_dir_all(video_dir());
+    let _ = std::fs::create_dir_all(video_dir());
+}
+
+enum Decoded {
+    Frames(Vec<(ColorImage, Duration)>),
+    Video(TempVideo),
 }
 
 pub struct MediaCache {
@@ -100,6 +133,15 @@ impl MediaCache {
 
     /// Starts loading `url` (an address or a file path) unless it is loading or loaded.
     pub fn request(&mut self, engine: &Engine, url: &str) {
+        self.start(engine, url, false);
+    }
+
+    /// Starts fetching a video that is coming up into a temporary file (`State::File`), so it starts at once.
+    pub fn request_video(&mut self, engine: &Engine, url: &str) {
+        self.start(engine, url, true);
+    }
+
+    fn start(&mut self, engine: &Engine, url: &str, video: bool) {
         if url.is_empty() {
             return;
         }
@@ -112,15 +154,20 @@ impl MediaCache {
         let key = url.to_string();
         let (tx, engine, url, limit) = (self.tx.clone(), engine.clone(), url.to_string(), self.limit.clone());
         let task = engine.rt.clone().spawn(async move {
-            let bytes = if net::web_url(&url).is_some() {
+            let result = if video {
                 let _turn = limit.acquire().await;
-                net::get_bytes(&engine.client, &engine.store, &url).await
+                fetch_video(&engine, &url).await
             } else {
-                tokio::fs::read(&url).await.map_err(|_| "file not found".to_string())
-            };
-            let result = match bytes {
-                Ok(bytes) => tokio::task::spawn_blocking(move || decode(&bytes)).await.unwrap_or_else(|_| Err("decoding failed".into())),
-                Err(e) => Err(e),
+                let bytes = if net::web_url(&url).is_some() {
+                    let _turn = limit.acquire().await;
+                    net::get_bytes(&engine.client, &engine.store, &url).await
+                } else {
+                    tokio::fs::read(&url).await.map_err(|_| "file not found".to_string())
+                };
+                match bytes {
+                    Ok(bytes) => tokio::task::spawn_blocking(move || decode(&bytes)).await.unwrap_or_else(|_| Err("decoding failed".into())),
+                    Err(e) => Err(e),
+                }
             };
             let _ = tx.send((url, result));
             engine.wake();
@@ -134,10 +181,10 @@ impl MediaCache {
         while let Ok((url, result)) = self.rx.try_recv() {
             self.loading.remove(&url);
             let state = match result {
-                Ok(decoded) => {
-                    let size = decoded.frames[0].0.size;
+                Ok(Decoded::Video(file)) => State::File(file),
+                Ok(Decoded::Frames(decoded)) => {
+                    let size = decoded[0].0.size;
                     let frames: Vec<Frame> = decoded
-                        .frames
                         .into_iter()
                         .enumerate()
                         .map(|(i, (image, delay))| Frame { texture: ctx.load_texture(format!("{url}#{i}"), image, TextureOptions::LINEAR), delay })
@@ -239,11 +286,25 @@ fn decode(bytes: &[u8]) -> Result<Decoded, String> {
             frames.push((to_color(shrink(image::DynamicImage::ImageRgba8(frame.into_buffer()))), Duration::from_millis(ms as u64)));
         }
         if !frames.is_empty() {
-            return Ok(Decoded { frames });
+            return Ok(Decoded::Frames(frames));
         }
     }
     let image = image::load_from_memory_with_format(bytes, format).map_err(|e| e.to_string())?;
-    Ok(Decoded { frames: vec![(to_color(shrink(image)), Duration::ZERO)] })
+    Ok(Decoded::Frames(vec![(to_color(shrink(image)), Duration::ZERO)]))
+}
+
+// The file's name is the address's hash, so nothing from the site ends up in a path.
+async fn fetch_video(engine: &Engine, url: &str) -> Result<Decoded, String> {
+    let response = net::get(&engine.client, &engine.store, url, Duration::from_secs(120)).await?;
+    if response.content_length().is_some_and(|size| size > MAX_VIDEO) {
+        return Err("too big".into());
+    }
+    let bytes = response.bytes().await.map_err(|_| "network error".to_string())?;
+    let mut hash = DefaultHasher::new();
+    url.hash(&mut hash);
+    let path = video_dir().join(format!("{:x}", hash.finish()));
+    tokio::fs::write(&path, &bytes).await.map_err(|_| "couldn't save".to_string())?;
+    Ok(Decoded::Video(TempVideo(path)))
 }
 
 fn shrink(image: image::DynamicImage) -> image::DynamicImage {
@@ -262,6 +323,16 @@ fn to_color(image: image::DynamicImage) -> ColorImage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_video_file_goes_with_its_entry() {
+        let path = std::env::temp_dir().join("msg-native-test-video");
+        std::fs::write(&path, b"x").unwrap();
+        let video = TempVideo(path.clone());
+        assert_eq!(video.path().as_deref(), path.to_str());
+        drop(video);
+        assert!(!path.exists());
+    }
 
     #[test]
     fn a_download_nobody_asks_for_is_called_off() {
