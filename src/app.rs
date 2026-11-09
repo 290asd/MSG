@@ -492,6 +492,7 @@ impl App {
             "home" => {
                 self.mode = Mode::Slideshow;
                 self.search = None;
+                self.reading_list = false;
                 self.show_pools = false;
                 self.show_settings = false;
                 self.show_reading = false;
