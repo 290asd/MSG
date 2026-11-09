@@ -218,12 +218,12 @@ impl App {
         self.number("autoFollowArtists", 10.0)
     }
 
-    pub fn set(&self, key: &str, value: Value) {
     /// The front page is the reading list's mosaic, unless the quick search cards were chosen.
     pub fn reading_home(&self) -> bool {
         self.text("frontPage") != "search"
     }
 
+    pub fn set(&self, key: &str, value: Value) {
         self.store.data.lock().unwrap().insert(key.to_string(), value);
         self.store.save();
     }
