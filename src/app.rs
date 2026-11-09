@@ -1483,7 +1483,7 @@ impl App {
         let on_it = self.drawer_open && pointer.is_some_and(|p| p.x <= area.left() + DRAWER_SPACE + theme::S4);
         let held = self.drawer_open && (egui::Popup::is_any_open(ctx) || ctx.egui_wants_keyboard_input() || self.search_list_open());
         self.drawer_open = self.show_tags || self.drawer_forced || at_edge || on_it || held;
-        let k = ctx.animate_bool_with_time(egui::Id::new("drawer"), self.drawer_open, theme::smooth());
+        let k = ctx.animate_bool_with_time(egui::Id::new("drawer"), self.drawer_open, theme::drawer_slide());
         let t = tok(ctx);
         if k < 1.0 && self.show_controls && self.player_rect.is_positive() {
             // Where it is: a short mark at the edge, with the player.

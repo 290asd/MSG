@@ -138,6 +138,11 @@ pub fn smooth() -> f32 {
     [0.0, 0.09, 0.22][SPEED.load(Ordering::Relaxed) as usize]
 }
 
+/// The slideshow's drawer keeps its unhurried slide unless animations are off.
+pub fn drawer_slide() -> f32 {
+    if SPEED.load(Ordering::Relaxed) == 0 { 0.0 } else { 0.22 }
+}
+
 pub fn fade() -> f32 {
     [0.0, 0.14, 0.45][SPEED.load(Ordering::Relaxed) as usize]
 }

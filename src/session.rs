@@ -122,6 +122,8 @@ pub struct Batch {
     pub cursors: Vec<Cursor>,
     pub slides: Vec<Slide>,
     pub warnings: Vec<String>,
+    /// The reading list: which followed search each post came from.
+    pub owners: HashMap<(String, String), String>,
 }
 
 #[derive(Clone)]
@@ -193,15 +195,18 @@ impl Search {
                     })
                 })
                 .collect();
-            let (mut cursors, mut slides, mut warnings) = (vec![], vec![], vec![]);
+            let (mut cursors, mut slides, mut warnings, mut owners) = (vec![], vec![], vec![], HashMap::new());
             for task in tasks {
                 if let Ok((cursor, mut got, warning)) = task.await {
+                    if let Some(query) = &cursor.query {
+                        owners.extend(got.iter().map(|s| (s.key(), query.clone())));
+                    }
                     cursors.push(cursor);
                     slides.append(&mut got);
                     warnings.extend(warning);
                 }
             }
-            let _ = tx.send(Msg::Batch(Batch { generation, cursors, slides, warnings }));
+            let _ = tx.send(Msg::Batch(Batch { generation, cursors, slides, warnings, owners }));
             engine.wake();
         });
     }
@@ -219,10 +224,39 @@ impl Search {
         if sites::pool_id(&self.text).is_none() {
             sort_slides(&mut fresh, sort_method(&self.text));
         }
+        if !batch.owners.is_empty() {
+            fresh = spread(fresh, &batch.owners);
+        }
         let added = fresh.len();
         self.slides.append(&mut fresh);
         added
     }
+}
+
+/// How many posts of others come between two of the same followed search, when there are others left.
+const SPREAD: usize = 6;
+
+/// Evens out the reading list, so that an artist who posted many at once doesn't fill a part of the mosaic: each
+/// time the newest post whose artist wasn't among the last few. When only those are left, they come as they are.
+fn spread(slides: Vec<Slide>, owners: &HashMap<(String, String), String>) -> Vec<Slide> {
+    let total = slides.len();
+    let mut queues: HashMap<&str, std::collections::VecDeque<(usize, Slide)>> = HashMap::new();
+    for (n, slide) in slides.into_iter().enumerate() {
+        let owner = owners.get(&slide.key()).map_or("", String::as_str);
+        queues.entry(owner).or_default().push_back((n, slide));
+    }
+    let apart = SPREAD.min(queues.len().saturating_sub(1));
+    let (mut out, mut recent) = (Vec::with_capacity(total), std::collections::VecDeque::<&str>::new());
+    while out.len() < total {
+        let newest = |allow: &dyn Fn(&str) -> bool| queues.iter().filter(|(owner, queue)| allow(owner) && !queue.is_empty()).min_by_key(|(_, queue)| queue[0].0).map(|(owner, _)| *owner);
+        let Some(owner) = newest(&|owner| !recent.contains(&owner)).or_else(|| newest(&|_| true)) else { break };
+        out.extend(queues.get_mut(owner).and_then(|queue| queue.pop_front()).map(|(_, slide)| slide));
+        recent.push_back(owner);
+        if recent.len() > apart {
+            recent.pop_front();
+        }
+    }
+    out
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -434,6 +468,18 @@ mod tests {
 
     fn slide(md5: &str, date: &str, score: i64) -> Slide {
         Slide { md5: md5.into(), date: date.into(), score, ..Default::default() }
+    }
+
+    #[test]
+    fn reading_list_is_evened_out() {
+        let posts: Vec<Slide> = ["a1", "a2", "a3", "b1", "c1"].iter().map(|id| Slide { site_id: "S".into(), id: Value::from(*id), ..Default::default() }).collect();
+        let owners = posts.iter().map(|s| (s.key(), id_owner(s))).collect();
+        let order: Vec<String> = spread(posts, &owners).iter().map(|s| s.id.as_str().unwrap_or("").to_string()).collect();
+        assert_eq!(order, ["a1", "b1", "c1", "a2", "a3"]);
+    }
+
+    fn id_owner(s: &Slide) -> String {
+        s.id.as_str().unwrap_or("")[..1].to_string()
     }
 
     #[test]
