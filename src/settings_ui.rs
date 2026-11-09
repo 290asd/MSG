@@ -16,30 +16,30 @@ const POOL_GAP: f32 = 14.0;
 const THUMB_GAP: f32 = 6.0;
 const TILE_RADIUS: u8 = 8;
 
-const TABS: [(Tab, &str); 10] = [
-    (Tab::Appearance, "Appearance"),
-    (Tab::Sites, "Sites & accounts"),
-    (Tab::Slideshow, "Slideshow"),
-    (Tab::Filtering, "Filtering"),
-    (Tab::Hotkeys, "Hotkeys"),
-    (Tab::Folders, "Folders"),
-    (Tab::Favorites, "Favorites"),
-    (Tab::Quick, "Quick searches"),
-    (Tab::History, "History"),
-    (Tab::About, "About"),
+const TABS: [(Tab, char, &str); 10] = [
+    (Tab::Appearance, icon::PALETTE, "Appearance"),
+    (Tab::Sites, icon::SITES, "Sites & accounts"),
+    (Tab::Slideshow, icon::SLIDESHOW, "Slideshow"),
+    (Tab::Filtering, icon::FILTERS, "Filtering"),
+    (Tab::Hotkeys, icon::KEYBOARD, "Hotkeys"),
+    (Tab::Folders, icon::FOLDER, "Folders"),
+    (Tab::Favorites, icon::HEART, "Favorites"),
+    (Tab::Quick, icon::SAVED, "Quick searches"),
+    (Tab::History, icon::HISTORY, "History"),
+    (Tab::About, icon::INFO, "About"),
 ];
 
 impl App {
     /// The test script's way to a section of the settings.
     pub fn open_tab(&mut self, name: &str) {
-        if let Some((tab, _)) = TABS.iter().find(|(_, n)| n.eq_ignore_ascii_case(name)) {
+        if let Some((tab, _, _)) = TABS.iter().find(|(_, _, n)| n.eq_ignore_ascii_case(name)) {
             self.tab = *tab;
         }
     }
 
     fn check(&mut self, ui: &mut egui::Ui, key: &str, default: bool, label: &str) -> bool {
         let mut on = self.flag(key, default);
-        let changed = ui.checkbox(&mut on, label).changed();
+        let changed = theme::row(ui, label, |ui| theme::toggle(ui, &mut on).changed());
         if changed {
             self.set(key, json!(on));
         }
@@ -48,47 +48,61 @@ impl App {
 
     fn line(&mut self, ui: &mut egui::Ui, key: &str, label: &str, secret: bool) {
         let mut text = self.text(key);
-        ui.horizontal(|ui| {
-            ui.label(label);
-            if ui.add(egui::TextEdit::singleline(&mut text).password(secret).desired_width(280.0)).changed() {
-                self.set(key, json!(text.trim()));
-            }
-        });
+        if theme::row(ui, label, |ui| ui.add(egui::TextEdit::singleline(&mut text).password(secret).desired_width(280.0)).changed()) {
+            self.set(key, json!(text.trim()));
+        }
     }
 
     fn pick_folder(&self, title: &str) -> Option<String> {
         rfd::FileDialog::new().set_title(title).pick_folder().map(|p| p.to_string_lossy().into_owned())
     }
 
-    /// The settings as a page that fills the window below the bar: the sections on the left, the chosen one beside them.
+    /// The settings as a page that fills the window: the sections on glass at the left, the chosen one beside them.
     pub fn settings_page(&mut self, ui: &mut egui::Ui) {
+        const LIST_W: f32 = 212.0;
         let ctx = ui.ctx().clone();
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                ui.set_min_width(150.0);
+        let area = ui.available_rect_before_wrap();
+        let list = egui::Rect::from_min_size(area.min + Vec2::new(0.0, 6.0), Vec2::new(LIST_W, area.height() - 12.0));
+        super::glass::panel(ui, list, super::glass::bar(&ctx));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(list.shrink(theme::S2)), |ui| {
+            ui.horizontal(|ui| {
                 if theme::icon_button(ui, icon::BACK, "Back", false).clicked() {
                     self.go_back();
                 }
-                for (tab, name) in TABS {
-                    if ui.selectable_label(self.tab == tab, name).clicked() {
-                        self.tab = tab;
-                        self.recording = None;
-                    }
-                }
+                ui.label(RichText::new("Settings").font(theme::semibold(15.0)));
             });
-            ui.separator();
+            ui.add_space(theme::S2);
+            for (tab, glyph, name) in TABS {
+                if theme::drawer_row(ui, glyph, name, self.tab == tab).clicked() {
+                    self.tab = tab;
+                    self.recording = None;
+                }
+            }
+        });
+        // The content in a readable width, centred in what is left.
+        let rest = egui::Rect::from_min_max(egui::pos2(list.right() + theme::S2, area.top()), area.max);
+        ui.scope_builder(egui::UiBuilder::new().max_rect(rest), |ui| {
             egui::ScrollArea::vertical().id_salt("settings").auto_shrink(false).show(ui, |ui| {
-                ui.vertical(|ui| match self.tab {
-                    Tab::Appearance => self.tab_appearance(ui, &ctx),
-                    Tab::Sites => self.tab_sites(ui),
-                    Tab::Slideshow => self.tab_slideshow(ui),
-                    Tab::Filtering => self.tab_filtering(ui),
-                    Tab::Hotkeys => self.tab_hotkeys(ui, &ctx),
-                    Tab::Folders => self.tab_folders(ui),
-                    Tab::Favorites => self.tab_favorites(ui),
-                    Tab::Quick => self.tab_quick(ui),
-                    Tab::History => self.tab_history(ui),
-                    Tab::About => self.tab_about(ui),
+                let width = ui.available_width().min(680.0);
+                ui.vertical_centered(|ui| {
+                    ui.set_max_width(width);
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                        ui.add_space(theme::S6);
+                        ui.spacing_mut().item_spacing.y = 4.0;
+                        match self.tab {
+                            Tab::Appearance => self.tab_appearance(ui, &ctx),
+                            Tab::Sites => self.tab_sites(ui),
+                            Tab::Slideshow => self.tab_slideshow(ui),
+                            Tab::Filtering => self.tab_filtering(ui),
+                            Tab::Hotkeys => self.tab_hotkeys(ui, &ctx),
+                            Tab::Folders => self.tab_folders(ui),
+                            Tab::Favorites => self.tab_favorites(ui),
+                            Tab::Quick => self.tab_quick(ui),
+                            Tab::History => self.tab_history(ui),
+                            Tab::About => self.tab_about(ui),
+                        }
+                        ui.add_space(theme::S6);
+                    });
                 });
             });
         });
@@ -96,138 +110,132 @@ impl App {
 
     fn tab_appearance(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.heading("Appearance");
-        let theme = self.text("appTheme");
-        ui.horizontal(|ui| {
-            ui.label("Theme");
-            for (value, name) in [("dark", "Dark"), ("light", "Light"), ("system", "System")] {
-                if ui.radio(theme == value || (theme.is_empty() && value == "dark"), name).clicked() {
-                    self.set("appTheme", json!(value));
-                    self.apply_theme(ctx);
-                }
+        let theme_now = self.text("appTheme");
+        let choices = ["dark", "light", "system"];
+        theme::group(ui, "Look", |ui| {
+            let chosen = choices.iter().position(|c| *c == theme_now).unwrap_or(0);
+            if let Some(n) = theme::row(ui, "Theme", |ui| theme::choice(ui, &["System", "Light", "Dark"], 2 - chosen)) {
+                self.set("appTheme", json!(choices[2 - n]));
+                self.apply_theme(ctx);
             }
-        });
-        let add = self.text("tagClick") == "add";
-        ui.horizontal(|ui| {
-            ui.label("Clicking a tag");
-            if ui.radio(!add, "searches for that tag").clicked() {
-                self.set("tagClick", json!("replace"));
-            }
-            if ui.radio(add, "adds it to the search").clicked() {
-                self.set("tagClick", json!("add"));
-            }
-        });
-        self.check(ui, "clickOpensPost", true, "Favorites: clicking the picture opens its post");
-        self.check(ui, "showDownloadButton", true, "Show the Download button");
-        self.check(ui, "searchSortMenu", false, "Sort menu in the search bar");
-        let reading = self.reading_home();
-        ui.horizontal(|ui| {
-            ui.label("Front page");
-            if ui.radio(reading, "mosaic (reading list)").clicked() {
-                self.set("frontPage", json!("reading"));
-            }
-            if ui.radio(!reading, "quick search cards").clicked() {
-                self.set("frontPage", json!("search"));
-            }
-        });
-        self.check(ui, "quickCards", true, "Quick search cards on the front page");
-        self.check(ui, "mosaicFirst", true, "Open searches and favorites as a mosaic (off: straight to the slideshow)");
-        ui.separator();
-        ui.label("Background image (the start screen)");
-        ui.horizontal(|ui| {
-            if ui.button("Choose…").clicked() {
-                if let Some(path) = rfd::FileDialog::new().add_filter("Images", &["jpg", "jpeg", "png", "webp", "gif", "bmp"]).pick_file() {
-                    let dir = super::app::user_dir();
-                    let _ = std::fs::create_dir_all(&dir);
-                    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("jpg").to_lowercase();
-                    let target = dir.join(format!("background-{stamp}.{ext}"));
-                    match std::fs::copy(&path, &target) {
-                        Ok(_) => self.set("backgroundImage", json!(target.to_string_lossy())),
-                        Err(e) => self.notice(format!("Couldn't use that file: {e}")),
+            ui.horizontal(|ui| {
+                ui.set_min_height(40.0);
+                ui.label("Background image of the start screen");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Clear").clicked() {
+                        self.set("backgroundImage", json!(""));
                     }
-                }
+                    if ui.button("Choose…").clicked() {
+                        if let Some(path) = rfd::FileDialog::new().add_filter("Images", &["jpg", "jpeg", "png", "webp", "gif", "bmp"]).pick_file() {
+                            let dir = super::app::user_dir();
+                            let _ = std::fs::create_dir_all(&dir);
+                            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+                            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("jpg").to_lowercase();
+                            let target = dir.join(format!("background-{stamp}.{ext}"));
+                            match std::fs::copy(&path, &target) {
+                                Ok(_) => self.set("backgroundImage", json!(target.to_string_lossy())),
+                                Err(e) => self.notice(format!("Couldn't use that file: {e}")),
+                            }
+                        }
+                    }
+                });
+            });
+        });
+        theme::group(ui, "Front page", |ui| {
+            let reading = self.reading_home();
+            if let Some(n) = theme::row(ui, "Show", |ui| theme::choice(ui, &["Mosaic", "Saved searches"], if reading { 0 } else { 1 })) {
+                self.set("frontPage", json!(if n == 0 { "reading" } else { "search" }));
             }
-            if ui.button("Clear").clicked() {
-                self.set("backgroundImage", json!(""));
+            self.check(ui, "quickCards", true, "Saved searches on the front page");
+            self.check(ui, "mosaicFirst", true, "Open searches and favorites as a mosaic (off: straight to the slideshow)");
+        });
+        theme::group(ui, "Browsing", |ui| {
+            let add = self.text("tagClick") == "add";
+            if let Some(n) = theme::row(ui, "Clicking a tag", |ui| theme::choice(ui, &["Searches for it", "Adds it to the search"], if add { 1 } else { 0 })) {
+                self.set("tagClick", json!(if n == 1 { "add" } else { "replace" }));
             }
+            self.check(ui, "clickOpensPost", true, "Favorites: clicking the picture opens its post");
+            self.check(ui, "showDownloadButton", true, "Show the Download button");
+            self.check(ui, "searchSortMenu", false, "Sort menu with the search");
         });
     }
 
     fn tab_sites(&mut self, ui: &mut egui::Ui) {
         ui.heading("Sites & accounts");
-        ui.label("Sites to search (also in the Sites menu):");
         let ticked = super::session::ticked_sites(&self.store);
-        ui.horizontal_wrapped(|ui| {
+        theme::group(ui, "Sites to search", |ui| {
             for site in Site::ALL {
                 let mut on = ticked.contains(&site);
-                if ui.checkbox(&mut on, site.name()).changed() {
+                if theme::row(ui, site.name(), |ui| theme::toggle(ui, &mut on).changed()) {
                     let map: serde_json::Map<String, Value> = Site::ALL.iter().map(|s| (s.id().to_string(), json!(if *s == site { on } else { ticked.contains(s) }))).collect();
                     self.set("sitesToSearch", Value::Object(map));
                 }
             }
         });
-        ui.separator();
-        ui.label(RichText::new("Optional, except Rule34 (rule34.xxx → My Account → Options). Kept in settings.json on this computer.").weak());
-        self.line(ui, "e621Login", "e621 username", false);
-        self.line(ui, "e621ApiKey", "e621 API key", true);
-        self.line(ui, "derpibooruApiKey", "Derpibooru API key", true);
-        self.line(ui, "tantabusApiKey", "Tantabus API key", true);
-        self.line(ui, "gelbUserId", "Gelbooru user ID", false);
-        self.line(ui, "gelbApiKey", "Gelbooru API key", true);
-        self.line(ui, "rule34UserId", "Rule34 user ID", false);
-        self.line(ui, "rule34ApiKey", "Rule34 API key", true);
+        theme::group(ui, "Accounts", |ui| {
+            self.line(ui, "e621Login", "e621 username", false);
+            self.line(ui, "e621ApiKey", "e621 API key", true);
+            self.line(ui, "derpibooruApiKey", "Derpibooru API key", true);
+            self.line(ui, "tantabusApiKey", "Tantabus API key", true);
+            self.line(ui, "gelbUserId", "Gelbooru user ID", false);
+            self.line(ui, "gelbApiKey", "Gelbooru API key", true);
+            self.line(ui, "rule34UserId", "Rule34 user ID", false);
+            self.line(ui, "rule34ApiKey", "Rule34 API key", true);
+        });
+        theme::note(ui, "Optional, except Rule34 (rule34.xxx → My Account → Options). Kept in settings.json on this computer.");
     }
 
     fn tab_slideshow(&mut self, ui: &mut egui::Ui) {
         ui.heading("Slideshow");
-        ui.horizontal(|ui| {
-            ui.label("Seconds per slide");
+        theme::group(ui, "Pictures", |ui| {
             let mut secs = self.number("secondsPerSlide", 6.0);
-            if ui.add(egui::DragValue::new(&mut secs).range(1.0..=600.0)).changed() {
+            if theme::row(ui, "Seconds per slide", |ui| ui.add(egui::DragValue::new(&mut secs).range(1.0..=600.0)).changed()) {
                 self.set("secondsPerSlide", json!(secs));
             }
-        });
-        self.check(ui, "autoFitSlide", true, "Fit the picture to the window");
-        ui.add_enabled_ui(!self.flag("autoFitSlide", true), |ui| {
-            for (key, label) in [("maxWidth", "Max width (px)"), ("maxHeight", "Max height (px)")] {
-                ui.horizontal(|ui| {
-                    ui.label(label);
+            self.check(ui, "autoFitSlide", true, "Fit the picture to the window");
+            ui.add_enabled_ui(!self.flag("autoFitSlide", true), |ui| {
+                for (key, label) in [("maxWidth", "Max width (px, 0 = no limit)"), ("maxHeight", "Max height (px, 0 = no limit)")] {
                     let mut v = self.number(key, 0.0);
-                    if ui.add(egui::DragValue::new(&mut v).range(0.0..=20000.0)).changed() {
+                    if theme::row(ui, label, |ui| ui.add(egui::DragValue::new(&mut v).range(0.0..=20000.0)).changed()) {
                         self.set(key, if v < 1.0 { Value::Null } else { json!(v) });
                     }
-                    ui.label(RichText::new("0 = no limit").weak());
-                });
-            }
+                }
+            });
         });
-        self.check(ui, "playVideosToEnd", false, "Play videos to the end before moving on");
-        self.check(ui, "videoAutoplay", true, "Play videos automatically");
-        self.check(ui, "videoAutoMute", false, "Start videos muted");
-        self.check(ui, "videoHwdec", false, "Decode videos with the graphics card (lighter, but some videos show streaks and dots; applies to the next video)");
+        theme::group(ui, "Videos", |ui| {
+            self.check(ui, "playVideosToEnd", false, "Play videos to the end before moving on");
+            self.check(ui, "videoAutoplay", true, "Play videos automatically");
+            self.check(ui, "videoAutoMute", false, "Start videos muted");
+            self.check(ui, "videoHwdec", false, "Decode videos with the graphics card (lighter, but some videos show streaks and dots; applies to the next video)");
+        });
     }
 
     fn tab_filtering(&mut self, ui: &mut egui::Ui) {
         ui.heading("Filtering");
-        ui.label("Applies to the next search.");
-        for (key, default, label) in [
-            ("includeImages", true, "Images"), ("includeGifs", true, "GIFs"), ("includeWebms", true, "Videos"),
-            ("includeSafe", true, "Safe"), ("includeQuestionable", false, "Questionable"), ("includeExplicit", false, "Explicit"),
-            ("includeDupes", false, "Include duplicates (same md5)"),
-        ] {
-            self.check(ui, key, default, label);
-        }
-        ui.label("None of the ratings ticked: no rating filter.");
-        ui.separator();
-        ui.label("Blacklist (tags, separated by spaces or lines)");
-        let mut text = self.text("blacklist");
-        if ui.add(egui::TextEdit::multiline(&mut text).desired_width(f32::INFINITY).desired_rows(5)).changed() {
-            self.set("blacklist", json!(text));
-        }
+        theme::group(ui, "Kinds", |ui| {
+            for (key, default, label) in [("includeImages", true, "Images"), ("includeGifs", true, "GIFs"), ("includeWebms", true, "Videos"), ("includeDupes", false, "Include duplicates (same md5)")] {
+                self.check(ui, key, default, label);
+            }
+        });
+        theme::group(ui, "Ratings", |ui| {
+            for (key, default, label) in [("includeSafe", true, "Safe"), ("includeQuestionable", false, "Questionable"), ("includeExplicit", false, "Explicit")] {
+                self.check(ui, key, default, label);
+            }
+        });
+        theme::note(ui, "Applies to the next search. None of the ratings on: no rating filter.");
+        theme::group(ui, "Blacklist (tags, separated by spaces or lines)", |ui| {
+            let mut text = self.text("blacklist");
+            ui.add_space(theme::S2);
+            if ui.add(egui::TextEdit::multiline(&mut text).desired_width(f32::INFINITY).desired_rows(5)).changed() {
+                self.set("blacklist", json!(text));
+            }
+            ui.add_space(theme::S2);
+        });
     }
 
     fn tab_hotkeys(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.heading("Hotkeys");
-        ui.label(RichText::new("Click a key, then press the new one or a mouse button / the wheel (Delete clears, Esc cancels; the left button can't be bound). Fixed: Enter, F11, Esc, 1–0 (quick searches).").weak());
+        theme::note(ui, "Click a key, then press the new one or a mouse button / the wheel (Delete clears, Esc cancels; the left button can't be bound). Fixed: Enter, F11, Esc, 1–0 (saved searches).");
         // The key being recorded.
         if let Some((id, slot)) = self.recording.clone() {
             for event in ctx.input(|i| i.events.clone()) {
@@ -273,24 +281,23 @@ impl App {
                 }
             }
         }
-        egui::Grid::new("hotkeys").num_columns(2).show(ui, |ui| {
+        theme::group(ui, "", |ui| {
             for action in &ACTIONS {
-                ui.label(action.label);
-                ui.horizontal(|ui| {
+                theme::row(ui, action.label, |ui| {
                     let codes = self.hotkeys.map[action.id].clone();
-                    for (slot, code) in codes.iter().enumerate() {
+                    if ui.small_button("+").on_hover_text("Add a key").clicked() {
+                        self.recording = Some((action.id.to_string(), codes.len()));
+                    }
+                    for (slot, code) in codes.iter().enumerate().rev() {
                         let recording = self.recording.as_ref().is_some_and(|(i, s)| i == action.id && *s == slot);
-                        if ui.selectable_label(recording, if recording { "press a key…".to_string() } else { hotkeys::label(*code) }).clicked() {
+                        if theme::chip(ui, &if recording { "press a key…".to_string() } else { hotkeys::label(*code) }, recording).clicked() {
                             self.recording = Some((action.id.to_string(), slot));
                         }
                     }
-                    if ui.small_button("+").clicked() {
-                        self.recording = Some((action.id.to_string(), codes.len()));
-                    }
                 });
-                ui.end_row();
             }
         });
+        ui.add_space(theme::S2);
         if ui.button("Reset all").clicked() {
             for action in &ACTIONS {
                 self.hotkeys.map.insert(action.id.to_string(), action.defaults.to_vec());
@@ -302,133 +309,136 @@ impl App {
 
     fn tab_folders(&mut self, ui: &mut egui::Ui) {
         ui.heading("Folders");
-        ui.label("Your folders (the \"Your folders\" site; tick it in Sites):");
         let list = |app: &App, key: &str| -> Vec<String> { app.store.get(key).and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|v| v.as_str().map(String::from)).collect() };
         let (mut folders, mut off) = (list(self, "localFolders"), list(self, "localFoldersOff"));
         let mut remove = None;
-        for (i, folder) in folders.iter().enumerate() {
-            ui.horizontal(|ui| {
-                let mut on = !off.contains(folder);
-                if ui.checkbox(&mut on, folder).changed() {
-                    if on {
-                        off.retain(|f| f != folder);
-                    } else {
-                        off.push(folder.clone());
+        theme::group(ui, "Your folders (the \"Your folders\" site; tick it in Sites)", |ui| {
+            for (i, folder) in folders.iter().enumerate() {
+                theme::row(ui, folder.as_str(), |ui| {
+                    if theme::icon_button(ui, icon::CLOSE, "Remove", false).clicked() {
+                        remove = Some(i);
                     }
-                    self.set("localFoldersOff", json!(off));
-                }
-                if ui.small_button("✕").clicked() {
-                    remove = Some(i);
+                    let mut on = !off.contains(folder);
+                    if theme::toggle(ui, &mut on).changed() {
+                        if on {
+                            off.retain(|f| f != folder);
+                        } else {
+                            off.push(folder.clone());
+                        }
+                        self.set("localFoldersOff", json!(off));
+                    }
+                });
+            }
+            theme::row(ui, "", |ui| {
+                if ui.button("Add folder…").clicked() {
+                    if let Some(path) = self.pick_folder("Choose a folder with images and videos") {
+                        if !folders.contains(&path) {
+                            folders.push(path);
+                            self.set("localFolders", json!(folders));
+                        }
+                    }
                 }
             });
-        }
+        });
         if let Some(i) = remove {
             folders.remove(i);
             self.set("localFolders", json!(folders));
         }
-        if ui.button("Add folder…").clicked() {
-            if let Some(path) = self.pick_folder("Choose a folder with images and videos") {
-                if !folders.contains(&path) {
-                    folders.push(path);
-                    self.set("localFolders", json!(folders));
-                }
-            }
-        }
-        ui.separator();
         let current = self.text("downloadFolder");
-        ui.label(format!("Download folder: {}", if current.is_empty() { "Downloads/MSG (default)".to_string() } else { current }));
-        ui.horizontal(|ui| {
-            if ui.button("Choose…").clicked() {
-                if let Some(path) = self.pick_folder("Choose the download folder") {
-                    self.set("downloadFolder", json!(path));
+        theme::group(ui, "Downloads", |ui| {
+            theme::row(ui, if current.is_empty() { "Downloads/MSG (default)" } else { current.as_str() }, |ui| {
+                if ui.button("Default").clicked() {
+                    self.set("downloadFolder", json!(""));
                     self.settings_changed();
                 }
-            }
-            if ui.button("Default").clicked() {
-                self.set("downloadFolder", json!(""));
-                self.settings_changed();
-            }
+                if ui.button("Choose…").clicked() {
+                    if let Some(path) = self.pick_folder("Choose the download folder") {
+                        self.set("downloadFolder", json!(path));
+                        self.settings_changed();
+                    }
+                }
+            });
         });
     }
 
     fn tab_favorites(&mut self, ui: &mut egui::Ui) {
         ui.heading("Favorites");
-        ui.label(format!("{} favorites.", self.fav.items.len()));
-        if ui.button("Import from e621, Derpibooru and Gelbooru").on_hover_text("Uses the details under Sites & accounts. Already-added items are skipped.").clicked() {
-            super::favorites::import(&self.engine, self.tx.clone());
-        }
-        if !self.progress.is_empty() {
-            ui.label(&self.progress);
-        }
-        self.check(ui, "syncE621Favorites", true, "Also fave and unfave on e621 (needs the e621 username and API key)");
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.label("Reading list: follow your top");
+        theme::group(ui, "Your favorites", |ui| {
+            theme::row(ui, format!("{} favorites", self.fav.items.len()), |ui| {
+                if ui.button("Import").on_hover_text("From e621, Derpibooru and Gelbooru, with the details under Sites & accounts. Already-added items are skipped.").clicked() {
+                    super::favorites::import(&self.engine, self.tx.clone());
+                }
+            });
+            if !self.progress.is_empty() {
+                ui.label(RichText::new(&self.progress).weak());
+            }
+            self.check(ui, "syncE621Favorites", true, "Also fave and unfave on e621 (needs the e621 username and API key)");
+            theme::row(ui, "Download all favorites being shown", |ui| {
+                if ui.button("Stop").clicked() {
+                    self.downloader.cancel_bulk();
+                }
+                if ui.button("Download").clicked() {
+                    let urls: Vec<String> = self.fav.view.iter().map(|s| s.file_url.clone()).filter(|u| super::net::web_url(u).is_some()).collect();
+                    self.downloader.download_many(urls, "MSG/favorites");
+                }
+            });
+        });
+        theme::group(ui, "Reading list", |ui| {
             let mut limit = self.auto_follow_limit();
             let hover = "The artists with the most favorites, two at least. Each one adds about half a second to loading the list. An artist you stop following stays out.";
-            if ui.add(egui::DragValue::new(&mut limit).range(0.0..=100.0).speed(0.2).fixed_decimals(0)).on_hover_text(hover).changed() {
+            if theme::row(ui, "Follow your top artists automatically (0 = off)", |ui| ui.add(egui::DragValue::new(&mut limit).range(0.0..=100.0).speed(0.2).fixed_decimals(0)).on_hover_text(hover).changed()) {
                 self.set("autoFollowArtists", json!(limit.round()));
             }
-            ui.label("artists automatically (0 = off)");
         });
-        ui.separator();
-        ui.horizontal(|ui| {
-            if ui.button("Download all favorites being shown").clicked() {
-                let urls: Vec<String> = self.fav.view.iter().map(|s| s.file_url.clone()).filter(|u| super::net::web_url(u).is_some()).collect();
-                self.downloader.download_many(urls, "MSG/favorites");
+        theme::group(ui, "Offline copies (in the background, into the download folder)", |ui| {
+            if self.check(ui, "autoDownloadFavorites", false, "Download every favorite") {
+                self.settings_changed();
             }
-            if ui.button("Stop").clicked() {
-                self.downloader.cancel_bulk();
+            if self.check(ui, "autoDownloadPools", false, "Download every saved pool (needs e621)") {
+                self.settings_changed();
+            }
+            if self.check(ui, "useLocalCopies", true, "Use downloaded copies when they are on the disk") {
+                self.refresh_copies();
+            }
+            if self.check(ui, "offlineMode", false, "Offline mode: nothing from the internet, only your folders and the downloads") {
+                self.settings_changed();
             }
         });
-        ui.separator();
-        ui.label("Offline copies (in the background, into the download folder):");
-        if self.check(ui, "autoDownloadFavorites", false, "Download every favorite") {
-            self.settings_changed();
-        }
-        if self.check(ui, "autoDownloadPools", false, "Download every saved pool (needs e621)") {
-            self.settings_changed();
-        }
-        if self.check(ui, "useLocalCopies", true, "Use downloaded copies when they are on the disk") {
-            self.refresh_copies();
-        }
-        if self.check(ui, "offlineMode", false, "Offline mode: nothing from the internet, only your folders and the downloads") {
-            self.settings_changed();
-        }
     }
 
     fn tab_quick(&mut self, ui: &mut egui::Ui) {
         ui.heading("Quick searches");
-        ui.label("Keys 1–0 select the sites and search for the tags (or what is in the box when the tags are empty).");
+        theme::note(ui, "Keys 1–0 select the sites and search for the tags (or what is in the box when the tags are empty).");
         let mut quick: Vec<Value> = self.store.get("quickSearches").and_then(|v| v.as_array().cloned()).unwrap_or_default();
         while quick.len() < 10 {
             quick.push(json!({"sites": [], "tags": ""}));
         }
         let mut changed = false;
-        for (n, entry) in quick.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                ui.label(format!("{}", (n + 1) % 10));
-                let mut ids: Vec<String> = entry["sites"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
-                ui.menu_button(format!("Sites ({})", ids.len()), |ui| {
-                    for site in Site::ALL {
-                        let mut on = ids.iter().any(|i| i == site.id());
-                        if ui.checkbox(&mut on, site.name()).changed() {
-                            ids.retain(|i| i != site.id());
-                            if on {
-                                ids.push(site.id().to_string());
-                            }
-                            entry["sites"] = json!(ids);
-                            changed = true;
-                        }
+        theme::group(ui, "", |ui| {
+            for (n, entry) in quick.iter_mut().enumerate() {
+                theme::row(ui, format!("{}", (n + 1) % 10), |ui| {
+                    let mut tags = entry["tags"].as_str().unwrap_or("").to_string();
+                    if ui.add(egui::TextEdit::singleline(&mut tags).desired_width(340.0).hint_text("tags")).changed() {
+                        entry["tags"] = json!(tags);
+                        changed = true;
                     }
+                    let mut ids: Vec<String> = entry["sites"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+                    ui.menu_button(format!("Sites ({})", ids.len()), |ui| {
+                        for site in Site::ALL {
+                            let mut on = ids.iter().any(|i| i == site.id());
+                            if ui.checkbox(&mut on, site.name()).changed() {
+                                ids.retain(|i| i != site.id());
+                                if on {
+                                    ids.push(site.id().to_string());
+                                }
+                                entry["sites"] = json!(ids);
+                                changed = true;
+                            }
+                        }
+                    });
                 });
-                let mut tags = entry["tags"].as_str().unwrap_or("").to_string();
-                if ui.add(egui::TextEdit::singleline(&mut tags).desired_width(300.0).hint_text("tags")).changed() {
-                    entry["tags"] = json!(tags);
-                    changed = true;
-                }
-            });
-        }
+            }
+        });
         if changed {
             self.set("quickSearches", Value::Array(quick));
         }
@@ -436,19 +446,31 @@ impl App {
 
     fn tab_history(&mut self, ui: &mut egui::Ui) {
         ui.heading("History");
-        self.check(ui, "storeHistory", true, "Remember my searches");
-        if ui.button("Clear the history").clicked() {
-            self.set("searchHistory", json!([]));
-        }
+        theme::group(ui, "", |ui| {
+            self.check(ui, "storeHistory", true, "Remember my searches");
+            theme::row(ui, "Searches remembered so far", |ui| {
+                if ui.button("Clear the history").clicked() {
+                    self.set("searchHistory", json!([]));
+                }
+            });
+        });
     }
 
     fn tab_about(&mut self, ui: &mut egui::Ui) {
         ui.heading(format!("MSG {}", env!("CARGO_PKG_VERSION")));
-        ui.label("A desktop slideshow for booru sites, based on Chirmaya's BooruSlideshow 10.6.");
-        ui.separator();
-        ui.label("Original license (Chirmaya): open license to copy/modify as long as it is not published under the name \"Booru Slideshow\".");
-        ui.label("Libraries: egui/eframe (MIT or Apache-2.0), image, reqwest, tokio and others under MIT or Apache-2.0.");
-        ui.hyperlink_to("Source", "https://github.com/290asd/MSG");
+        theme::group(ui, "", |ui| {
+            ui.add_space(theme::S2);
+            ui.label("A desktop slideshow for booru sites, based on Chirmaya's BooruSlideshow 10.6.");
+            ui.hyperlink_to("Source", "https://github.com/290asd/MSG");
+            ui.add_space(theme::S2);
+        });
+        theme::group(ui, "Licenses", |ui| {
+            ui.add_space(theme::S2);
+            ui.label("Original license (Chirmaya): open license to copy/modify as long as it is not published under the name \"Booru Slideshow\".");
+            ui.label("Libraries: egui/eframe (MIT or Apache-2.0), image, reqwest, tokio and others under MIT or Apache-2.0.");
+            ui.label("Fonts: Inter (SIL Open Font License 1.1), Lucide icons (ISC).");
+            ui.add_space(theme::S2);
+        });
     }
 
     pub fn save_pool(&mut self, id: u64, name: String, count: usize, cover: String) {

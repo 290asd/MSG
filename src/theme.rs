@@ -45,7 +45,10 @@ pub mod icon {
     pub const RANDOM: char = '\u{e15e}';
     pub const VOLUME: char = '\u{e1ab}';
     pub const MUTED: char = '\u{e1ac}';
-    pub const LOADING: char = '\u{e10a}';
+    pub const PALETTE: char = '\u{e1dd}';
+    pub const KEYBOARD: char = '\u{e284}';
+    pub const FOLDER: char = '\u{e0d7}';
+    pub const INFO: char = '\u{e0f9}';
 }
 
 /// The colours of a theme.
@@ -367,7 +370,7 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
 pub fn segmented(ui: &mut egui::Ui, options: &[(char, &str)], chosen: usize) -> Option<usize> {
     let t = tok(ui.ctx());
     let font = medium(12.5);
-    let widths: Vec<f32> = options.iter().map(|(_, text)| ui.painter().layout_no_wrap(text.to_string(), font.clone(), t.text).size().x + 44.0).collect();
+    let widths: Vec<f32> = options.iter().map(|(icon, text)| ui.painter().layout_no_wrap(text.to_string(), font.clone(), t.text).size().x + if *icon == NO_ICON { 24.0 } else { 44.0 }).collect();
     let (rect, area) = ui.allocate_exact_size(Vec2::new(widths.iter().sum(), 32.0), Sense::hover());
     ui.painter().rect_filled(rect, RADIUS_S, t.control);
     let mut clicked = None;
@@ -382,12 +385,70 @@ pub fn segmented(ui: &mut egui::Ui, options: &[(char, &str)], chosen: usize) -> 
         x += widths[n];
         let response = ui.interact(cell, area.id.with(n), Sense::click());
         let color = if n == chosen { t.accent } else if response.hovered() { t.text } else { t.text2 };
-        ui.painter().text(egui::pos2(cell.left() + 20.0, cell.center().y), egui::Align2::CENTER_CENTER, icon.to_string(), FontId::new(15.0, family("icons")), color);
-        ui.painter().text(egui::pos2(cell.left() + 32.0, cell.center().y), egui::Align2::LEFT_CENTER, *text, font.clone(), color);
+        if *icon != NO_ICON {
+            ui.painter().text(egui::pos2(cell.left() + 20.0, cell.center().y), egui::Align2::CENTER_CENTER, icon.to_string(), FontId::new(15.0, family("icons")), color);
+        }
+        ui.painter().text(egui::pos2(cell.left() + if *icon == NO_ICON { 12.0 } else { 32.0 }, cell.center().y), egui::Align2::LEFT_CENTER, *text, font.clone(), color);
         focus_ring(ui, &response, RADIUS_S);
         if response.clicked() {
             clicked = Some(n);
         }
     }
     clicked
+}
+
+const NO_ICON: char = '\0';
+
+/// segmented with words only.
+pub fn choice(ui: &mut egui::Ui, options: &[&str], chosen: usize) -> Option<usize> {
+    let options: Vec<(char, &str)> = options.iter().map(|o| (NO_ICON, *o)).collect();
+    segmented(ui, &options, chosen).filter(|n| *n != chosen)
+}
+
+/// A key on a key cap.
+pub fn chip(ui: &mut egui::Ui, text: &str, on: bool) -> egui::Response {
+    let t = tok(ui.ctx());
+    let font = medium(12.0);
+    let galley = ui.painter().layout_no_wrap(text.to_string(), font, if on { t.accent } else { t.text });
+    let (rect, response) = ui.allocate_exact_size(Vec2::new((galley.size().x + 16.0).max(28.0), 26.0), Sense::click());
+    ui.painter().rect_filled(rect, RADIUS_S, if on { t.press } else if response.hovered() { t.hover } else { t.control });
+    ui.painter().galley(rect.center() - galley.size() / 2.0, galley, t.text);
+    focus_ring(ui, &response, RADIUS_S);
+    response
+}
+
+/// A group of settings on a surface of its own, under a small title (if it has one).
+pub fn group<R>(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let t = tok(ui.ctx());
+    ui.add_space(S3);
+    if !title.is_empty() {
+        ui.label(RichText::new(title).font(medium(12.0)).color(t.text2));
+        ui.add_space(S1);
+    }
+    egui::Frame::NONE.fill(t.surface.gamma_multiply(0.85)).stroke(Stroke::new(1.0, t.hairline)).corner_radius(RADIUS_M).inner_margin(Margin::symmetric(14, 2)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.spacing_mut().item_spacing.y = 0.0;
+        add(ui)
+    }).inner
+}
+
+/// A row of a group: the name at the left, the control at the right, a fine line between rows.
+pub fn row<R>(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    if ui.min_rect().height() > 1.0 {
+        let color = tok(ui.ctx()).hairline;
+        ui.painter().hline(ui.max_rect().x_range(), ui.cursor().top(), Stroke::new(1.0, color));
+    }
+    let label = label.into();
+    ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), 42.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let inner = add(ui);
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| ui.add(egui::Label::new(label).wrap()));
+        inner
+    })
+    .inner
+}
+
+/// A small explanation under or between the groups.
+pub fn note(ui: &mut egui::Ui, text: &str) {
+    ui.add_space(S1);
+    ui.label(RichText::new(text).size(12.0).color(tok(ui.ctx()).muted));
 }
