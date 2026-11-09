@@ -1367,8 +1367,8 @@ impl App {
         }
     }
 
-    /// The buttons of the slideshow and of the video on the screen: the one thing floating over the picture. It goes
-    /// away a moment after the pointer stops (with the pointer), unless the pointer is on it or the video is paused.
+    /// The buttons of the slideshow and of the video on the screen, floating over the picture in small parts. They go
+    /// away a moment after the pointer stops (with the pointer), unless the pointer is on them or the video is paused.
     fn player(&mut self, ctx: &egui::Context) {
         let area = ctx.content_rect();
         let (idle, pointer) = ctx.input(|i| (i.pointer.time_since_last_movement(), i.pointer.hover_pos()));
@@ -1389,20 +1389,19 @@ impl App {
             return;
         }
         let left = area.left() + if self.show_tags { DRAWER_SPACE } else { 0.0 };
-        let width = (area.right() - left - 2.0 * theme::S4).min(760.0);
+        let room = area.right() - left - 2.0 * theme::S4;
+        let center = (left + area.right()) / 2.0;
         let (mut pause, mut seek, mut audio) = (None, None, false);
         let (mut volume, mut muted) = (self.number("videoVolume", 0.5), self.flag("videoMuted", false));
-        let pos = egui::pos2((left + area.right()) / 2.0, area.bottom() - theme::S4 + (1.0 - k) * theme::S3);
-        let shown = egui::Area::new(egui::Id::new("player area")).order(egui::Order::Middle).pivot(egui::Align2::CENTER_BOTTOM).fixed_pos(pos).interactable(k > 0.5).show(ctx, |ui| {
+        // Each part floats on its own, centred. The buttons are at the bottom and the same width always, so that nothing
+        // above them can move them: the thumbnails next, and a video's controls last, as they come and go.
+        let float = |name: &str, y: f32| egui::Area::new(egui::Id::new(("player", name))).order(egui::Order::Middle).pivot(egui::Align2::CENTER_BOTTOM).fixed_pos(egui::pos2(center, y)).interactable(k > 0.5);
+        let mut y = area.bottom() - theme::S4 + (1.0 - k) * theme::S3;
+        let t = tok(ctx);
+        let margin = egui::Margin::same(8);
+        let buttons = float("buttons", y).show(ctx, |ui| {
             ui.set_opacity(k);
-            glass::card(ui, glass::bar(ctx), egui::Margin::same(8), |ui| {
-                // Always this wide and on one row, so that a video's controls move nothing that is already there.
-                ui.set_width(width - 16.0);
-                if self.flag("showThumbs", true) {
-                    self.thumb_strip(ui);
-                }
-                let len = self.list().len();
-                let t = tok(ctx);
+            glass::card(ui, glass::bar(ctx), margin, |ui| {
                 ui.horizontal(|ui| {
                     if theme::icon_button(ui, icon::PREVIOUS, "Previous", false).clicked() {
                         self.move_by(-1);
@@ -1416,28 +1415,53 @@ impl App {
                     let faved = self.current().is_some_and(|s| self.fav.contains(&s));
                     let armed = self.current().is_some_and(|s| self.unfave_armed(&s));
                     if let Some((_, at)) = self.unfave.as_ref().filter(|_| armed) {
-                        // Back to ♥ when the wait is over.
+                        // Back to the plain heart when the wait is over.
                         ui.ctx().request_repaint_after(UNFAVE_WAIT.saturating_sub(at.elapsed()));
                     }
                     let tip = if armed { "Press again to remove it" } else if faved { "Remove from the favorites" } else { "Add to the favorites" };
                     if theme::heart_button(ui, faved, tip, armed).clicked() {
                         self.toggle_favorite();
                     }
-                    ui.add_space(theme::S1);
-                    ui.label(RichText::new(if len == 0 { "0 / 0".to_string() } else { format!("{} / {}{}", self.idx() + 1, len, if self.search.as_ref().is_some_and(|s| s.has_more()) && self.mode == Mode::Slideshow { "+" } else { "" }) }).font(theme::medium(12.5)));
+                    let len = self.list().len();
+                    let counter = if len == 0 { "0 / 0".to_string() } else { format!("{} / {}{}", self.idx() + 1, len, if self.search.as_ref().is_some_and(|s| s.has_more()) && self.mode == Mode::Slideshow { "+" } else { "" }) };
+                    let what = if self.mode == Mode::Favorites { "Favorites".to_string() } else if self.reading_list { "Reading list".to_string() } else { self.search.as_ref().map_or(String::new(), |s| s.text.clone()) };
+                    // In places of their own: more digits don't change the width.
+                    ui.add_sized([84.0, 28.0], egui::Label::new(RichText::new(counter).font(theme::medium(12.5))).truncate()).on_hover_text(what);
                     let mut secs = self.number("secondsPerSlide", 6.0);
-                    if ui.add(egui::DragValue::new(&mut secs).range(1.0..=600.0).suffix(" s")).on_hover_text("Seconds per slide").changed() {
+                    if ui.add_sized([58.0, 28.0], egui::DragValue::new(&mut secs).range(1.0..=600.0).suffix(" s")).on_hover_text("Seconds per slide").changed() {
                         self.set("secondsPerSlide", json!(secs));
                     }
-                    ui.add_space(theme::S1);
-                    if let Some(status) = &status {
+                });
+            });
+        });
+        let mut covers = buttons.response.rect;
+        y -= buttons.response.rect.height() + theme::S2;
+        if self.flag("showThumbs", true) {
+            let height = self.number("thumbHeight", 42.0) as f32;
+            let width = (7.0 * (height * 4.0 / 3.0 + theme::S2) - theme::S2).min(room - 16.0);
+            let thumbs = float("thumbnails", y).show(ctx, |ui| {
+                ui.set_opacity(k);
+                glass::card(ui, glass::bar(ctx), margin, |ui| {
+                    ui.set_width(width);
+                    self.thumb_strip(ui);
+                });
+            });
+            covers = covers.union(thumbs.response.rect);
+            y -= thumbs.response.rect.height() + theme::S2;
+        }
+        if let Some(status) = &status {
+            let video_bar = float("video", y).show(ctx, |ui| {
+                ui.set_opacity(k);
+                glass::card(ui, glass::bar(ctx), margin, |ui| {
+                    ui.set_width(room.min(460.0) - 16.0);
+                    ui.horizontal(|ui| {
                         if theme::icon_button(ui, if status.paused { icon::PLAY } else { icon::PAUSE }, if status.paused { "Play the video" } else { "Pause the video" }, false).clicked() {
                             pause = Some(!status.paused);
                         }
                         ui.label(RichText::new(format!("{} / {}", clock(status.position), clock(status.duration))).small().color(t.text2));
                         // Volume at the right end, and the seek bar takes the width between (a slider is slider_width wide).
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.spacing_mut().slider_width = 90.0;
+                            ui.spacing_mut().slider_width = 70.0;
                             if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false)).changed() {
                                 audio = true;
                             }
@@ -1451,14 +1475,12 @@ impl App {
                                 seek = Some(at);
                             }
                         });
-                    } else {
-                        let what = if self.mode == Mode::Favorites { "Favorites".to_string() } else if self.reading_list { "Reading list".to_string() } else { self.search.as_ref().map_or(String::new(), |s| s.text.chars().take(48).collect()) };
-                        ui.label(RichText::new(what).small().color(t.text2));
-                    }
+                    });
                 });
             });
-        });
-        self.player_rect = shown.response.rect;
+            covers = covers.union(video_bar.response.rect);
+        }
+        self.player_rect = covers;
         if let Some(player) = &self.video {
             if let Some(p) = pause {
                 player.set_paused(p);
