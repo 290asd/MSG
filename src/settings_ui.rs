@@ -30,6 +30,13 @@ const TABS: [(Tab, &str); 10] = [
 ];
 
 impl App {
+    /// The test script's way to a section of the settings.
+    pub fn open_tab(&mut self, name: &str) {
+        if let Some((tab, _)) = TABS.iter().find(|(_, n)| n.eq_ignore_ascii_case(name)) {
+            self.tab = *tab;
+        }
+    }
+
     fn check(&mut self, ui: &mut egui::Ui, key: &str, default: bool, label: &str) -> bool {
         let mut on = self.flag(key, default);
         let changed = ui.checkbox(&mut on, label).changed();
@@ -598,6 +605,10 @@ impl App {
         }
         if let Some(State::Ready(p)) = self.media.get(&url) {
             super::app::paint_fit(ui, shown, &p.frames[0].texture, p.size, fade, TILE_RADIUS as f32);
+            // The sites say a picture's shape; of your own files it is known now.
+            if super::net::web_url(&url).is_none() {
+                self.ratios.entry(url).or_insert(p.size[1] as f32 / p.size[0] as f32);
+            }
         }
         response
     }
@@ -608,7 +619,7 @@ impl App {
     pub fn mosaic_page(&mut self, ui: &mut egui::Ui) {
         let favorites = self.mode == Mode::Favorites;
         let rect = ui.available_rect_before_wrap();
-        let ratios: Vec<f32> = self.list().iter().map(|x| if x.width > 0 && x.height > 0 { x.height as f32 / x.width as f32 } else { 1.0 }).collect();
+        let ratios: Vec<f32> = self.list().iter().map(|x| if x.width > 0 && x.height > 0 { x.height as f32 / x.width as f32 } else { self.ratios.get(&x.preview_file_url).copied().unwrap_or(1.0) }).collect();
         if ratios.is_empty() {
             let text = if favorites {
                 "No favorites to show."

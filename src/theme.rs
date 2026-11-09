@@ -276,6 +276,24 @@ pub fn rail_item(ui: &mut egui::Ui, rect: egui::Rect, icon: char, label: &str, o
     response
 }
 
+/// One page in the drawer: the icon and its name on a row.
+pub fn drawer_row(ui: &mut egui::Ui, icon: char, label: &str, on: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), if ui.is_enabled() { Sense::click() } else { Sense::hover() });
+    let t = tok(ui.ctx());
+    let hover = ui.ctx().animate_bool_with_time(response.id.with("hover"), response.hovered() && ui.is_enabled(), quick());
+    if on {
+        ui.painter().rect_filled(rect, RADIUS_S, t.press);
+    } else if hover > 0.0 {
+        ui.painter().rect_filled(rect, RADIUS_S, t.control.gamma_multiply(hover));
+    }
+    let color = if !ui.is_enabled() { t.muted } else if on { t.accent } else { t.text2.lerp_to_gamma(t.text, hover) };
+    ui.painter().text(egui::pos2(rect.left() + 18.0, rect.center().y), egui::Align2::CENTER_CENTER, icon.to_string(), FontId::new(16.0, family("icons")), color);
+    ui.painter().text(egui::pos2(rect.left() + 36.0, rect.center().y), egui::Align2::LEFT_CENTER, label, medium(13.0), color);
+    focus_ring(ui, &response, RADIUS_S);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label));
+    response
+}
+
 /// The app's mark, in white: painted in a colour through the tint.
 pub fn logo(ctx: &egui::Context) -> egui::TextureHandle {
     let picture = image::load_from_memory(include_bytes!("../img/msg_icon_white_48.png")).expect("the icon is part of the program").to_rgba8();

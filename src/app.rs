@@ -24,8 +24,12 @@ use std::time::{Duration, Instant};
 const AHEAD: usize = 12;
 /// How long a removal from the favorites waits for the second press.
 const UNFAVE_WAIT: Duration = Duration::from_secs(4);
-/// How long (seconds) the video bar stays after the pointer stops.
-const VIDEO_BAR_SECS: f32 = 2.0;
+/// How long (seconds) the player stays after the pointer stops.
+const CHROME_SECS: f32 = 2.5;
+/// The drawer of the slideshow: its width, the room it takes when pinned, and how near the window's edge opens it.
+const DRAWER_W: f32 = 280.0;
+const DRAWER_SPACE: f32 = DRAWER_W + RAIL_MARGIN * 2.0;
+const DRAWER_EDGE: f32 = 10.0;
 /// The width of the rail on the pages, its distance from the window's edge, and the room it takes.
 const RAIL_W: f32 = 72.0;
 const RAIL_MARGIN: f32 = 6.0;
@@ -66,6 +70,21 @@ fn note<T>(back: &mut Vec<(Screen, Option<T>)>, here: &mut Screen, now: Screen, 
         back.pop();
     } else {
         back.push((was, replaced));
+    }
+}
+
+/// The picture being shown and the one it is fading in over.
+struct OnScreen {
+    url: String,
+    rect: egui::Rect,
+    was: String,
+    was_rect: egui::Rect,
+    at: Option<Instant>,
+}
+
+impl Default for OnScreen {
+    fn default() -> OnScreen {
+        OnScreen { url: String::new(), rect: egui::Rect::NOTHING, was: String::new(), was_rect: egui::Rect::NOTHING, at: None }
     }
 }
 
@@ -128,6 +147,13 @@ pub struct App {
     pub progress: String,
     pub recording: Option<(String, usize)>,
     logo: egui::TextureHandle,
+    /// Where the player is (nothing while hidden), whether the drawer is out, and the test script's order to keep it out.
+    player_rect: egui::Rect,
+    drawer_open: bool,
+    drawer_forced: bool,
+    on_screen: OnScreen,
+    /// Height Ã· width of pictures whose site doesn't say (your folders), by file.
+    pub ratios: HashMap<String, f32>,
     /// The picture blurred behind everything, the one before it, and when it changed.
     ambient: (String, String, Instant),
     pub pool_filter: String,
@@ -184,6 +210,11 @@ impl App {
             progress: String::new(),
             recording: None,
             logo: theme::logo(&cc.egui_ctx),
+            player_rect: egui::Rect::NOTHING,
+            drawer_open: false,
+            drawer_forced: false,
+            on_screen: OnScreen::default(),
+            ratios: HashMap::new(),
             ambient: (String::new(), String::new(), Instant::now()),
             pool_filter: String::new(),
             video: None,
@@ -887,9 +918,11 @@ impl App {
                     self.mosaic_bar(ui);
                 }
                 if self.mode == Mode::Slideshow {
-                    self.search_bar(ui);
+                    self.search_extras(ui);
+                    self.search_field(ui);
                 } else {
-                    self.favorites_bar(ui);
+                    self.favorites_extras(ui);
+                    self.favorites_field(ui);
                 }
             });
         });
@@ -906,27 +939,31 @@ impl App {
         }
     }
 
-    /// Right to left (see top_bar).
-    fn search_bar(&mut self, ui: &mut egui::Ui) {
+    /// Follow or Save pool, and the sort menu. Right to left in the toolbar, left to right in the drawer.
+    fn search_extras(&mut self, ui: &mut egui::Ui) {
         if let Some(pool) = self.search.as_ref().and_then(|s| s.pool()) {
-            if ui.button("☆ Save pool").clicked() {
+            if ui.button((theme::glyph(icon::FOLLOW, 14.0), "Save pool")).clicked() {
                 let cover = self.search.as_ref().and_then(|s| s.slides.first().map(|x| x.preview_file_url.clone())).unwrap_or_default();
                 self.save_pool(pool.0, pool.1, pool.2, cover);
             }
         } else if let Some(tags) = self.search.as_ref().map(|s| s.text.clone()).filter(|t| !t.is_empty() && !self.reading_list) {
             let following = session::reading_list(&self.store).iter().any(|(t, _)| *t == tags);
-            let button = ui.button(if following { "★ Following" } else { "☆ Follow" }).on_hover_text("The reading list shows the newest posts of what you follow.");
-            if button.clicked() {
+            let text = if following { (theme::glyph(icon::FOLLOWING, 14.0), "Following") } else { (theme::glyph(icon::FOLLOW, 14.0), "Follow") };
+            if ui.button(text).on_hover_text("The reading list shows the newest posts of what you follow.").clicked() {
                 self.toggle_follow(&tags);
             }
         }
         if self.flag("searchSortMenu", false) {
             self.sort_menu(ui);
         }
-        let search = ui.button("Search").clicked();
+    }
+
+    /// The search box with its buttons, right to left: the box takes the width that is left.
+    fn search_field(&mut self, ui: &mut egui::Ui) {
+        let search = theme::icon_button(ui, icon::SEARCH, "Search", false).clicked();
         let history: Vec<String> = self.store.get("searchHistory").and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().rev().filter_map(|v| v.as_str().map(String::from)).collect();
         if !history.is_empty() {
-            ui.menu_button("🕘", |ui| {
+            ui.menu_button(theme::glyph(icon::HISTORY, 15.0), |ui| {
                 egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
                     for item in history.iter().take(40) {
                         if ui.button(item).clicked() {
@@ -939,7 +976,7 @@ impl App {
             });
         }
         let mut query = std::mem::take(&mut self.query);
-        let response = ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search tags…").desired_width(f32::INFINITY));
+        let response = ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search tagsâ€¦").desired_width(f32::INFINITY).margin(egui::Margin::symmetric(10, 7)));
         self.query = query;
         let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         if search || enter {
@@ -1030,20 +1067,6 @@ impl App {
         ui.painter().add(glass::frost(&ctx, rect, glass::Look { radius: 0.0, tint: t.ambient, passes: 6 }, 1.0));
     }
 
-    /// Favorites, the pools, the reading list and the settings, right to left: at the right end of the controls, and
-    /// in a bar of their own under the pages that fill the window. The page that is open shows as selected.
-    fn nav(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
-        let (settings, pools) = (self.show_settings, self.show_pools && !self.show_settings);
-        let reading = self.on_reading();
-        let favorites = self.mode == Mode::Favorites && !pools && !settings;
-        for (on, text, action) in [(settings, "⚙ Settings", "openSettings"), (reading, "🔖 Reading list", "openReadingList"), (pools, "📚 Pools", "openPools"), (favorites, "♥ Favorites", "openFavorites")] {
-            if ui.add(egui::Button::new(text).selected(on)).clicked() {
-                self.act(&ctx, action);
-            }
-        }
-    }
-
     fn sites_menu(&mut self, ui: &mut egui::Ui) {
         ui.menu_button((theme::glyph(icon::SITES, 14.0), "Sites"), |ui| {
             let ticked = session::ticked_sites(&self.store);
@@ -1086,9 +1109,9 @@ impl App {
         });
     }
 
-    /// Right to left (see top_bar).
-    fn favorites_bar(&mut self, ui: &mut egui::Ui) {
-        ui.label(format!("{} shown", self.fav.view.len()));
+    /// How many are shown, the site and Random.
+    fn favorites_extras(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new(format!("{} shown", self.fav.view.len())).small().weak());
         let counts = self.fav.site_counts();
         let selected = self.fav.site.clone();
         let label = selected.as_ref().and_then(|s| Site::from_id(s)).map(|s| s.name().to_string()).unwrap_or_else(|| format!("All sites ({})", self.fav.items.len()));
@@ -1105,7 +1128,7 @@ impl App {
                 }
             }
         });
-        if ui.button("🔀 Random").clicked() {
+        if ui.button((theme::glyph(icon::RANDOM, 14.0), "Random")).clicked() {
             self.fav.filter = self.fav_filter_box.trim().to_string();
             self.fav.random = true;
             self.rebuild_favorites();
@@ -1113,9 +1136,13 @@ impl App {
             self.cur[Mode::Favorites as usize] = 0;
             self.shown_at = None;
         }
-        let filter_clicked = ui.button("Filter").clicked();
+    }
+
+    /// The filter box with its button, right to left.
+    fn favorites_field(&mut self, ui: &mut egui::Ui) {
+        let filter_clicked = theme::icon_button(ui, icon::SEARCH, "Filter", false).clicked();
         let mut filter = std::mem::take(&mut self.fav_filter_box);
-        let response = ui.add(egui::TextEdit::singleline(&mut filter).hint_text("Filter by tags (-tag, ~tag, tag*)").desired_width(f32::INFINITY));
+        let response = ui.add(egui::TextEdit::singleline(&mut filter).hint_text("Filter by tags (-tag, ~tag, tag*)").desired_width(f32::INFINITY).margin(egui::Margin::symmetric(10, 7)));
         self.fav_filter_box = filter;
         let enter = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         if filter_clicked || enter {
@@ -1123,212 +1150,122 @@ impl App {
         }
     }
 
-    fn controls(&mut self, ui: &mut egui::Ui) {
-        let len = self.list().len();
-        // The next slides as thumbnails, 4:3, as high as the strip's top edge is dragged.
+    /// The strip of the next slides: 4:3, as high as its top edge is dragged.
+    fn thumb_strip(&mut self, ui: &mut egui::Ui) {
         let i = self.idx();
         let size = Vec2::new(4.0 / 3.0, 1.0) * self.number("thumbHeight", 42.0) as f32;
-        // As many as fit in the window (and two more, for the scrolling), so only those are loaded.
+        // As many as fit (and two more, for the scrolling), so only those are loaded.
         let fit = (ui.available_width() / (size.x + 8.0)).ceil() as usize + 2;
         let thumbs: Vec<(usize, String)> = self.list().iter().enumerate().skip(i + 1).take(fit).map(|(n, s)| (n, s.preview_file_url.clone())).collect();
-        if !thumbs.is_empty() && self.flag("showThumbs", true) {
-            // The top edge is dragged like a window's edge; a short line in its middle shows where.
-            let (edge, drag) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::drag());
-            let active = drag.hovered() || drag.dragged();
-            if active {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
-            }
-            let stroke = if active { ui.visuals().widgets.hovered.fg_stroke } else { ui.visuals().widgets.noninteractive.bg_stroke };
-            ui.painter().hline(edge.center().x - 20.0..=edge.center().x + 20.0, edge.center().y, stroke);
-            if drag.dragged() {
-                let most = (ui.ctx().content_rect().height() / 2.0).max(24.0);
-                self.set("thumbHeight", json!((size.y - drag.drag_delta().y).clamp(24.0, most)));
-            }
-            let mut jump = None;
-            egui::ScrollArea::horizontal().id_salt("thumbs").show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    for (n, url) in &thumbs {
-                        let url = thumb_source(&self.copies_or(url));
-                        // Also asks for what is missing (the list may have grown); a thumbnail in use is not let go.
-                        self.media.request(&self.engine, &url);
-                        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-                        ui.painter().rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
-                        if let Some(State::Ready(p)) = self.media.get(&url) {
-                            paint_fit(ui, rect, &p.frames[0].texture, p.size, 1.0, 4.0);
-                        }
-                        if response.clicked() {
-                            jump = Some(*n);
-                        }
-                    }
-                });
-            });
-            if let Some(n) = jump {
-                self.set_idx(n);
-            }
+        if thumbs.is_empty() {
+            return;
         }
-        // The navigation at the right end; the rest wraps to more rows in a narrow window.
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.nav(ui);
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true), |ui| {
-                    if ui.add_enabled(len > 0, egui::Button::new("◀ Mosaic")).clicked() {
-                        self.show_mosaic = true;
-                        self.mosaic_seek = true;
+        // The top edge is dragged like a window's edge; a short line in its middle shows where.
+        let (edge, drag) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::drag());
+        let active = drag.hovered() || drag.dragged();
+        if active {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        }
+        let t = tok(ui.ctx());
+        ui.painter().hline(edge.center().x - 20.0..=edge.center().x + 20.0, edge.center().y, egui::Stroke::new(2.0, if active { t.accent } else { t.hairline }));
+        if drag.dragged() {
+            let most = (ui.ctx().content_rect().height() / 2.0).max(24.0);
+            self.set("thumbHeight", json!((size.y - drag.drag_delta().y).clamp(24.0, most)));
+        }
+        let mut jump = None;
+        egui::ScrollArea::horizontal().id_salt("thumbs").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                for (n, url) in &thumbs {
+                    let url = thumb_source(&self.copies_or(url));
+                    // Also asks for what is missing (the list may have grown); a thumbnail in use is not let go.
+                    self.media.request(&self.engine, &url);
+                    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+                    ui.painter().rect_filled(rect, theme::RADIUS_S, t.control);
+                    if let Some(State::Ready(p)) = self.media.get(&url) {
+                        paint_fit(ui, rect, &p.frames[0].texture, p.size, if response.hovered() { 1.0 } else { 0.85 }, theme::RADIUS_S as f32);
                     }
-                    if ui.button("⏮").clicked() {
+                    if response.clicked() {
+                        jump = Some(*n);
+                    }
+                }
+            });
+        });
+        if let Some(n) = jump {
+            self.set_idx(n);
+        }
+    }
+
+    /// The buttons of the slideshow and of the video on the screen: the one thing floating over the picture. It goes
+    /// away a moment after the pointer stops (with the pointer), unless the pointer is on it or the video is paused.
+    fn player(&mut self, ctx: &egui::Context) {
+        let area = ctx.content_rect();
+        let (idle, pointer) = ctx.input(|i| (i.pointer.time_since_last_movement(), i.pointer.hover_pos()));
+        let video = self.current().is_some_and(|s| s.media_type == MediaType::Video) && self.video.is_some();
+        let status = self.video.as_ref().filter(|_| video).map(|p| p.status());
+        let over = pointer.is_some_and(|p| self.player_rect.expand(theme::S3).contains(p));
+        let show = over || self.drawer_forced || idle < CHROME_SECS || status.as_ref().is_some_and(|s| s.paused) || egui::Popup::is_any_open(ctx);
+        if idle < CHROME_SECS {
+            // A timed repaint brings one frame only, and this is the frame that hides the bar.
+            ctx.request_repaint_after_secs(CHROME_SECS - idle + 0.02);
+        }
+        if !show && !self.drawer_open && pointer.is_some() {
+            ctx.set_cursor_icon(egui::CursorIcon::None);
+        }
+        let k = ctx.animate_bool_with_time(egui::Id::new("player"), show && self.show_controls, theme::smooth());
+        if k == 0.0 {
+            self.player_rect = egui::Rect::NOTHING;
+            return;
+        }
+        let left = area.left() + if self.show_tags { DRAWER_SPACE } else { 0.0 };
+        let width = (area.right() - left - 2.0 * theme::S4).min(760.0);
+        let wide = status.is_some() || self.flag("showThumbs", true);
+        let (mut pause, mut seek, mut audio) = (None, None, false);
+        let (mut volume, mut muted) = (self.number("videoVolume", 0.5), self.flag("videoMuted", false));
+        let pos = egui::pos2((left + area.right()) / 2.0, area.bottom() - theme::S4 + (1.0 - k) * theme::S3);
+        let shown = egui::Area::new(egui::Id::new("player area")).order(egui::Order::Middle).pivot(egui::Align2::CENTER_BOTTOM).fixed_pos(pos).interactable(k > 0.5).show(ctx, |ui| {
+            ui.set_opacity(k);
+            glass::card(ui, glass::bar(ctx), egui::Margin::same(8), |ui| {
+                if wide {
+                    ui.set_width(width - 16.0);
+                }
+                if self.flag("showThumbs", true) {
+                    self.thumb_strip(ui);
+                }
+                let len = self.list().len();
+                let t = tok(ctx);
+                ui.horizontal(|ui| {
+                    if theme::icon_button(ui, icon::PREVIOUS, "Previous", false).clicked() {
                         self.move_by(-1);
                     }
-                    if ui.button(if self.playing { "⏸" } else { "▶" }).clicked() {
+                    if theme::icon_button(ui, if self.playing { icon::PAUSE } else { icon::PLAY }, if self.playing { "Pause the slideshow" } else { "Play the slideshow" }, self.playing).clicked() {
                         self.playing = !self.playing;
                     }
-                    if ui.button("⏭").clicked() {
+                    if theme::icon_button(ui, icon::NEXT, "Next", false).clicked() {
                         self.move_by(1);
                     }
-                    ui.label(if len == 0 { "0 / 0".to_string() } else { format!("{} / {}{}", i + 1, len, if self.search.as_ref().is_some_and(|s| s.has_more()) && self.mode == Mode::Slideshow { "+" } else { "" }) });
+                    ui.add_space(theme::S1);
+                    ui.label(RichText::new(if len == 0 { "0 / 0".to_string() } else { format!("{} / {}{}", self.idx() + 1, len, if self.search.as_ref().is_some_and(|s| s.has_more()) && self.mode == Mode::Slideshow { "+" } else { "" }) }).font(theme::medium(12.5)));
                     let mut secs = self.number("secondsPerSlide", 6.0);
-                    if ui.add(egui::DragValue::new(&mut secs).range(1.0..=600.0).suffix(" s")).changed() {
+                    if ui.add(egui::DragValue::new(&mut secs).range(1.0..=600.0).suffix(" s")).on_hover_text("Seconds per slide").changed() {
                         self.set("secondsPerSlide", json!(secs));
                     }
-                    let faved = self.current().is_some_and(|s| self.fav.contains(&s));
-                    let armed = self.current().is_some_and(|s| self.unfave_armed(&s));
-                    if let Some((_, at)) = self.unfave.as_ref().filter(|_| armed) {
-                        // Back to ♥ when the wait is over.
-                        ui.ctx().request_repaint_after(UNFAVE_WAIT.saturating_sub(at.elapsed()));
-                    }
-                    let heart = if armed { "♥ Remove?" } else if faved { "♥" } else { "♡" };
-                    if ui.button(RichText::new(heart).color(if faved { tok(ui.ctx()).accent } else { ui.visuals().text_color() })).clicked() {
-                        self.toggle_favorite();
-                    }
-                    if self.flag("showDownloadButton", true) && ui.button("💾 Download").clicked() {
-                        self.download_current();
-                    }
-                    if ui.button("Post").clicked() {
-                        self.open_source();
-                    }
-                    if ui.selectable_label(self.show_tags, "# Tags").clicked() {
-                        self.show_tags = !self.show_tags;
-                        self.set("showTags", json!(self.show_tags));
-                    }
-                    let thumbs = self.flag("showThumbs", true);
-                    if ui.selectable_label(thumbs, "Thumbnails").clicked() {
-                        self.set("showThumbs", json!(!thumbs));
-                    }
-                    let mut fit = self.flag("autoFitSlide", true);
-                    if ui.checkbox(&mut fit, "Fit").changed() {
-                        self.set("autoFitSlide", json!(fit));
-                    }
-                    if !self.progress.is_empty() {
-                        ui.label(RichText::new(&self.progress).weak());
-                    }
+                    let what = if self.mode == Mode::Favorites { "Favorites".to_string() } else if self.reading_list { "Reading list".to_string() } else { self.search.as_ref().map_or(String::new(), |s| s.text.chars().take(48).collect()) };
+                    ui.add_space(theme::S1);
+                    ui.label(RichText::new(what).small().color(t.text2));
                 });
-            });
-        });
-    }
-
-    fn tags_panel(&mut self, ui: &mut egui::Ui, slide: &Slide) {
-        let mut clicked: Option<String> = None;
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            let groups = super::slide::tag_groups(slide);
-            for (category, tags) in groups {
-                if !category.is_empty() {
-                    ui.label(RichText::new(&category).strong());
-                }
-                for tag in tags {
-                    let text = RichText::new(tag.replace('_', " ")).color(category_color(&category, ui.visuals().dark_mode));
-                    if ui.add(egui::Label::new(text).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        clicked = Some(tag);
-                    }
-                }
-                ui.add_space(6.0);
-            }
-        });
-        if let Some(tag) = clicked {
-            self.toggle_tag_search(&tag);
-        }
-    }
-
-    fn viewer(&mut self, ui: &mut egui::Ui) {
-        let rect = ui.available_rect_before_wrap();
-        let response = ui.allocate_rect(rect, Sense::click());
-        let Some(slide) = self.current() else {
-            self.front_page(ui, rect);
-            return;
-        };
-        let url = self.copies_or(&slide.file_url);
-        if slide.media_type == MediaType::Video {
-            self.video_view(ui, rect, &response);
-            return;
-        }
-        let fit = self.flag("autoFitSlide", true);
-        let (max_w, max_h) = (self.number("maxWidth", f64::INFINITY) as f32, self.number("maxHeight", f64::INFINITY) as f32);
-        let (faved, opens_post, elapsed) = (self.fav.contains(&slide), self.mode == Mode::Favorites && self.flag("clickOpensPost", true), self.shown_at.map(|t| t.elapsed()).unwrap_or_default());
-        let mut open_post = false;
-        match self.media.get(&url) {
-            Some(State::Ready(picture)) => {
-                let frame = picture.frame_at(elapsed);
-                let (w, h) = (picture.size[0] as f32, picture.size[1] as f32);
-                let scale = if fit { (rect.width() / w).min(rect.height() / h) } else { 1.0f32.min(max_w / w).min(max_h / h) };
-                let image_rect = egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale));
-                media::paint(ui, image_rect, &frame.texture, picture.size, 1.0, 0.0);
-                if faved {
-                    ui.painter().rect_stroke(image_rect, 0.0, egui::Stroke::new(2.0, tok(ui.ctx()).accent), egui::StrokeKind::Outside);
-                }
-                if let Some(after) = picture.next_frame_in(elapsed) {
-                    ui.ctx().request_repaint_after(after);
-                }
-                open_post = response.clicked() && opens_post;
-            }
-            Some(State::Failed(e)) => {
-                ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, format!("Couldn't load the picture ({e})"), egui::FontId::proportional(18.0), Color32::GRAY);
-            }
-            _ => {
-                // The thumbnail is usually here already: it stands in until the picture itself has arrived.
-                if let Some(State::Ready(thumb)) = self.media.get(&thumb_source(&self.copies_or(&slide.preview_file_url))) {
-                    paint_fit(ui, rect, &thumb.frames[0].texture, thumb.size, 1.0, 0.0);
-                }
-                for (shift, color) in [(1.0, Color32::BLACK), (0.0, Color32::WHITE)] {
-                    ui.painter().text(rect.center() + Vec2::splat(shift), egui::Align2::CENTER_CENTER, "Loading…", egui::FontId::proportional(18.0), color);
-                }
-                ui.ctx().request_repaint_after(Duration::from_millis(200));
-            }
-        }
-        if open_post {
-            self.open_source();
-        }
-    }
-
-    fn video_view(&mut self, ui: &mut egui::Ui, rect: egui::Rect, response: &egui::Response) {
-        let Some(player) = &self.video else {
-            let text = self.video_error.clone().unwrap_or_else(|| "Video playback is not available.".into());
-            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), Color32::GRAY);
-            if response.clicked() {
-                self.open_source();
-            }
-            return;
-        };
-        player.paint(ui, rect);
-        let status = player.status();
-        let (mut volume, mut muted) = (self.number("videoVolume", 0.5), self.flag("videoMuted", false));
-        let (mut pause, mut seek, mut audio) = (None, None, false);
-        // The bar shows while the pointer moves, rests on the bar or the video is paused; the pointer hides with it.
-        let (idle, pointer) = ui.input(|i| (i.pointer.time_since_last_movement(), i.pointer.hover_pos()));
-        let on_bar = pointer.is_some_and(|p| p.y > rect.bottom() - 56.0 && rect.contains(p));
-        if status.paused || on_bar || idle < VIDEO_BAR_SECS {
-            egui::Area::new(egui::Id::new("videobar")).fixed_pos(egui::pos2(rect.left() + 12.0, rect.bottom() - 44.0)).show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_width((rect.width() - 48.0).max(200.0));
+                if let Some(status) = &status {
                     ui.horizontal(|ui| {
-                        if ui.button(if status.paused { "▶" } else { "⏸" }).clicked() {
+                        if theme::icon_button(ui, if status.paused { icon::PLAY } else { icon::PAUSE }, if status.paused { "Play the video" } else { "Pause the video" }, false).clicked() {
                             pause = Some(!status.paused);
                         }
-                        ui.label(format!("{} / {}", clock(status.position), clock(status.duration)));
+                        ui.label(RichText::new(format!("{} / {}", clock(status.position), clock(status.duration))).small().color(t.text2));
                         // Volume at the right end, and the seek bar takes the width between (a slider is slider_width wide).
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.spacing_mut().slider_width = 90.0;
                             if ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).show_value(false)).changed() {
                                 audio = true;
                             }
-                            if ui.button(if muted { "🔇" } else { "🔊" }).clicked() {
+                            if theme::icon_button(ui, if muted { icon::MUTED } else { icon::VOLUME }, if muted { "Sound on" } else { "Mute" }, false).clicked() {
                                 muted = !muted;
                                 audio = true;
                             }
@@ -1339,24 +1276,254 @@ impl App {
                             }
                         });
                     });
-                });
+                }
             });
-        } else if response.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+        });
+        self.player_rect = shown.response.rect;
+        if let Some(player) = &self.video {
+            if let Some(p) = pause {
+                player.set_paused(p);
+            }
+            if let Some(t) = seek {
+                player.seek(t);
+            }
+            if audio {
+                player.set_volume(volume, muted);
+                self.set("videoVolume", json!(volume));
+                self.set("videoMuted", json!(muted));
+            }
         }
-        if let Some(p) = pause {
-            player.set_paused(p);
+    }
+
+    /// Everything else of the slideshow, on glass that slides in from the left edge of the window when the pointer
+    /// goes there, and over the picture. Tags (the button or its hotkey) pin it, and the picture then makes room.
+    fn drawer(&mut self, ctx: &egui::Context) {
+        let area = ctx.content_rect();
+        let pointer = ctx.input(|i| i.pointer.hover_pos());
+        let at_edge = pointer.is_some_and(|p| p.x <= area.left() + DRAWER_EDGE);
+        let on_it = self.drawer_open && pointer.is_some_and(|p| p.x <= area.left() + DRAWER_SPACE + theme::S4);
+        let held = self.drawer_open && (egui::Popup::is_any_open(ctx) || ctx.egui_wants_keyboard_input());
+        self.drawer_open = self.show_tags || self.drawer_forced || at_edge || on_it || held;
+        let k = ctx.animate_bool_with_time(egui::Id::new("drawer"), self.drawer_open, theme::smooth());
+        let t = tok(ctx);
+        if k < 1.0 && self.show_controls && self.player_rect.is_positive() {
+            // Where it is: a short mark at the edge, with the player.
+            let mark = egui::Rect::from_center_size(egui::pos2(area.left() + 4.0, area.center().y), Vec2::new(3.0, 44.0));
+            ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new("drawer mark"))).rect_filled(mark, 2, t.hover);
         }
-        if let Some(t) = seek {
-            player.seek(t);
+        if k == 0.0 {
+            return;
         }
-        if audio {
-            player.set_volume(volume, muted);
-            self.set("videoVolume", json!(volume));
-            self.set("videoMuted", json!(muted));
+        let x = egui::lerp(-(DRAWER_W + theme::S4)..=RAIL_MARGIN, k);
+        let height = area.height() - 2.0 * RAIL_MARGIN;
+        egui::Area::new(egui::Id::new("drawer area")).order(egui::Order::Middle).fixed_pos(egui::pos2(area.left() + x, area.top() + RAIL_MARGIN)).constrain(false).show(ctx, |ui| {
+            glass::card(ui, glass::bar(ctx), egui::Margin::same(12), |ui| {
+                ui.set_width(DRAWER_W - 24.0);
+                ui.set_height(height - 24.0);
+                self.drawer_content(ui);
+            });
+        });
+    }
+
+    fn drawer_content(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let t = tok(&ctx);
+        // The search of what is showing, or the filter of the favorites.
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| if self.mode == Mode::Slideshow { self.search_field(ui) } else { self.favorites_field(ui) });
+        });
+        ui.horizontal_wrapped(|ui| {
+            if self.mode == Mode::Slideshow {
+                self.sites_menu(ui);
+                self.search_extras(ui);
+            } else {
+                self.favorites_extras(ui);
+            }
+        });
+        ui.add_space(theme::S1);
+        ui.separator();
+        // What can be done with the slide.
+        ui.horizontal(|ui| {
+            let faved = self.current().is_some_and(|s| self.fav.contains(&s));
+            let armed = self.current().is_some_and(|s| self.unfave_armed(&s));
+            if let Some((_, at)) = self.unfave.as_ref().filter(|_| armed) {
+                // Back to ♥ when the wait is over.
+                ui.ctx().request_repaint_after(UNFAVE_WAIT.saturating_sub(at.elapsed()));
+            }
+            let tip = if armed { "Press again to remove it" } else if faved { "Remove from the favorites" } else { "Add to the favorites" };
+            if theme::icon_button_tinted(ui, icon::HEART, tip, armed, faved.then_some(t.accent)).clicked() {
+                self.toggle_favorite();
+            }
+            if self.flag("showDownloadButton", true) && theme::icon_button(ui, icon::DOWNLOAD, "Download", false).clicked() {
+                self.download_current();
+            }
+            if theme::icon_button(ui, icon::POST, "Open the post in the browser", false).clicked() {
+                self.open_source();
+            }
+            if theme::icon_button(ui, icon::TAGS, "Keep this panel open beside the picture", self.show_tags).clicked() {
+                self.show_tags = !self.show_tags;
+                self.set("showTags", json!(self.show_tags));
+            }
+            let thumbs = self.flag("showThumbs", true);
+            if theme::icon_button(ui, icon::THUMBS, "Thumbnails of the next slides", thumbs).clicked() {
+                self.set("showThumbs", json!(!thumbs));
+            }
+            let fit = self.flag("autoFitSlide", true);
+            if theme::icon_button(ui, icon::FIT, "Fit the picture to the window", fit).clicked() {
+                self.set("autoFitSlide", json!(!fit));
+            }
+        });
+        if !self.progress.is_empty() {
+            ui.label(RichText::new(&self.progress).small().color(t.text2));
         }
+        ui.separator();
+        // The tags take the height the pages leave.
+        const PAGES: f32 = 5.0 * 36.0 + 12.0;
+        if let Some(slide) = self.current() {
+            let room = Vec2::new(ui.available_width(), (ui.available_height() - PAGES).max(0.0));
+            ui.allocate_ui(room, |ui| {
+                ui.set_min_height(room.y);
+                self.tags_panel(ui, &slide);
+            });
+        }
+        ui.separator();
+        let (mosaic_ok, favorites) = (!self.list().is_empty(), self.mode == Mode::Favorites);
+        for (glyph, label, action, on, enabled) in [
+            (icon::HOME, "Home", "home", false, true),
+            (icon::MOSAIC, "Mosaic", "", false, mosaic_ok),
+            (icon::POOLS, "Pools", "openPools", false, true),
+            (icon::HEART, "Favorites", "openFavorites", favorites, true),
+            (icon::SETTINGS, "Settings", "openSettings", false, true),
+        ] {
+            if ui.add_enabled_ui(enabled, |ui| theme::drawer_row(ui, glyph, label, on)).inner.clicked() {
+                if action.is_empty() {
+                    self.show_mosaic = true;
+                    self.mosaic_seek = true;
+                } else {
+                    self.act(&ctx, action);
+                }
+            }
+        }
+    }
+
+    fn tags_panel(&mut self, ui: &mut egui::Ui, slide: &Slide) {
+        let mut clicked: Option<String> = None;
+        egui::ScrollArea::vertical().id_salt("tags").auto_shrink(false).show(ui, |ui| {
+            let t = tok(ui.ctx());
+            let groups = super::slide::tag_groups(slide);
+            for (category, tags) in groups {
+                if !category.is_empty() {
+                    ui.label(RichText::new(category.to_uppercase()).font(theme::medium(10.5)).color(t.muted));
+                }
+                for tag in tags {
+                    let text = RichText::new(tag.replace('_', " ")).color(category_color(&category, t));
+                    if ui.add(egui::Label::new(text).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        clicked = Some(tag);
+                    }
+                }
+                ui.add_space(theme::S2);
+            }
+        });
+        if let Some(tag) = clicked {
+            self.toggle_tag_search(&tag);
+        }
+    }
+
+    /// One picture (or a still of one) in `rect`, if it is at hand.
+    fn draw_picture(&mut self, ui: &egui::Ui, rect: egui::Rect, url: &str, alpha: f32, elapsed: Duration) {
+        if let Some(State::Ready(picture)) = self.media.get(url) {
+            media::paint(ui, rect, &picture.frame_at(elapsed).texture, picture.size, alpha, 0.0);
+            if let Some(after) = picture.next_frame_in(elapsed) {
+                ui.ctx().request_repaint_after(after);
+            }
+        }
+    }
+
+    fn viewer(&mut self, ui: &mut egui::Ui) {
+        let rect = ui.available_rect_before_wrap();
+        let response = ui.allocate_rect(rect, Sense::click());
+        let Some(slide) = self.current() else {
+            self.on_screen = OnScreen::default();
+            self.front_page(ui, rect);
+            return;
+        };
+        let t = tok(ui.ctx());
+        let url = self.copies_or(&slide.file_url);
+        let faved = self.fav.contains(&slide);
+        if slide.media_type == MediaType::Video {
+            self.on_screen = OnScreen::default();
+            self.video_view(ui, rect, &response);
+            if faved {
+                fave_mark(ui, rect);
+            }
+            return;
+        }
+        let elapsed = self.shown_at.map(|t| t.elapsed()).unwrap_or_default();
+        let thumb = thumb_source(&self.copies_or(&slide.preview_file_url));
+        // The picture, or until it has come the thumbnail, which is usually here already.
+        let (mut showing, mut place) = (String::new(), egui::Rect::NOTHING);
+        match self.media.get(&url) {
+            Some(State::Ready(picture)) => {
+                let (w, h) = (picture.size[0] as f32, picture.size[1] as f32);
+                let (max_w, max_h) = (self.number("maxWidth", f64::INFINITY) as f32, self.number("maxHeight", f64::INFINITY) as f32);
+                let scale = if self.flag("autoFitSlide", true) { (rect.width() / w).min(rect.height() / h) } else { 1.0f32.min(max_w / w).min(max_h / h) };
+                showing = url.clone();
+                place = egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale));
+            }
+            Some(State::Failed(e)) => {
+                let text = format!("Couldn't load the picture ({e})");
+                ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), t.text2);
+            }
+            _ => {
+                if let Some(State::Ready(p)) = self.media.get(&thumb) {
+                    let (w, h) = (p.size[0] as f32, p.size[1] as f32);
+                    let scale = (rect.width() / w).min(rect.height() / h);
+                    showing = thumb.clone();
+                    place = egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale));
+                }
+                ui.put(egui::Rect::from_center_size(rect.center(), Vec2::splat(36.0)), egui::Spinner::new().size(36.0).color(t.accent));
+            }
+        }
+        if showing.is_empty() {
+            self.on_screen = OnScreen::default();
+            return;
+        }
+        if showing != self.on_screen.url {
+            let was = std::mem::take(&mut self.on_screen);
+            self.on_screen = OnScreen { url: showing.clone(), was: was.url, was_rect: was.rect, rect: place, at: Some(Instant::now()) };
+        }
+        self.on_screen.rect = place;
+        let k = match (self.on_screen.at, theme::smooth() > 0.0 && !self.on_screen.was.is_empty()) {
+            (Some(at), true) => (at.elapsed().as_secs_f32() / theme::smooth()).min(1.0),
+            _ => 1.0,
+        };
+        if k < 1.0 {
+            ui.ctx().request_repaint();
+            let (was, was_rect) = (self.on_screen.was.clone(), self.on_screen.was_rect);
+            // The old one stays nearly whole until the new one covers it: no dip towards the background halfway.
+            self.draw_picture(ui, was_rect, &was, 1.0 - k * k * k, elapsed);
+        }
+        self.draw_picture(ui, place, &showing, k, elapsed);
+        if faved {
+            fave_mark(ui, place);
+        }
+        if showing == url && response.clicked() && self.mode == Mode::Favorites && self.flag("clickOpensPost", true) {
+            self.open_source();
+        }
+    }
+
+    fn video_view(&mut self, ui: &mut egui::Ui, rect: egui::Rect, response: &egui::Response) {
+        let Some(player) = &self.video else {
+            let text = self.video_error.clone().unwrap_or_else(|| "Video playback is not available.".into());
+            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), tok(ui.ctx()).text2);
+            if response.clicked() {
+                self.open_source();
+            }
+            return;
+        };
+        player.paint(ui, rect);
         if response.clicked() {
-            player.set_paused(!status.paused);
+            player.set_paused(!player.status().paused);
         }
         ui.ctx().request_repaint_after(Duration::from_millis(250));
     }
@@ -1476,6 +1643,8 @@ impl App {
         for action in due {
             match action.split_once('=') {
                 Some(("shot", name)) => ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(name.to_string()))),
+                Some(("tab", name)) => self.open_tab(name),
+                _ if action == "drawer" => self.drawer_forced = !self.drawer_forced,
                 _ if action == "next" => self.move_by(1),
                 _ if action == "prev" => self.move_by(-1),
                 _ if action == "quit" => std::process::exit(0),
@@ -1540,17 +1709,23 @@ pub fn paint_fit(ui: &egui::Ui, rect: egui::Rect, texture: &egui::TextureHandle,
     media::paint(ui, egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale)), texture, size, alpha, radius);
 }
 
-fn category_color(category: &str, dark: bool) -> Color32 {
+/// The heart of a favorite, in the corner of its picture.
+fn fave_mark(ui: &egui::Ui, picture: egui::Rect) {
+    let t = tok(ui.ctx());
+    let box_ = egui::Rect::from_min_size(egui::pos2(picture.right() - 36.0, picture.top() + 10.0), Vec2::splat(26.0));
+    theme::badge(ui, box_, theme::heart_text(true), theme::heart_font(true, 14.0), t.accent);
+}
+
+fn category_color(category: &str, t: &theme::Tokens) -> Color32 {
     match category {
-        "artist" => Color32::from_rgb(0xf2, 0xac, 0x08),
-        "copyright" => Color32::from_rgb(0xdd, 0x00, 0xdd),
-        "character" => Color32::from_rgb(0x00, 0xaa, 0x00),
-        "species" => Color32::from_rgb(0xed, 0x5d, 0x1f),
-        "meta" => if dark { Color32::WHITE } else { Color32::BLACK },
-        "lore" => Color32::from_rgb(0x22, 0x88, 0x22),
-        "invalid" => Color32::from_rgb(0xff, 0x3d, 0x3d),
-        "general" => if dark { Color32::from_rgb(0xb4, 0xc7, 0xd9) } else { Color32::from_rgb(0x2c, 0x5f, 0x8e) },
-        _ => if dark { Color32::from_rgb(0xb4, 0xc7, 0xd9) } else { Color32::from_rgb(0x2c, 0x5f, 0x8e) },
+        "artist" => t.apricot,
+        "copyright" => t.lavender,
+        "character" => Color32::from_rgb(0x7f, 0xc9, 0x9b),
+        "species" => t.accent,
+        "meta" => t.muted,
+        "lore" => Color32::from_rgb(0x8f, 0xb8, 0x8a),
+        "invalid" => Color32::from_rgb(0xff, 0x6b, 0x6b),
+        _ => t.text2,
     }
 }
 
@@ -1590,20 +1765,13 @@ impl eframe::App for App {
                 self.toolbar(&ctx);
             }
         } else {
-            if self.show_controls {
-                egui::Panel::top("bar").show(ui, |ui| self.top_bar(ui));
-            }
-            if self.show_controls {
-                egui::Panel::bottom("controls").show(ui, |ui| self.controls(ui));
-            }
             if self.show_tags {
-                if let Some(slide) = self.current() {
-                    egui::Panel::right("tags").default_size(220.0).show(ui, |ui| self.tags_panel(ui, &slide));
-                }
+                egui::Panel::left("pinned drawer").exact_size(DRAWER_SPACE).resizable(false).show_separator_line(false).frame(egui::Frame::NONE).show(ui, |_| {});
             }
-            egui::CentralPanel::default().show(ui, |ui| self.viewer(ui));
+            egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| self.viewer(ui));
+            self.player(&ctx);
+            self.drawer(&ctx);
         }
-
         self.test_hook(&ctx);
         self.test_script(&ctx);
         self.toasts(&ctx);
