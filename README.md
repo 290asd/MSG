@@ -14,7 +14,7 @@ The name: MSG, monosodium glutamate, is food additive E621. The logo (`img/msg_l
 ## Features
 
 - **Search** the selected sites with tags, with a history, a sort menu and quick searches. The front page can show each quick search as a card with the first picture of its results and its main tags (Settings → Appearance).
-- **Mosaic**: search results open as columns of pictures that fill the window, each in its own shape, with your favorites outlined in red (the Size slider sets the column width). Click a picture to open it, or press ▶ Slideshow, Enter or Space to play from the first one. Esc or ◀ Mosaic comes back to where the slideshow was. Settings → Appearance can send searches straight to the slideshow.
+- **Mosaic**: search results and your favorites open as columns of pictures that fill the window, each in its own shape (the Size slider sets the column width). Outside the favorites themselves, your favorites are outlined in red. Click a picture to open it, or press ▶ Slideshow, Enter or Space to play from the first one. Esc or ◀ Mosaic comes back to where the slideshow was. Settings → Appearance can send searches and favorites straight to the slideshow.
 - **Slideshow** with automatic advance, preloading of the next slides, a strip of the next slides, and the tags of the current image grouped by category. Clicking a tag searches for it.
 - **Your folders**: browse your own images and videos as a site. The search words filter by folder and file name (`-word` leaves out).
 - **Favorites**: import them from e621, Derpibooru and Gelbooru, filter by tag or site, show them in random order, and keep e621 favorites in sync.

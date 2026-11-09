@@ -635,7 +635,7 @@ impl App {
         let total = heights.iter().copied().fold(0.0, f32::max);
         let (mut go, mut near_end) = (None, false);
         // A list read again starts from the top.
-        let generation = self.search.as_ref().map_or(0, |s| s.generation);
+        let generation = if favorites { self.fav_view } else { self.search.as_ref().map_or(0, |s| s.generation) };
         egui::ScrollArea::vertical().id_salt(("mosaic", self.mode as usize, generation)).auto_shrink(false).show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
             near_end = viewport.bottom() + rect.height() >= total;

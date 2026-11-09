@@ -26,7 +26,7 @@ pub const ACTIONS: [Action; 18] = [
     Action { id: "download", label: "Download the image", defaults: &[76] },
     Action { id: "favorite", label: "Fave / unfave", defaults: &[71] },
     Action { id: "toggleTags", label: "Show / hide tags", defaults: &[82] },
-    Action { id: "openFavorites", label: "Favorites ⇄ slideshow", defaults: &[CTRL + 70] },
+    Action { id: "openFavorites", label: "Favorites", defaults: &[CTRL + 70] },
     Action { id: "openSettings", label: "Open / close settings", defaults: &[CTRL + 83] },
     Action { id: "setBackground", label: "Use the image as background", defaults: &[CTRL + 76] },
     Action { id: "showInterface", label: "Show / hide the controls", defaults: &[85] },

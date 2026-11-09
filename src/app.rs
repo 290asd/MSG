@@ -88,6 +88,8 @@ pub struct App {
     pub mode: Mode,
     pub fav: Favorites,
     pub fav_filter_box: String,
+    /// Counts the times the favorites list was made anew: its mosaic then starts from the top.
+    pub fav_view: u64,
     cur: [usize; 2],
     pub media: MediaCache,
     pub copies: HashMap<String, String>,
@@ -148,6 +150,7 @@ impl App {
             query: String::new(),
             mode: Mode::Slideshow,
             fav_filter_box: String::new(),
+            fav_view: 0,
             cur: [0, 0],
             media: MediaCache::new(),
             playing: false,
@@ -588,6 +591,7 @@ impl App {
         if self.mode == Mode::Favorites {
             self.fav_filter_box = if add && !self.fav_filter_box.is_empty() { format!("{} {tag}", self.fav_filter_box) } else { tag.to_string() };
             self.apply_favorite_filter();
+            self.show_mosaic = self.mosaic_first();
         } else {
             let text = if add && !self.query.is_empty() { format!("{} {tag}", self.query) } else { tag.to_string() };
             self.start_search(&text);
@@ -598,6 +602,7 @@ impl App {
         self.fav.filter = self.fav_filter_box.trim().to_string();
         self.fav.random = false;
         self.rebuild_favorites();
+        self.fav_view += 1;
         self.cur[Mode::Favorites as usize] = 0;
         self.shown_at = None;
     }
@@ -606,7 +611,7 @@ impl App {
         self.mode = if on { Mode::Favorites } else { Mode::Slideshow };
         self.show_pools = false;
         self.show_settings = false;
-        self.show_mosaic = false;
+        self.show_mosaic = self.mosaic_first() && (on || self.search.is_some());
         self.shown_at = None;
         if on {
             self.rebuild_favorites();
@@ -652,7 +657,8 @@ impl App {
                 self.show_tags = !self.show_tags;
                 self.set("showTags", json!(self.show_tags));
             }
-            "openFavorites" => self.open_favorites(self.mode == Mode::Slideshow),
+            // From under a page the button means the favorites, whichever list is under it.
+            "openFavorites" => self.open_favorites(self.mode == Mode::Slideshow || self.show_pools || self.show_settings),
             "openSettings" => self.show_settings = !self.show_settings,
             "setBackground" => self.use_as_background(),
             "showInterface" => self.show_controls = !self.show_controls,
@@ -909,14 +915,11 @@ impl App {
         let ctx = ui.ctx().clone();
         let (settings, pools) = (self.show_settings, self.show_pools && !self.show_settings);
         let reading = self.on_reading();
-        for (on, text, action) in [(settings, "⚙ Settings", "openSettings"), (reading, "🔖 Reading list", "openReadingList"), (pools, "📚 Pools", "openPools")] {
+        let favorites = self.mode == Mode::Favorites && !pools && !settings;
+        for (on, text, action) in [(settings, "⚙ Settings", "openSettings"), (reading, "🔖 Reading list", "openReadingList"), (pools, "📚 Pools", "openPools"), (favorites, "♥ Favorites", "openFavorites")] {
             if ui.add(egui::Button::new(text).selected(on)).clicked() {
                 self.act(&ctx, action);
             }
-        }
-        let label = if self.mode == Mode::Favorites { "◀ Slideshow" } else { "♥ Favorites" };
-        if ui.button(label).clicked() {
-            self.open_favorites(self.mode == Mode::Slideshow);
         }
     }
 
@@ -985,6 +988,7 @@ impl App {
             self.fav.filter = self.fav_filter_box.trim().to_string();
             self.fav.random = true;
             self.rebuild_favorites();
+            self.fav_view += 1;
             self.cur[Mode::Favorites as usize] = 0;
             self.shown_at = None;
         }
