@@ -12,6 +12,7 @@ mod session;
 mod settings_ui;
 mod sites;
 mod slide;
+mod theme;
 mod video;
 mod store;
 

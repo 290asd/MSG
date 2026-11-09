@@ -187,6 +187,7 @@ impl App {
             Err(e) => app.video_error = Some(e),
         }
         app.show_tags = app.flag("showTags", false);
+        super::theme::install(&cc.egui_ctx);
         app.apply_theme(&cc.egui_ctx);
         app.refresh_copies();
         media::clear_video_files();
