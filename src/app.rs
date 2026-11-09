@@ -12,7 +12,7 @@ use super::slide::{MediaType, Slide};
 use crate::store::Store;
 use eframe::egui::{self, Color32, RichText, Sense, Vec2};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -292,7 +292,7 @@ impl App {
         self.show_pools = false;
         self.show_settings = false;
         self.show_reading = true;
-        if !self.reading_list {
+        if self.refresh_auto_follow() || !self.reading_list {
             self.start_reading();
         }
     }
@@ -308,16 +308,40 @@ impl App {
         self.load_more();
     }
 
-    /// Follows the search (on the ticked sites), or stops following it.
+    /// The artists with the most favorites join the reading list and those no longer among them leave; what is
+    /// followed by hand or was unfollowed is left alone. Returns whether the list changed.
+    fn refresh_auto_follow(&mut self) -> bool {
+        let list: Vec<Value> = self.store.get("readingList").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+        let (old, mut kept): (Vec<Value>, Vec<Value>) = list.into_iter().partition(|e| e["auto"] == true);
+        let ignored = self.store.get("readingListIgnored").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+        let skip: HashSet<String> = ignored.iter().chain(kept.iter().map(|e| &e["tags"])).filter_map(|t| t.as_str().map(String::from)).collect();
+        let new: Vec<Value> = favorites::top_artists(&self.fav.items, &skip, self.auto_follow_limit() as usize)
+            .into_iter()
+            .map(|(tags, sites)| json!({"tags": tags, "sites": sites, "auto": true}))
+            .collect();
+        if new == old {
+            return false;
+        }
+        kept.extend(new);
+        self.set("readingList", Value::Array(kept));
+        true
+    }
+
+    /// Follows the search (on the ticked sites), or stops following it; what is unfollowed isn't followed automatically again.
     pub fn toggle_follow(&mut self, tags: &str) {
         let mut list: Vec<Value> = self.store.get("readingList").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+        let mut ignored: Vec<Value> = self.store.get("readingListIgnored").and_then(|v| v.as_array().cloned()).unwrap_or_default();
         let before = list.len();
         list.retain(|e| e["tags"].as_str() != Some(tags));
+        ignored.retain(|t| t.as_str() != Some(tags));
         if list.len() == before {
             let sites: Vec<&str> = session::ticked_sites(&self.store).iter().map(|s| s.id()).collect();
             list.push(json!({"tags": tags, "sites": sites}));
+        } else {
+            ignored.push(json!(tags));
         }
         self.set("readingList", Value::Array(list));
+        self.set("readingListIgnored", Value::Array(ignored));
     }
 
     pub fn load_more(&mut self) {
@@ -361,6 +385,9 @@ impl App {
                 Msg::TagGroups(found) => {
                     self.fav.set_tag_groups(found);
                     self.fav.save(&self.store);
+                    if self.reading_list && self.refresh_auto_follow() {
+                        self.start_reading();
+                    }
                 }
                 Msg::Pools(found) => {
                     let mut pools: Vec<Value> = self.store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default();

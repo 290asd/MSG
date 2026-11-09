@@ -357,6 +357,16 @@ impl App {
         self.check(ui, "syncE621Favorites", true, "Also fave and unfave on e621 (needs the e621 username and API key)");
         ui.separator();
         ui.horizontal(|ui| {
+            ui.label("Reading list: follow your top");
+            let mut limit = self.auto_follow_limit();
+            let hover = "The artists with the most favorites, two at least. Each one adds about half a second to loading the list. An artist you stop following stays out.";
+            if ui.add(egui::DragValue::new(&mut limit).range(0.0..=100.0).speed(0.2).fixed_decimals(0)).on_hover_text(hover).changed() {
+                self.set("autoFollowArtists", json!(limit.round()));
+            }
+            ui.label("artists automatically (0 = off)");
+        });
+        ui.separator();
+        ui.horizontal(|ui| {
             if ui.button("Download all favorites being shown").clicked() {
                 let urls: Vec<String> = self.fav.view.iter().map(|s| s.file_url.clone()).filter(|u| super::net::web_url(u).is_some()).collect();
                 self.downloader.download_many(urls, "MSG/favorites");

@@ -8,7 +8,7 @@ use super::slide::Slide;
 use crate::store::Store;
 use rand::seq::SliceRandom;
 use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::{mpsc::Sender, Arc};
 use std::time::Duration;
 
@@ -136,6 +136,30 @@ pub fn matches_filter(tags: &str, filter: &str) -> bool {
         }
     }
     any_of.is_empty() || any_of.iter().any(|w| has(w))
+}
+
+// e621 and Danbooru file these notices under "artist" too (and every *_warning).
+const NOT_ARTISTS: [&str; 8] = ["conditional_dnp", "avoid_posting", "third-party_edit", "unknown_artist", "unknown_artist_signature", "anonymous_artist", "banned_artist", "creator_unknown"];
+
+/// The artists with the most favorites, most first (ties by name), as (tag, the sites the favorites came from): an
+/// artist's name only means something on the sites it was seen on. Sites that don't say which tags are artists don't
+/// count, and one favorite isn't enough.
+pub fn top_artists(items: &[Slide], skip: &HashSet<String>, limit: usize) -> Vec<(String, Vec<String>)> {
+    let mut counts: HashMap<&str, (usize, BTreeSet<&str>)> = HashMap::new();
+    for item in items {
+        let artists = item.tag_groups.as_ref().and_then(|g| g.get("artist")?.as_array());
+        for artist in artists.into_iter().flatten().filter_map(Value::as_str) {
+            if !artist.ends_with("_warning") && !NOT_ARTISTS.contains(&artist) && !skip.contains(artist) {
+                let (count, sites) = counts.entry(artist).or_default();
+                *count += 1;
+                sites.insert(&item.site_id);
+            }
+        }
+    }
+    let mut top: Vec<_> = counts.into_iter().filter(|(_, (count, _))| *count >= 2).collect();
+    top.sort_by(|a, b| b.1.0.cmp(&a.1.0).then(a.0.cmp(b.0)));
+    top.truncate(limit);
+    top.into_iter().map(|(artist, (_, sites))| (artist.to_string(), sites.into_iter().map(String::from).collect())).collect()
 }
 
 /// Faves or unfaves on e621 too, when the app does. Only failures are told.
@@ -267,6 +291,28 @@ mod tests {
         assert!(matches_filter(tags, "~dog ~cat"));
         assert!(!matches_filter(tags, "~dog ~bird"));
         assert!(!matches_filter("", "cat"));
+    }
+
+    #[test]
+    fn top_artists_ranks_the_favorites() {
+        let fav = |site: &str, artists: &[&str]| Slide { site_id: site.into(), tag_groups: serde_json::json!({ "artist": artists }).as_object().cloned(), ..Default::default() };
+        let items = vec![
+            fav("E621", &["b", "conditional_dnp"]),
+            fav("E621", &["b", "conditional_dnp"]),
+            fav("DANB", &["b"]),
+            fav("E621", &["c", "sound_warning"]),
+            fav("E621", &["c", "sound_warning"]),
+            fav("E621", &["a"]),
+            fav("E621", &["a"]),
+            fav("E621", &["once"]),
+            Slide { site_id: "RULE".into(), tags: "a a a".into(), ..Default::default() },
+        ];
+        let entry = |artist: &str, sites: &[&str]| (artist.to_string(), sites.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        let none = HashSet::new();
+        assert_eq!(top_artists(&items, &none, 10), [entry("b", &["DANB", "E621"]), entry("a", &["E621"]), entry("c", &["E621"])]);
+        assert_eq!(top_artists(&items, &none, 1), [entry("b", &["DANB", "E621"])]);
+        assert!(top_artists(&items, &none, 0).is_empty());
+        assert_eq!(top_artists(&items, &HashSet::from(["b".to_string()]), 1), [entry("a", &["E621"])]);
     }
 
     #[test]
