@@ -233,6 +233,8 @@ impl App {
         let len = self.list().len();
         self.cur[self.mode as usize] = if len == 0 { 0 } else { i.min(len - 1) };
         self.shown_at = None;
+        // The new slide's clock starts in the next frame. A frame that came from a timer is followed by no other by itself.
+        self.engine.wake();
     }
 
     pub fn current(&self) -> Option<Slide> {
@@ -615,8 +617,11 @@ impl App {
         let Some(at) = self.shown_at else { return };
         // A video that is played to the end moves on when it has ended.
         if is_video && self.flag("playVideosToEnd", false) {
-            if let Some(player) = &self.video {
-                if player.status().ended {
+            if let Some(player) = &mut self.video {
+                // Right after a load mpv still answers for the previous file (or for none), so the first moment doesn't count.
+                if player.status().ended && at.elapsed() >= Duration::from_secs(1) {
+                    // Stopped, so a video that comes after itself (the only one in the list) starts over.
+                    player.stop();
                     self.move_by(1);
                 } else {
                     ctx.request_repaint_after(Duration::from_millis(300));

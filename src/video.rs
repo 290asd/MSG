@@ -231,8 +231,9 @@ impl Player {
         self.url = url.to_string();
         self.set("referrer", referer.unwrap_or(""));
         self.set("loop-file", if looped { "inf" } else { "no" });
-        self.set("pause", if play { "no" } else { "yes" });
         self.command(&["loadfile", url, "replace"]);
+        // After the load: a file kept open at its end pauses itself again for as long as it is the one playing.
+        self.set("pause", if play { "no" } else { "yes" });
     }
 
     pub fn stop(&mut self) {
@@ -248,7 +249,8 @@ impl Player {
             position: number("time-pos"),
             duration: number("duration"),
             paused: self.get("pause").as_deref() == Some("yes"),
-            ended: self.get("eof-reached").as_deref() == Some("yes"),
+            // A file that can't be opened leaves mpv idle: that is an end too, or the slideshow would wait for ever.
+            ended: self.get("eof-reached").as_deref() == Some("yes") || self.get("idle-active").as_deref() == Some("yes"),
         }
     }
 
