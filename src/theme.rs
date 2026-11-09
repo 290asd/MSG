@@ -41,6 +41,7 @@ pub mod icon {
     pub const POOLS: char = '\u{e100}';
     pub const SETTINGS: char = '\u{e154}';
     pub const BACK: char = '\u{e06e}';
+    pub const FORWARD: char = '\u{e06f}';
     pub const CLOSE: char = '\u{e1b2}';
     pub const RANDOM: char = '\u{e15e}';
     pub const VOLUME: char = '\u{e1ab}';

@@ -9,6 +9,7 @@ mod glass;
 mod hotkeys;
 mod media;
 mod net;
+mod pools;
 mod session;
 mod settings_ui;
 mod sites;
