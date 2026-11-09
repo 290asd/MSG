@@ -8,8 +8,8 @@ use super::slide::Slide;
 use crate::store::Store;
 use regex::RegexBuilder;
 use reqwest::Client;
-use serde_json::Value;
-use std::collections::HashSet;
+use serde_json::{Map, Value};
+use std::collections::{HashMap, HashSet};
 use std::sync::{mpsc::Sender, Arc};
 
 /// Shared by everything that talks to the network: the runtime the work runs on, the client and the settings.
@@ -85,6 +85,8 @@ pub enum Msg {
     Cover { index: usize, slide: Slide },
     /// Find pools in favorites: the pools that weren't saved yet.
     Pools(Vec<Value>),
+    /// The tag categories of e621 favorites saved without them (post id → categories).
+    TagGroups(HashMap<String, Map<String, Value>>),
 }
 
 pub struct Batch {

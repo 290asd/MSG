@@ -146,6 +146,9 @@ impl App {
         app.apply_theme(&cc.egui_ctx);
         app.refresh_copies();
         app.downloader.schedule(Duration::from_secs(15));
+        if app.auto_follow_limit() > 0.0 {
+            favorites::fetch_tag_groups(&app.engine, app.tx.clone(), &app.fav.items);
+        }
         if let Ok(text) = std::env::var("MSG_SEARCH") {
             app.start_search(&text);
         } else if app.text("frontPage") == "reading" {
@@ -170,6 +173,11 @@ impl App {
             Some(Value::String(s)) => s.trim().parse().unwrap_or(default),
             _ => default,
         }
+    }
+
+    /// How many of the artists with the most favorites the reading list follows by itself (0 = none).
+    pub fn auto_follow_limit(&self) -> f64 {
+        self.number("autoFollowArtists", 10.0)
     }
 
     pub fn set(&self, key: &str, value: Value) {
@@ -347,6 +355,10 @@ impl App {
                 Msg::Downloaded(status) => {
                     self.refresh_copies();
                     self.notice(status);
+                }
+                Msg::TagGroups(found) => {
+                    self.fav.set_tag_groups(found);
+                    self.fav.save(&self.store);
                 }
                 Msg::Pools(found) => {
                     let mut pools: Vec<Value> = self.store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default();

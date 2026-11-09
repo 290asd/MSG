@@ -7,8 +7,8 @@ use super::sites::{self, Config, Cursor, Site};
 use super::slide::Slide;
 use crate::store::Store;
 use rand::seq::SliceRandom;
-use serde_json::Value;
-use std::collections::HashSet;
+use serde_json::{Map, Value};
+use std::collections::{HashMap, HashSet};
 use std::sync::{mpsc::Sender, Arc};
 use std::time::Duration;
 
@@ -75,6 +75,15 @@ impl Favorites {
             }
         }
         self.items.len() - before
+    }
+
+    /// Puts in the tag categories read from e621 (post id → categories).
+    pub fn set_tag_groups(&mut self, found: HashMap<String, Map<String, Value>>) {
+        for item in self.items.iter_mut().filter(|i| i.site_id == "E621") {
+            if let Some(groups) = found.get(&super::slide::id_text(&item.id)) {
+                item.tag_groups = Some(groups.clone());
+            }
+        }
     }
 
     /// (site id, how many) for the site menu.
@@ -156,6 +165,40 @@ pub fn sync_e621(engine: &Engine, tx: &Sender<Msg>, slide: &Slide, faved: bool) 
     });
 }
 
+/// Favorites ignore the search filters.
+fn unfiltered(store: &Store) -> Config {
+    let mut cfg = super::session::config(store);
+    (cfg.images, cfg.gifs, cfg.videos) = (true, true, true);
+    (cfg.explicit, cfg.questionable, cfg.safe) = (false, false, false);
+    cfg.blacklist.clear();
+    cfg
+}
+
+/// The old versions saved e621 favorites without tag categories, so their artists aren't known. Reads those from
+/// e621, a page of ids at a time, once: a post the site no longer gives is kept with no categories. A failure ends it
+/// quietly and the next start reads the rest.
+pub fn fetch_tag_groups(engine: &Engine, tx: Sender<Msg>, items: &[Slide]) {
+    let ids: Vec<String> = items.iter().filter(|s| s.site_id == "E621" && s.tag_groups.is_none()).map(|s| super::slide::id_text(&s.id)).collect();
+    if ids.is_empty() {
+        return;
+    }
+    let engine = engine.clone();
+    engine.rt.clone().spawn(async move {
+        let cfg = unfiltered(&engine.store);
+        let mut found = HashMap::new();
+        for chunk in ids.chunks(Site::E621.page_limit()) {
+            let Some(url) = sites::request_url(&cfg, &Cursor::new(Site::E621), &format!("id:{}", chunk.join(","))) else { break };
+            let Ok((slides, _)) = net::get_text(&engine.client, &engine.store, &url).await.and_then(|body| sites::parse(&cfg, Site::E621, &body)) else { break };
+            found.extend(chunk.iter().map(|id| (id.clone(), Map::new())));
+            found.extend(slides.into_iter().filter_map(|s| Some((super::slide::id_text(&s.id), s.tag_groups?))));
+            // Stay under e621's rate limit, as the import does.
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        let _ = tx.send(Msg::TagGroups(found));
+        engine.wake();
+    });
+}
+
 /// Reads the favorites of every site that has login details in the settings, one site after another.
 pub fn import(engine: &Engine, tx: Sender<Msg>) {
     let store = engine.store.clone();
@@ -175,11 +218,7 @@ pub fn import(engine: &Engine, tx: Sender<Msg>) {
     }
     let engine = engine.clone();
     engine.rt.clone().spawn(async move {
-        // Favorites ignore the search filters.
-        let mut cfg: Config = super::session::config(&store);
-        (cfg.images, cfg.gifs, cfg.videos) = (true, true, true);
-        (cfg.explicit, cfg.questionable, cfg.safe) = (false, false, false);
-        cfg.blacklist.clear();
+        let cfg = unfiltered(&store);
         for (site, query) in sources {
             let mut cursor = Cursor::new(site);
             let mut all: Vec<Slide> = vec![];
