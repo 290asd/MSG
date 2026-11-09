@@ -981,7 +981,13 @@ impl App {
                 ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, format!("Couldn't load the picture ({e})"), egui::FontId::proportional(18.0), Color32::GRAY);
             }
             _ => {
-                ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "Loading…", egui::FontId::proportional(18.0), Color32::GRAY);
+                // The thumbnail is usually here already: it stands in until the picture itself has arrived.
+                if let Some(State::Ready(thumb)) = self.media.get(&thumb_source(&self.copies_or(&slide.preview_file_url))) {
+                    paint_fit(ui, rect, &thumb.frames[0].texture, thumb.size);
+                }
+                for (shift, color) in [(1.0, Color32::BLACK), (0.0, Color32::WHITE)] {
+                    ui.painter().text(rect.center() + Vec2::splat(shift), egui::Align2::CENTER_CENTER, "Loading…", egui::FontId::proportional(18.0), color);
+                }
                 ui.ctx().request_repaint_after(Duration::from_millis(200));
             }
         }
