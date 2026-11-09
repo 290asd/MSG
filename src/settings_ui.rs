@@ -8,6 +8,10 @@ use super::theme::{self, icon, tok};
 use eframe::egui::{self, RichText, Vec2};
 use serde_json::{json, Value};
 
+/// A pool on the pools page: the cover, and the name and page count under it.
+const POOL_TILE: Vec2 = Vec2::new(160.0, 270.0);
+const POOL_COVER: f32 = 210.0;
+const POOL_GAP: f32 = 14.0;
 /// The space between the mosaic's pictures.
 const THUMB_GAP: f32 = 6.0;
 const TILE_RADIUS: u8 = 8;
@@ -461,6 +465,105 @@ impl App {
         self.settings_changed();
     }
 
+    /// The pools page's part of the top bar, right to left (see top_bar).
+    pub fn pools_bar(&mut self, ui: &mut egui::Ui) {
+        if ui.button("◀ Back").clicked() {
+            self.go_back();
+        }
+        // One e621 job at a time (the favorites import's progress shows here too).
+        let busy = !self.progress.is_empty();
+        let find = ui.add_enabled(!busy, egui::Button::new("Find pools in favorites")).on_hover_text("Adds the e621 pools that your e621 favorites are in.");
+        if find.clicked() {
+            let favorites = self.fav.items.iter().filter(|s| s.site_id == "E621").map(|s| super::slide::id_text(&s.id)).collect();
+            let saved = self.store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|p| p["id"].as_u64()).collect();
+            super::session::find_pools(&self.engine, self.tx.clone(), favorites, saved);
+        }
+        let sort = self.text("poolsSort");
+        let names = [("added", "Recently added"), ("name", "Name"), ("pages", "Most pages")];
+        let label = names.iter().find(|(v, _)| *v == sort).map_or("Recently added", |(_, n)| *n);
+        egui::ComboBox::from_id_salt("poolsort").selected_text(label).show_ui(ui, |ui| {
+            for (value, name) in names {
+                if ui.selectable_label(label == name, name).clicked() {
+                    self.set("poolsSort", json!(value));
+                }
+            }
+        });
+        if busy {
+            ui.label(RichText::new(&self.progress).weak());
+        }
+        ui.add(egui::TextEdit::singleline(&mut self.pool_filter).hint_text("Filter pools by name…").desired_width(f32::INFINITY));
+    }
+
+    /// The saved pools as covers that fill the window. Only the rows on the screen are drawn (and their covers
+    /// loaded). A click opens the pool, × (on hover) removes it.
+    pub fn pools_page(&mut self, ui: &mut egui::Ui) {
+        let words: Vec<String> = self.pool_filter.to_lowercase().split_whitespace().map(String::from).collect();
+        let mut pools = super::session::saved_pools(&self.store);
+        pools.retain(|p| {
+            let name = p["name"].as_str().unwrap_or("").to_lowercase();
+            words.iter().all(|w| name.contains(w.as_str()))
+        });
+        let rect = ui.available_rect_before_wrap();
+        if pools.is_empty() {
+            let text = if words.is_empty() { "No saved pools. Search pool:<number> (or paste a pool link) and press ☆ Save pool, or use Find pools in favorites." } else { "No pools match." };
+            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), egui::Color32::GRAY);
+            return;
+        }
+        // The scroll bar's room is left out; the columns are centred.
+        let width = rect.width() - 16.0;
+        let columns = ((width + POOL_GAP) / (POOL_TILE.x + POOL_GAP)).floor().max(1.0) as usize;
+        let margin = ((width + POOL_GAP - columns as f32 * (POOL_TILE.x + POOL_GAP)) / 2.0).max(0.0);
+        let (mut go, mut remove) = (None, None);
+        ui.spacing_mut().item_spacing = Vec2::splat(POOL_GAP);
+        egui::ScrollArea::vertical().id_salt("pools").auto_shrink(false).show_rows(ui, POOL_TILE.y, pools.len().div_ceil(columns), |ui, rows| {
+            for row in pools.chunks(columns).skip(rows.start).take(rows.len()) {
+                ui.horizontal(|ui| {
+                    ui.add_space(margin);
+                    for pool in row {
+                        let id = pool["id"].as_u64().unwrap_or(0);
+                        let name = pool["name"].as_str().unwrap_or("?");
+                        let (tile, response) = ui.allocate_exact_size(POOL_TILE, egui::Sense::click());
+                        let cover_rect = egui::Rect::from_min_size(tile.min, Vec2::new(POOL_TILE.x, POOL_COVER));
+                        let hovered = ui.rect_contains_pointer(tile);
+                        ui.painter().rect_filled(cover_rect, 6.0, ui.visuals().extreme_bg_color);
+                        let cover = super::downloads::display_url(&self.copies, pool["cover"].as_str().unwrap_or(""));
+                        self.media.request(&self.engine, &cover);
+                        if let Some(State::Ready(p)) = self.media.get(&cover) {
+                            super::app::paint_fit(ui, cover_rect, &p.frames[0].texture, p.size, 1.0, 6.0);
+                        }
+                        if hovered {
+                            ui.painter().rect_stroke(cover_rect, 6.0, egui::Stroke::new(2.0, ui.visuals().selection.bg_fill), egui::StrokeKind::Outside);
+                        }
+                        // The name on two rows at most, the page count under it.
+                        let mut job = egui::text::LayoutJob::simple(name.to_string(), egui::FontId::proportional(13.0), ui.visuals().strong_text_color(), POOL_TILE.x);
+                        job.wrap.max_rows = 2;
+                        let galley = ui.painter().layout_job(job);
+                        ui.painter().galley(egui::pos2(tile.left(), cover_rect.bottom() + 6.0), galley, ui.visuals().text_color());
+                        let pages = format!("{} pages", pool["count"].as_u64().unwrap_or(0));
+                        ui.painter().text(tile.left_bottom(), egui::Align2::LEFT_BOTTOM, pages, egui::FontId::proportional(12.0), egui::Color32::GRAY);
+                        if hovered {
+                            let corner = egui::Rect::from_min_size(egui::pos2(cover_rect.right() - 30.0, cover_rect.top() + 6.0), Vec2::splat(24.0));
+                            if ui.put(corner, egui::Button::new("×")).on_hover_text("Remove from the saved pools").clicked() {
+                                remove = Some(id);
+                            }
+                        }
+                        if response.on_hover_text(name).clicked() {
+                            go = Some(id);
+                        }
+                    }
+                });
+            }
+        });
+        if let Some(id) = remove {
+            let mut all: Vec<Value> = self.store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+            all.retain(|p| p["id"].as_u64() != Some(id));
+            self.set("savedPools", Value::Array(all));
+        }
+        if let Some(id) = go {
+            self.start_search(&format!("pool:{id}"));
+        }
+    }
+
     /// The mosaic's part of the top bar, right to left (see top_bar); the search or favorites bar comes after it.
     pub fn mosaic_bar(&mut self, ui: &mut egui::Ui) {
         if self.mode != Mode::Favorites && ui.add_enabled(!self.list().is_empty(), egui::Button::new((theme::glyph(icon::PLAY, 14.0), if self.compact(ui) { "" } else { "Slideshow" }))).clicked() {
@@ -649,7 +752,7 @@ pub fn masonry(ratios: &[f32], width: f32, target: f32) -> (Vec<egui::Rect>, f32
 }
 
 /// The post's artist, where the site says who that is.
-pub fn artist_of(slide: &Slide) -> Option<String> {
+fn artist_of(slide: &Slide) -> Option<String> {
     let artists = slide.tag_groups.as_ref()?.get("artist")?.as_array()?;
     artists.iter().filter_map(Value::as_str).find(|a| super::favorites::is_artist(a)).map(String::from)
 }

@@ -162,11 +162,6 @@ pub struct App {
     pub progress: String,
     pub recording: Option<(String, usize)>,
     logo: egui::TextureHandle,
-    /// The Pools page's rows, when one was last read, whether the wheel is a row's, and whether a row on the screen is waiting.
-    pub pool_rows: HashMap<u64, super::pools::PoolRow>,
-    pub pool_asked: Instant,
-    pub pool_wheel_taken: bool,
-    pub pool_waiting_on_screen: bool,
     suggest: Suggest,
     /// The reading list as it was left (and the slide it was on), so that Home is there at once.
     home_kept: Option<(Search, usize, Instant)>,
@@ -240,10 +235,6 @@ impl App {
             progress: String::new(),
             recording: None,
             logo: theme::logo(&cc.egui_ctx),
-            pool_rows: HashMap::new(),
-            pool_asked: Instant::now() - Duration::from_secs(5),
-            pool_wheel_taken: false,
-            pool_waiting_on_screen: false,
             suggest: Suggest::default(),
             home_kept: None,
             wheel: 0.0,
@@ -402,18 +393,6 @@ impl App {
     /// The reading list's mosaic is the page on top.
     pub fn on_reading(&self) -> bool {
         self.on_mosaic() && self.reading_list && self.mode == Mode::Slideshow
-    }
-
-    /// A number no search has had.
-    pub fn next_generation(&mut self) -> u64 {
-        self.generation += 1;
-        self.generation
-    }
-
-    /// The search just started opens at this post.
-    pub fn open_at(&mut self, post: usize) {
-        self.cur[Mode::Slideshow as usize] = post;
-        self.mosaic_seek = true;
     }
 
     /// The front page is showing, in either of its forms.
@@ -608,17 +587,6 @@ impl App {
                     }
                 }
                 Msg::Batch(batch) => {
-                    // A row of the Pools page.
-                    let mut batch = batch;
-                    let mut rows = self.pool_rows.values_mut();
-                    let batch = loop {
-                        let Some(row) = rows.next() else { break Some(batch) };
-                        match row.accept(batch) {
-                            Some(back) => batch = back,
-                            None => break None,
-                        }
-                    };
-                    let Some(batch) = batch else { continue };
                     // A search left while it was loading takes its answer all the same, for Esc. (The one on the screen
                     // comes first: Home can bring back a copy of one that is also waiting for Esc.)
                     let on_screen = self.search.as_ref().is_some_and(|s| s.generation == batch.generation);
@@ -630,11 +598,6 @@ impl App {
                     let warnings = batch.warnings.clone();
                     search.accept(batch);
                     let empty = search.slides.is_empty() && !search.has_more();
-                    let (len, more, slot) = (search.slides.len(), search.has_more(), Mode::Slideshow as usize);
-                    // A post to open at that turned out not to be there.
-                    if !more && len > 0 && self.cur[slot] >= len {
-                        self.cur[slot] = len - 1;
-                    }
                     for w in warnings {
                         self.notice(w);
                     }
@@ -2009,7 +1972,6 @@ impl eframe::App for App {
         self.media.poll(&ctx);
         self.handle_messages();
         self.handle_keys(&ctx);
-        self.pool_waiting_on_screen = false;
         self.tick(&ctx);
         self.preload();
 
@@ -2021,6 +1983,7 @@ impl eframe::App for App {
                 if self.show_settings {
                     self.settings_page(ui);
                 } else if self.show_pools {
+                    ui.add_space(TOP_INSET);
                     self.pools_page(ui);
                 } else if self.show_mosaic {
                     self.mosaic_page(ui);
