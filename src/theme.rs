@@ -161,7 +161,7 @@ fn fonts() -> FontDefinitions {
         let tweak = FontTweak { coords: VariationCoords::new([("wght", weight)]), ..Default::default() };
         fonts.font_data.insert(name.to_string(), Arc::new(FontData::from_static(inter).tweak(tweak)));
     }
-    fonts.font_data.insert("lucide".to_string(), Arc::new(FontData::from_static(include_bytes!("../img/fonts/lucide.ttf"))));
+    fonts.font_data.insert("lucide".to_string(), Arc::new(FontData::from_static(include_bytes!("../img/fonts/lucide.ttf")).tweak(FontTweak { y_offset_factor: 0.07, ..Default::default() })));
     // egui's own fonts stay behind Inter: tags can be in any script.
     let fallback = fonts.families[&FontFamily::Proportional].clone();
     for name in ["medium", "semibold"] {
@@ -203,8 +203,36 @@ fn visuals(t: &Tokens, dark: bool) -> Visuals {
     v
 }
 
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn SystemParametersInfoW(action: u32, param: u32, value: *mut std::ffi::c_void, flags: u32) -> i32;
+}
+
+#[link(name = "dwmapi")]
+unsafe extern "system" {
+    fn DwmSetWindowAttribute(window: isize, attribute: u32, value: *const std::ffi::c_void, size: u32) -> i32;
+}
+
+/// The title bar in the window's own colour (Windows 11; elsewhere the call does nothing).
+pub fn paint_title_bar(window: isize, t: &Tokens, dark: bool) {
+    const IMMERSIVE_DARK_MODE: u32 = 20;
+    const CAPTION_COLOR: u32 = 35;
+    let [r, g, b, _] = t.base.to_array();
+    let (colour, dark) = (u32::from(r) | u32::from(g) << 8 | u32::from(b) << 16, i32::from(dark));
+    unsafe {
+        DwmSetWindowAttribute(window, IMMERSIVE_DARK_MODE, (&raw const dark).cast(), 4);
+        DwmSetWindowAttribute(window, CAPTION_COLOR, (&raw const colour).cast(), 4);
+    }
+}
+
 /// The fonts and the styles of both themes. Once, at the start.
 pub fn install(ctx: &egui::Context) {
+    const GET_CLIENT_AREA_ANIMATION: u32 = 0x1042;
+    let mut animate = 1i32;
+    // Windows' own setting for fewer animations; if it can't be read they stay on.
+    if unsafe { SystemParametersInfoW(GET_CLIENT_AREA_ANIMATION, 0, (&raw mut animate).cast(), 0) } != 0 {
+        STILL.store(animate == 0, Ordering::Relaxed);
+    }
     ctx.set_fonts(fonts());
     ctx.set_visuals_of(Theme::Dark, visuals(&DARK, true));
     ctx.set_visuals_of(Theme::Light, visuals(&LIGHT, false));

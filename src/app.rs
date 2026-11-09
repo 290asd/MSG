@@ -14,6 +14,7 @@ use super::video::Player;
 use super::slide::{MediaType, Slide};
 use crate::store::Store;
 use eframe::egui::{self, Color32, RichText, Sense, Vec2};
+use raw_window_handle::HasWindowHandle;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -152,6 +153,11 @@ pub struct App {
     drawer_open: bool,
     drawer_forced: bool,
     on_screen: OnScreen,
+    /// When the screen last changed, for the fade between pages.
+    changed_at: Option<Instant>,
+    /// The window for Windows' title bar, and the theme it was last painted for.
+    window: Option<isize>,
+    title_theme: Option<egui::Theme>,
     /// Height Ã· width of pictures whose site doesn't say (your folders), by file.
     pub ratios: HashMap<String, f32>,
     /// The picture blurred behind everything, the one before it, and when it changed.
@@ -214,6 +220,12 @@ impl App {
             drawer_open: false,
             drawer_forced: false,
             on_screen: OnScreen::default(),
+            changed_at: None,
+            window: match cc.window_handle().map(|h| h.as_raw()) {
+                Ok(raw_window_handle::RawWindowHandle::Win32(handle)) => Some(handle.hwnd.get()),
+                _ => None,
+            },
+            title_theme: None,
             ratios: HashMap::new(),
             ambient: (String::new(), String::new(), Instant::now()),
             pool_filter: String::new(),
@@ -1626,6 +1638,18 @@ impl App {
         true
     }
 
+    /// A new screen comes up out of a short dimming.
+    fn page_fade(&mut self, ctx: &egui::Context) {
+        let Some(at) = self.changed_at else { return };
+        let k = if theme::smooth() > 0.0 { at.elapsed().as_secs_f32() / theme::smooth() } else { 1.0 };
+        if k >= 1.0 {
+            self.changed_at = None;
+            return;
+        }
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("page fade"))).rect_filled(ctx.content_rect(), 0.0, tok(ctx).base.gamma_multiply(0.5 * (1.0 - k)));
+        ctx.request_repaint();
+    }
+
     fn test_script(&mut self, ctx: &egui::Context) {
         let dir = std::path::PathBuf::from(std::env::var_os("MSG_SHOT_DIR").unwrap_or_default());
         for event in ctx.input(|i| i.events.clone()) {
@@ -1644,6 +1668,15 @@ impl App {
             match action.split_once('=') {
                 Some(("shot", name)) => ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(name.to_string()))),
                 Some(("tab", name)) => self.open_tab(name),
+                Some(("size", size)) => {
+                    if let Some((w, h)) = size.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))) {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(w, h)));
+                    }
+                }
+                Some(("theme", name)) => {
+                    self.set("appTheme", json!(name));
+                    self.apply_theme(ctx);
+                }
                 _ if action == "drawer" => self.drawer_forced = !self.drawer_forced,
                 _ if action == "next" => self.move_by(1),
                 _ if action == "prev" => self.move_by(-1),
@@ -1734,6 +1767,13 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         // Whatever changed the screen last frame (a button, a hotkey, a search) is noted here, before Esc is read.
         let now = self.screen();
+        if now != self.here {
+            self.changed_at = Some(Instant::now());
+        }
+        if let Some(window) = self.window.filter(|_| self.title_theme != Some(ctx.theme())) {
+            self.title_theme = Some(ctx.theme());
+            theme::paint_title_bar(window, tok(&ctx), ctx.theme() == egui::Theme::Dark);
+        }
         note(&mut self.back, &mut self.here, now, self.replaced.take());
         // A key being recorded stops the hotkeys, so it ends whichever way the settings page is left.
         if !self.show_settings {
@@ -1772,6 +1812,7 @@ impl eframe::App for App {
             self.player(&ctx);
             self.drawer(&ctx);
         }
+        self.page_fade(&ctx);
         self.test_hook(&ctx);
         self.test_script(&ctx);
         self.toasts(&ctx);

@@ -118,11 +118,8 @@ impl App {
                 self.set("appTheme", json!(choices[2 - n]));
                 self.apply_theme(ctx);
             }
-            ui.horizontal(|ui| {
-                ui.set_min_height(40.0);
-                ui.label("Background image of the start screen");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Clear").clicked() {
+            theme::row(ui, "Background image of the start screen", |ui| {
+                if ui.button("Clear").clicked() {
                         self.set("backgroundImage", json!(""));
                     }
                     if ui.button("Choose…").clicked() {
@@ -138,7 +135,6 @@ impl App {
                             }
                         }
                     }
-                });
             });
         });
         theme::group(ui, "Front page", |ui| {
