@@ -24,10 +24,38 @@ const UNFAVE_WAIT: Duration = Duration::from_secs(4);
 /// How long (seconds) the video bar stays after the pointer stops.
 const VIDEO_BAR_SECS: f32 = 2.0;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub enum Mode {
+    #[default]
     Slideshow,
     Favorites,
+}
+
+/// A screen as far as Esc is concerned: the pages up and the search under them.
+#[derive(Clone, PartialEq, Default)]
+struct Screen {
+    mode: Mode,
+    settings: bool,
+    pools: bool,
+    reading: bool,
+    reading_list: bool,
+    search: Option<String>,
+}
+
+/// A search put aside when another took its place, and the slide it was on.
+type Left = (Search, usize);
+
+/// Follows the screen: the one left goes on the stack, except that closing a page with its own button is a step back.
+fn note<T>(back: &mut Vec<(Screen, Option<T>)>, here: &mut Screen, now: Screen, replaced: Option<T>) {
+    if now == *here {
+        return;
+    }
+    let was = std::mem::replace(here, now);
+    if replaced.is_none() && back.last().is_some_and(|(s, _)| s == here) {
+        back.pop();
+    } else {
+        back.push((was, replaced));
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -74,6 +102,11 @@ pub struct App {
     /// The reading list page, and whether `search` is the reading list's.
     pub show_reading: bool,
     pub reading_list: bool,
+    /// The screens left behind, for Esc, with the search when the next screen replaced it.
+    // ponytail: no cap; a kept search is only its posts' details (the pictures are in `media`). Cap it if a session's memory grows.
+    back: Vec<(Screen, Option<Left>)>,
+    here: Screen,
+    replaced: Option<Left>,
     pub notices: Vec<(String, Instant)>,
     /// The favorite (its file) that ♥ was pressed on once while browsing the favorites, and when.
     unfave: Option<(String, Instant)>,
@@ -123,6 +156,9 @@ impl App {
             show_pools: false,
             show_reading: false,
             reading_list: false,
+            back: vec![],
+            here: Screen::default(),
+            replaced: None,
             notices: vec![],
             unfave: None,
             progress: String::new(),
@@ -154,6 +190,7 @@ impl App {
         } else if app.text("frontPage") == "reading" {
             app.open_reading();
         }
+        app.here = app.screen();
         app
     }
 
@@ -256,6 +293,46 @@ impl App {
         self.set_idx(i as usize);
     }
 
+    // ---------- going back ----------
+
+    fn screen(&self) -> Screen {
+        Screen {
+            mode: self.mode,
+            settings: self.show_settings,
+            pools: self.show_pools,
+            reading: self.show_reading,
+            reading_list: self.reading_list,
+            search: self.search.as_ref().map(|s| s.text.clone()),
+        }
+    }
+
+    /// The search is about to be replaced: Esc can bring it back.
+    fn set_aside_search(&mut self) {
+        self.replaced = self.search.take().map(|s| (s, self.cur[Mode::Slideshow as usize]));
+    }
+
+    /// Returns to the screen before, and its search where it was left. False if there is none.
+    pub fn go_back(&mut self) -> bool {
+        let Some((screen, left)) = self.back.pop() else { return false };
+        match left {
+            Some((search, i)) => {
+                self.query = search.text.clone();
+                self.search = Some(search);
+                self.cur[Mode::Slideshow as usize] = i;
+            }
+            None if screen.search.is_none() => self.search = None,
+            None => {}
+        }
+        self.mode = screen.mode;
+        self.show_settings = screen.settings;
+        self.show_pools = screen.pools;
+        self.show_reading = screen.reading;
+        self.reading_list = screen.reading_list;
+        self.shown_at = None;
+        self.here = screen;
+        true
+    }
+
     // ---------- searching ----------
 
     pub fn start_search(&mut self, text: &str) {
@@ -271,6 +348,7 @@ impl App {
             self.notice("Tick at least one site (Sites ▾).");
             return;
         }
+        self.set_aside_search();
         self.search = Some(Search::new(self.generation, text, sites, &self.store));
         self.reading_list = false;
         self.cur[Mode::Slideshow as usize] = 0;
@@ -301,6 +379,7 @@ impl App {
     pub fn start_reading(&mut self) {
         self.generation += 1;
         self.query.clear();
+        self.set_aside_search();
         self.search = Some(Search::many(self.generation, &session::reading_list(&self.store), &self.store));
         self.reading_list = true;
         self.cur[Mode::Slideshow as usize] = 0;
@@ -354,6 +433,11 @@ impl App {
         while let Ok(msg) = self.rx.try_recv() {
             match msg {
                 Msg::Batch(batch) => {
+                    // A search left while it was loading takes its answer all the same, for Esc.
+                    if let Some(left) = self.back.iter_mut().filter_map(|(_, left)| left.as_mut()).find(|left| left.0.generation == batch.generation) {
+                        left.0.accept(batch);
+                        continue;
+                    }
                     let Some(search) = self.search.as_mut().filter(|s| s.generation == batch.generation) else { continue };
                     let warnings = batch.warnings.clone();
                     search.accept(batch);
@@ -532,7 +616,7 @@ impl App {
             }
             "home" => {
                 self.mode = Mode::Slideshow;
-                self.search = None;
+                self.set_aside_search();
                 self.reading_list = false;
                 self.show_pools = false;
                 self.show_settings = false;
@@ -545,6 +629,12 @@ impl App {
             }
             "openReadingList" if self.show_reading && !self.show_pools && !self.show_settings => self.show_reading = false,
             "openReadingList" => self.open_reading(),
+            // Esc: the screen before; with none left, out of fullscreen.
+            "back" => {
+                if !self.go_back() && ctx.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+                }
+            }
             _ => {}
         }
         ctx.request_repaint();
@@ -559,7 +649,7 @@ impl App {
         for action in self.hotkeys.pressed(&events, wants_text, mouse) {
             self.act(ctx, action);
         }
-        // Fixed keys: Enter also plays and pauses, F11 is fullscreen, Esc closes things, 1–0 are the quick searches.
+        // Fixed keys: Enter also plays and pauses, F11 is fullscreen, Esc goes back, 1–0 are the quick searches.
         for event in &events {
             if let egui::Event::Key { key, pressed: true, repeat: false, modifiers, .. } = event {
                 match key {
@@ -567,17 +657,8 @@ impl App {
                         let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
                         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
                     }
-                    egui::Key::Escape => {
-                        if self.show_settings {
-                            self.show_settings = false;
-                        } else if self.show_pools {
-                            self.show_pools = false;
-                        } else if self.show_reading {
-                            self.show_reading = false;
-                        } else if ctx.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
-                        }
-                    }
+                    // An open menu closes by itself on this press.
+                    egui::Key::Escape if !egui::Popup::is_any_open(ctx) => self.act(ctx, "back"),
                     egui::Key::Enter if !wants_text && !modifiers.any() => self.playing = !self.playing,
                     _ if !wants_text && !modifiers.any() && self.mode == Mode::Slideshow => {
                         let digit = match key {
@@ -1289,6 +1370,9 @@ fn category_color(category: &str, dark: bool) -> Color32 {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // Whatever changed the screen last frame (a button, a hotkey, a search) is noted here, before Esc is read.
+        let now = self.screen();
+        note(&mut self.back, &mut self.here, now, self.replaced.take());
         // A key being recorded stops the hotkeys, so it ends whichever way the settings page is left.
         if !self.show_settings {
             self.recording = None;
@@ -1342,4 +1426,31 @@ impl eframe::App for App {
 // So the settings page (another file) can name it.
 pub fn user_dir() -> std::path::PathBuf {
     files::user_data()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closing_a_page_is_a_step_back_and_a_replaced_search_is_kept() {
+        let home = Screen::default();
+        let page = Screen { settings: true, ..Screen::default() };
+        let a = Screen { search: Some("a".into()), ..Screen::default() };
+        let (mut back, mut here) = (vec![], home.clone());
+
+        note(&mut back, &mut here, page.clone(), None::<u8>);
+        assert!(back.len() == 1 && here == page);
+        note(&mut back, &mut here, home.clone(), None);
+        assert!(back.is_empty() && here == home);
+
+        // Home from a search looks like returning, but the search can still be gone back to.
+        note(&mut back, &mut here, a.clone(), None);
+        note(&mut back, &mut here, home.clone(), Some(1));
+        assert!(back.len() == 2 && back[1].0 == a && back[1].1 == Some(1));
+
+        // The same screen with its search read again is no new screen.
+        note(&mut back, &mut here, home, Some(2));
+        assert_eq!(back.len(), 2);
+    }
 }

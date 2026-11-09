@@ -54,7 +54,7 @@ impl App {
     /// The settings page's part of the top bar, right to left (see top_bar).
     pub fn settings_bar(&mut self, ui: &mut egui::Ui) {
         if ui.button("◀ Back").clicked() {
-            self.show_settings = false;
+            self.go_back();
         }
     }
 
@@ -454,7 +454,7 @@ impl App {
     /// The pools page's part of the top bar, right to left (see top_bar).
     pub fn pools_bar(&mut self, ui: &mut egui::Ui) {
         if ui.button("◀ Back").clicked() {
-            self.show_pools = false;
+            self.go_back();
         }
         // One e621 job at a time (the favorites import's progress shows here too).
         let busy = !self.progress.is_empty();
