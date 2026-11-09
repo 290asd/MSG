@@ -114,14 +114,14 @@ impl App {
         self.check(ui, "clickOpensPost", true, "Favorites: clicking the picture opens its post");
         self.check(ui, "showDownloadButton", true, "Show the Download button");
         self.check(ui, "searchSortMenu", false, "Sort menu in the search bar");
-        let reading = self.text("frontPage") == "reading";
+        let reading = self.reading_home();
         ui.horizontal(|ui| {
             ui.label("Front page");
-            if ui.radio(!reading, "search (quick search cards)").clicked() {
-                self.set("frontPage", json!("search"));
-            }
-            if ui.radio(reading, "reading list").clicked() {
+            if ui.radio(reading, "mosaic (reading list)").clicked() {
                 self.set("frontPage", json!("reading"));
+            }
+            if ui.radio(!reading, "quick search cards").clicked() {
+                self.set("frontPage", json!("search"));
             }
         });
         self.check(ui, "quickCards", true, "Quick search cards on the front page");

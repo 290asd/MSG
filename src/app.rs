@@ -187,7 +187,7 @@ impl App {
         }
         if let Ok(text) = std::env::var("MSG_SEARCH") {
             app.start_search(&text);
-        } else if app.text("frontPage") == "reading" {
+        } else if app.reading_home() {
             app.open_reading();
         }
         app.here = app.screen();
@@ -218,6 +218,11 @@ impl App {
     }
 
     pub fn set(&self, key: &str, value: Value) {
+    /// The front page is the reading list's mosaic, unless the quick search cards were chosen.
+    pub fn reading_home(&self) -> bool {
+        self.text("frontPage") != "search"
+    }
+
         self.store.data.lock().unwrap().insert(key.to_string(), value);
         self.store.save();
     }
@@ -610,7 +615,7 @@ impl App {
             "setBackground" => self.use_as_background(),
             "showInterface" => self.show_controls = !self.show_controls,
             // Back to the front page: the quick search cards (a new search starts from there as before), or the reading list read again.
-            "home" if self.text("frontPage") == "reading" => {
+            "home" if self.reading_home() => {
                 self.reading_list = false;
                 self.open_reading();
             }
