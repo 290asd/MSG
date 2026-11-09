@@ -306,6 +306,9 @@ impl Player {
                 // Onto the window, into the rectangle egui set the viewport to.
                 gl.bind_framebuffer(glow::FRAMEBUFFER, u32::try_from(previous).ok().and_then(std::num::NonZeroU32::new).map(glow::NativeFramebuffer));
                 gl.viewport(vp.left_px, vp.from_bottom_px, vp.width_px, vp.height_px);
+                // mpv leaves the scissor box at the size of its own picture, in the window's corner.
+                let clip = info.clip_rect_in_pixels();
+                gl.scissor(clip.left_px, clip.from_bottom_px, clip.width_px, clip.height_px);
                 gl.enable(glow::SCISSOR_TEST);
                 gl.disable(glow::BLEND);
                 if has_frame {
