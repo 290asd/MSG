@@ -17,6 +17,8 @@ const COLUMNS: u32 = 10;
 /// How much room a row's name takes above its pages, and the space under them.
 const HEADER: f32 = 28.0;
 const ROW_GAP: f32 = 20.0;
+/// A row's height with its name and gap, until Ctrl and the wheel change it (poolRowHeight).
+const DEFAULT_ROW: f64 = 340.0;
 /// A row is read at most this often: e621 allows two requests a second, and opening a pool takes two.
 const ASK_EVERY: Duration = Duration::from_millis(1100);
 /// How many pages are drawn at most, and how many past those are loaded ahead.
@@ -165,9 +167,13 @@ impl App {
             ui.painter().galley(area.center() - galley.size() / 2.0, galley, t.text2);
             return;
         }
-        // Three to five rows on the screen, whatever the window's height.
+        // Ctrl and the wheel make the rows taller or lower, up to one to a screen.
         let view = area.height() - TOP_INSET;
-        let row_height = (view / (view / 235.0).round().clamp(3.0, 5.0)).max(180.0);
+        let zoom = ui.input(|i| i.zoom_delta());
+        if zoom != 1.0 {
+            self.set("poolRowHeight", json!((self.number("poolRowHeight", DEFAULT_ROW) * zoom as f64).clamp(180.0, 900.0)));
+        }
+        let row_height = (self.number("poolRowHeight", DEFAULT_ROW) as f32).min(view.max(180.0));
         let total = TOP_INSET + pools.len() as f32 * row_height + theme::S3;
         // The wheel belongs to the row under it; the page scrolls with the bar, over the names and gaps, and with Shift.
         let source = ScrollSource { drag: egui::containers::scroll_area::DragScroll::Never, mouse_wheel: !self.pool_wheel_taken, ..ScrollSource::ALL };
