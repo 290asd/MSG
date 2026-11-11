@@ -956,7 +956,10 @@ impl App {
 
     /// One row: the buttons are laid out from the right end, and the search box takes the width that is left.
     fn top_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        // One height for every control, and the row that tall from the start: a row grows only after its first items
+        // are placed, and those would stay higher than the rest.
+        ui.spacing_mut().interact_size.y = 32.0;
+        ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), 32.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
             if self.mode == Mode::Slideshow && !self.show_pools && !self.show_settings {
                 self.sites_menu(ui);
             }
