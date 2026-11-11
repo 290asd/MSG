@@ -82,7 +82,7 @@ pub enum Msg {
     /// A background job changed the settings file (offline copies): reread what depends on it.
     Downloaded(String),
     /// The first result of a quick search, for its card on the front page.
-    Cover { index: usize, slide: Slide },
+    Cover { key: String, slide: Slide },
     /// Find pools in favorites: the pools that weren't saved yet.
     Pools(Vec<Value>),
     /// The tag categories of e621 favorites saved without them (post id → categories).

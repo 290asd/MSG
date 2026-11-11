@@ -183,8 +183,11 @@ pub struct App {
     ambient: (String, String, Instant),
     pub pool_filter: String,
     pub video: Option<Player>,
-    covers: HashMap<usize, Slide>,
-    covers_asked: bool,
+    /// The saved searches' and the history's covers by `sites|tags`; each is asked once, when its card is on the screen.
+    covers: HashMap<String, Slide>,
+    covers_asked: std::collections::HashSet<String>,
+    /// The first card's key, for the picture under the window.
+    first_cover: String,
     pub video_error: Option<String>,
     // Testing aid: MSG_SHOT=<png> takes a screenshot after MSG_SHOT_AFTER seconds (default 12) and quits; MSG_SEARCH=<tags> searches at start.
     hook: Option<(std::path::PathBuf, Instant, bool)>,
@@ -253,7 +256,8 @@ impl App {
             pool_filter: String::new(),
             video: None,
             covers: HashMap::new(),
-            covers_asked: false,
+            covers_asked: Default::default(),
+            first_cover: String::new(),
             video_error: None,
             hook: std::env::var_os("MSG_SHOT").map(|p| (p.into(), Instant::now(), false)),
             script: std::env::var("MSG_SCRIPT").ok().map(|text| {
@@ -606,8 +610,8 @@ impl App {
                     }
                 }
                 Msg::Notice(text) => self.notice(text),
-                Msg::Cover { index, slide } => {
-                    self.covers.insert(index, slide);
+                Msg::Cover { key, slide } => {
+                    self.covers.insert(key, slide);
                 }
                 Msg::Progress(text) => self.progress = text,
                 Msg::Imported { site, slides } => {
@@ -1207,7 +1211,7 @@ impl App {
         // Under the settings and the pools the last one stays.
         if !self.show_settings && !self.show_pools {
             // On the mosaic its first picture (on the saved searches the first cover), in the slideshow the one showing.
-            let cover = self.covers.iter().min_by_key(|(n, _)| **n).map(|(_, s)| s.clone());
+            let cover = self.covers.get(&self.first_cover).cloned();
             let shown = if self.show_mosaic { self.list().first().cloned() } else { self.current().or(cover) };
             if let Some(url) = shown.map(|s| self.copies_or(&s.preview_file_url)) {
                 self.media.request(&self.engine, &url);
@@ -1763,54 +1767,64 @@ impl App {
     }
 
     /// The quick searches in the mosaic's columns: the first picture of the results with the name on glass over it.
+    /// After them the search history, newest first, on the sites ticked now, so that the page goes on.
     /// Click runs the search. Says whether there are any.
     fn quick_cards(&mut self, ui: &mut egui::Ui, rect: egui::Rect) -> bool {
         let quick: Vec<Value> = self.store.get("quickSearches").and_then(|v| v.as_array().cloned()).unwrap_or_default();
-        let cards: Vec<(usize, Vec<Site>, String)> = quick
+        // (saved search's number, sites, tags, cover key)
+        let mut cards: Vec<(Option<usize>, Vec<Site>, String, String)> = quick
             .iter()
             .enumerate()
             .filter_map(|(n, q)| {
                 let sites: Vec<Site> = q["sites"].as_array()?.iter().filter_map(|s| s.as_str().and_then(Site::from_id)).collect();
-                (!sites.is_empty()).then(|| (n, sites, q["tags"].as_str().unwrap_or("").to_string()))
+                (!sites.is_empty()).then(|| (Some(n), sites, q["tags"].as_str().unwrap_or("").to_string(), String::new()))
             })
             .collect();
+        let ticked = session::ticked_sites(&self.store);
+        if !ticked.is_empty() {
+            let history: Vec<Value> = self.store.get("searchHistory").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+            for tags in history.iter().rev().filter_map(Value::as_str) {
+                if !cards.iter().any(|c| c.2.trim() == tags) {
+                    cards.push((None, ticked.clone(), tags.to_string(), String::new()));
+                }
+            }
+        }
         if cards.is_empty() {
             return false;
         }
-        if !self.covers_asked && !self.flag("offlineMode", false) {
-            self.covers_asked = true;
-            for (n, sites, tags) in &cards {
-                let (engine, tx, sites, tags, n) = (self.engine.clone(), self.tx.clone(), sites.clone(), tags.clone(), *n);
-                self.engine.rt.spawn(async move {
-                    if let Some(slide) = session::first_slide(&engine, sites, &tags).await {
-                        let _ = tx.send(Msg::Cover { index: n, slide });
-                        engine.wake();
-                    }
-                });
-            }
+        for c in &mut cards {
+            c.3 = format!("{}|{}", c.1.iter().map(|s| s.id()).collect::<Vec<_>>().join(","), c.2.trim());
         }
+        self.first_cover = cards[0].3.clone();
         // A picture is at least this tall for its width, so that the glass plate fits on it.
-        let ratios: Vec<f32> = cards.iter().map(|(n, ..)| self.covers.get(n).filter(|s| s.width > 0 && s.height > 0).map_or(0.8, |s| (s.height as f32 / s.width as f32).max(0.6))).collect();
+        let ratios: Vec<f32> = cards.iter().map(|c| self.covers.get(&c.3).filter(|s| s.width > 0 && s.height > 0).map_or(0.8, |s| (s.height as f32 / s.width as f32).max(0.6))).collect();
         self.zoom_mosaic(ui);
         let target = (self.number("readingThumbWidth", 220.0) as f32).max(260.0);
         let (cells, total, column) = masonry(&ratios, rect.width() - theme::S2, target);
         let big = column * ui.ctx().pixels_per_point() > 200.0;
         let t = tok(ui.ctx());
         let mut run = None;
+        let mut ask = Vec::new();
+        let offline = self.flag("offlineMode", false);
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
             egui::ScrollArea::vertical().id_salt("saved searches").auto_shrink(false).show_viewport(ui, |ui, viewport| {
                 ui.set_height(total);
                 let origin = ui.max_rect().min.to_vec2();
-                for (i, (n, sites, tags)) in cards.iter().enumerate().filter(|(i, _)| cells[*i].intersects(viewport)) {
+                for (i, (n, sites, tags, key)) in cards.iter().enumerate().filter(|(i, _)| cells[*i].intersects(viewport)) {
                     let tile = cells[i].translate(origin);
-                    let id = ui.id().with(("saved", *n));
-                    let cover = self.covers.get(n).cloned();
+                    let id = ui.id().with(("saved", key));
+                    if !offline && self.covers_asked.insert(key.clone()) {
+                        ask.push(i);
+                    }
+                    let cover = self.covers.get(key).cloned();
                     let url = cover.as_ref().map_or(String::new(), |s| s.sample_file_url.clone().filter(|u| big && !u.is_empty()).unwrap_or_else(|| s.preview_file_url.clone()));
                     let title = if tags.is_empty() { "(what is in the box)".to_string() } else { tags.clone() };
                     if self.tile(ui, tile, id, &url).on_hover_text(&title).clicked() {
-                        run = Some(*n);
+                        run = Some(i);
                     }
-                    theme::badge(ui, egui::Rect::from_min_size(tile.min + Vec2::splat(6.0), Vec2::splat(24.0)), ((n + 1) % 10).to_string(), theme::medium(12.5), Color32::WHITE);
+                    if let Some(n) = n {
+                        theme::badge(ui, egui::Rect::from_min_size(tile.min + Vec2::splat(6.0), Vec2::splat(24.0)), ((n + 1) % 10).to_string(), theme::medium(12.5), Color32::WHITE);
+                    }
                     let plate = egui::Rect::from_min_max(egui::pos2(tile.left() + 6.0, tile.bottom() - 66.0), tile.right_bottom() - Vec2::splat(6.0));
                     ui.painter().add(glass::frost(ui.ctx(), plate, glass::Look { radius: theme::RADIUS_M as f32, tint: t.glass, passes: 3 }, 1.0));
                     let names: Vec<&str> = sites.iter().map(|s| s.name()).collect();
@@ -1830,8 +1844,19 @@ impl App {
                 }
             });
         });
-        if let Some(n) = run {
-            self.run_quick_search(n);
+        for i in ask {
+            let (engine, tx, sites, tags, key) = (self.engine.clone(), self.tx.clone(), cards[i].1.clone(), cards[i].2.clone(), cards[i].3.clone());
+            self.engine.rt.spawn(async move {
+                if let Some(slide) = session::first_slide(&engine, sites, &tags).await {
+                    let _ = tx.send(Msg::Cover { key, slide });
+                    engine.wake();
+                }
+            });
+        }
+        match run.map(|i| &cards[i]) {
+            Some((Some(n), ..)) => self.run_quick_search(*n),
+            Some((None, _, tags, _)) => self.start_search(&tags.clone()),
+            None => {}
         }
         true
     }
