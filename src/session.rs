@@ -491,7 +491,7 @@ mod tests {
 
     #[test]
     fn reading_list_cursors() {
-        let store = Store::load(std::env::temp_dir().join("msg-native-reading"), std::env::temp_dir().join("msg-native-reading-legacy"));
+        let store = Store::load(std::env::temp_dir().join("msg-native-reading"), std::env::temp_dir().join("msg-native-reading-legacy")).unwrap();
         let list = serde_json::json!([{"tags": "a", "sites": ["E621", "SAFE"]}, {"tags": "b", "sites": ["E621"]}, {"tags": "c"}]);
         store.data.lock().unwrap().insert("readingList".into(), list);
         let search = Search::many(1, &reading_list(&store), &store);
@@ -507,7 +507,7 @@ mod tests {
 
     #[test]
     fn saved_pools_order() {
-        let store = Store::load(std::env::temp_dir().join("msg-native-pools"), std::env::temp_dir().join("msg-native-pools-legacy"));
+        let store = Store::load(std::env::temp_dir().join("msg-native-pools"), std::env::temp_dir().join("msg-native-pools-legacy")).unwrap();
         let pools = serde_json::json!([{"id": 1, "name": "b", "count": 9}, {"id": 2, "name": "A", "count": 5}, {"id": 3, "name": "c", "count": 7}]);
         store.data.lock().unwrap().insert("savedPools".into(), pools);
         let order = |sort: &str| {

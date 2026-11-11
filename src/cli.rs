@@ -127,7 +127,10 @@ fn main() {
         }
     }
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("async runtime");
-    let store = Store::load(files::user_data(), files::legacy_dir());
+    let store = Store::load(files::user_data(), files::legacy_dir()).unwrap_or_else(|e| {
+        eprintln!("{e}");
+        std::process::exit(1);
+    });
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         restore();

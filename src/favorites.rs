@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn toggle_and_dupes() {
-        let store = Store::load(std::env::temp_dir().join("msg-native-fav"), std::env::temp_dir().join("msg-native-fav-legacy"));
+        let store = Store::load(std::env::temp_dir().join("msg-native-fav"), std::env::temp_dir().join("msg-native-fav-legacy")).unwrap();
         let mut list = Favorites::load(&store);
         let slide = Slide { site_id: "E621".into(), id: Value::from(1), md5: "m".into(), ..Default::default() };
         assert!(list.toggle(&slide));

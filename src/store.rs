@@ -17,12 +17,21 @@ pub struct Store {
     pub imported: bool,
     /// settings.json couldn't be read, so it was moved here and MSG started empty.
     pub broken: Option<PathBuf>,
+    /// Held while the program runs; Windows releases it when the process ends, even after a crash.
+    _lock: std::fs::File,
 }
 
 impl Store {
     /// `dir` is the user data folder (<config>/MSG).
     /// `legacy_dir` is the folder used before the rename to MSG; its settings.json is copied over on the first start.
-    pub fn load(dir: PathBuf, legacy_dir: PathBuf) -> Arc<Store> {
+    /// Fails when another MSG or msg-cli already uses the folder (each writes its whole copy, so the
+    /// other's changes would be lost), or when settings.json can't be read and can't be put aside.
+    pub fn load(dir: PathBuf, legacy_dir: PathBuf) -> Result<Arc<Store>, String> {
+        let _ = std::fs::create_dir_all(&dir);
+        let lock = std::fs::File::create(dir.join("settings.lock")).map_err(|e| format!("{} can't be opened ({e}).", dir.display()))?;
+        if lock.try_lock().is_err() {
+            return Err("MSG or msg-cli is already running. Only one can use the settings at a time.".into());
+        }
         let file = dir.join("settings.json");
         let mut broken = None;
         let (data, fresh, imported) = match std::fs::read(&file) {
@@ -33,7 +42,7 @@ impl Store {
                     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
                     let aside = dir.join(format!("settings.broken-{secs}.json"));
                     if let Err(e) = std::fs::rename(&file, &aside) {
-                        panic!("{} can't be read and couldn't be put aside ({e}). Fix or move it by hand.", file.display());
+                        return Err(format!("{} can't be read and couldn't be put aside ({e}). Fix or move it by hand.", file.display()));
                     }
                     broken = Some(aside);
                     (Map::new(), true, false)
@@ -45,13 +54,13 @@ impl Store {
                     None => (Map::new(), true, false),
                 }
             }
-            Err(e) => panic!("{} can't be read ({e}).", file.display()),
+            Err(e) => return Err(format!("{} can't be read ({e}).", file.display())),
         };
-        let store = Arc::new(Store { data: Mutex::new(data), file, pending: AtomicBool::new(false), first_run: fresh, imported, broken });
+        let store = Arc::new(Store { data: Mutex::new(data), file, pending: AtomicBool::new(false), first_run: fresh, imported, broken, _lock: lock });
         if fresh {
             store.save();
         }
-        store
+        Ok(store)
     }
 
     pub fn save(self: &Arc<Self>) {
@@ -125,7 +134,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("settings.json"), b"{\"favorites\": [1, 2").unwrap();
-        let store = super::Store::load(dir.clone(), dir.join("none"));
+        let store = super::Store::load(dir.clone(), dir.join("none")).unwrap();
+        assert!(super::Store::load(dir.clone(), dir.join("none")).is_err(), "a second instance is refused");
         let aside = store.broken.clone().expect("put aside");
         assert_eq!(std::fs::read(&aside).unwrap(), b"{\"favorites\": [1, 2");
         assert!(store.first_run);

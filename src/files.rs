@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn download_path_stays_inside() {
-        let store = Store::load(std::env::temp_dir().join("msg-native-test"), std::env::temp_dir().join("msg-native-test-legacy"));
+        let store = Store::load(std::env::temp_dir().join("msg-native-test"), std::env::temp_dir().join("msg-native-test-legacy")).unwrap();
         assert!(download_path(&store, "MSG/favorites/a.jpg").is_ok());
         assert!(download_path(&store, "MSG/../x").is_err());
         assert!(download_path(&store, "/etc/passwd").is_err());
