@@ -117,6 +117,8 @@ pub struct Batch {
     pub warnings: Vec<String>,
     /// The reading list: which followed search each post came from.
     pub owners: HashMap<(String, String), String>,
+    /// The last batch of this page: the search can ask for the next one.
+    pub done: bool,
 }
 
 #[derive(Clone)]
@@ -164,45 +166,59 @@ impl Search {
         self.loading || self.cursors.iter().any(|c| !c.exhausted)
     }
 
-    /// Reads the next page of every site that still has results; the answer arrives as a `Batch`.
+    /// Reads the next page of every site that still has results; the answer arrives as `Batch`es.
+    /// Finished sites (run out or failed) are not asked again.
     pub fn load_more(&mut self, engine: &Engine, tx: Sender<Msg>) {
         if self.loading || !self.cursors.iter().any(|c| !c.exhausted) {
             return;
         }
         self.loading = true;
-        let cursors = std::mem::take(&mut self.cursors);
+        let (cursors, finished) = std::mem::take(&mut self.cursors).into_iter().partition(|c| !c.exhausted);
+        self.cursors = finished;
         let (cfg, text, generation, engine) = (self.cfg.clone(), self.text.clone(), self.generation, engine.clone());
         engine.rt.clone().spawn(async move {
             let tasks: Vec<_> = cursors
                 .into_iter()
-                .map(|cursor| {
+                .map(|cursor: Cursor| {
                     let (engine, cfg) = (engine.clone(), cfg.clone());
                     let text = cursor.query.clone().unwrap_or_else(|| text.clone());
                     // The reading list asks one site many times: each waits for the site's turn (net::turn).
-                    // ponytail: the batch waits for the last one (30 e621 entries ≈ 15 s); a batch per entry if that is too slow.
                     tokio::spawn(async move { fetch_page(&engine, &cfg, cursor, &text).await })
                 })
                 .collect();
-            let (mut cursors, mut slides, mut warnings, mut owners) = (vec![], vec![], vec![], HashMap::new());
-            for task in tasks {
+            // What has come in after EARLY goes out at once, so a long reading list (30 e621 entries ≈ 15 s) shows
+            // something soon; the rest comes as a second batch when the last answer is in.
+            // ponytail: two batches, so the late ones are appended after the early ones, not mixed in by date.
+            const EARLY: std::time::Duration = std::time::Duration::from_secs(2);
+            let start = std::time::Instant::now();
+            let total = tasks.len();
+            let mut part = Batch { generation, cursors: vec![], slides: vec![], warnings: vec![], owners: HashMap::new(), done: false };
+            let mut sent_early = false;
+            for (n, task) in tasks.into_iter().enumerate() {
                 if let Ok((cursor, mut got, warning)) = task.await {
                     if let Some(query) = &cursor.query {
-                        owners.extend(got.iter().map(|s| (s.key(), query.clone())));
+                        part.owners.extend(got.iter().map(|s| (s.key(), query.clone())));
                     }
-                    cursors.push(cursor);
-                    slides.append(&mut got);
-                    warnings.extend(warning);
+                    part.cursors.push(cursor);
+                    part.slides.append(&mut got);
+                    part.warnings.extend(warning);
+                }
+                let last = n + 1 == total;
+                if last || (!sent_early && start.elapsed() >= EARLY && !part.slides.is_empty()) {
+                    sent_early = true;
+                    let next = Batch { generation, cursors: vec![], slides: vec![], warnings: vec![], owners: HashMap::new(), done: false };
+                    let batch = Batch { done: last, ..std::mem::replace(&mut part, next) };
+                    let _ = tx.send(Msg::Batch(batch));
+                    engine.wake();
                 }
             }
-            let _ = tx.send(Msg::Batch(Batch { generation, cursors, slides, warnings, owners }));
-            engine.wake();
         });
     }
 
     /// Takes in a page's worth: dupes out (by md5), the rest sorted and appended. Returns how many were added.
     pub fn accept(&mut self, batch: Batch) -> usize {
-        self.loading = false;
-        self.cursors = batch.cursors;
+        self.loading = !batch.done;
+        self.cursors.extend(batch.cursors);
         let mut fresh: Vec<Slide> = batch
             .slides
             .into_iter()
