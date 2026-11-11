@@ -1272,7 +1272,7 @@ impl App {
             // On the mosaic its first picture (on the saved searches the first cover), in the slideshow the one showing.
             let cover = self.covers.get(&self.first_cover).cloned();
             let shown = if self.show_mosaic { self.list().first().cloned() } else { self.current().or(cover) };
-            if let Some(url) = shown.map(|s| self.copies_or(&s.preview_file_url)) {
+            if let Some(url) = shown.map(|s| thumb_source(&self.copies_or(&s.preview_file_url))) {
                 self.media.request(&self.engine, &url);
                 if url != self.ambient.0 && matches!(self.media.get(&url), Some(State::Ready(_))) {
                     self.ambient = (url, std::mem::take(&mut self.ambient.0), Instant::now());
@@ -2013,9 +2013,8 @@ fn net_ok(url: &str) -> bool {
     super::net::web_url(url).is_some()
 }
 
-/// Sites' thumbnails are small; a local file stands in as it is.
 fn thumb_source(url: &str) -> String {
-    url.to_string()
+    media::thumb(url)
 }
 
 pub fn paint_fit(ui: &egui::Ui, rect: egui::Rect, texture: &egui::TextureHandle, size: [usize; 2], alpha: f32, radius: f32) {

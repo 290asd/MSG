@@ -667,7 +667,8 @@ impl App {
         let response = ui.interact(rect, id, egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
         let ctx = ui.ctx().clone();
         let t = tok(&ctx);
-        let url = super::downloads::display_url(&self.copies, url);
+        let source = super::downloads::display_url(&self.copies, url);
+        let url = super::media::thumb(&source);
         self.media.request(&self.engine, &url);
         let ready = matches!(self.media.get(&url), Some(State::Ready(_)));
         if let Some(out) = veil {
@@ -690,8 +691,8 @@ impl App {
         if let Some(State::Ready(p)) = self.media.get(&url) {
             super::app::paint_fit(ui, shown, &p.frames[0].texture, p.size, fade, TILE_RADIUS as f32);
             // The sites say a picture's shape; of your own files it is known now.
-            if super::net::web_url(&url).is_none() {
-                self.ratios.entry(url).or_insert(p.size[1] as f32 / p.size[0] as f32);
+            if super::net::web_url(&source).is_none() {
+                self.ratios.entry(source).or_insert(p.size[1] as f32 / p.size[0] as f32);
             }
         }
         response
@@ -766,7 +767,7 @@ impl App {
             let key = egui::Id::new(("mosaic reveal", self.mode as usize, generation));
             let (since, mut reveal) = ctx.data(|d| d.get_temp::<(f64, Option<f64>)>(key)).unwrap_or((now, None));
             if reveal.is_none() {
-                let visible: Vec<String> = cells.iter().enumerate().filter(|(_, c)| c.intersects(viewport)).map(|(n, _)| super::downloads::display_url(&self.copies, &url_of(&self.list()[n]))).collect();
+                let visible: Vec<String> = cells.iter().enumerate().filter(|(_, c)| c.intersects(viewport)).map(|(n, _)| super::media::thumb(&super::downloads::display_url(&self.copies, &url_of(&self.list()[n])))).collect();
                 let here = visible.iter().filter(|u| matches!(self.media.get(u), Some(State::Ready(_) | State::Failed(_)))).count();
                 if here == visible.len() || now - since > 8.0 {
                     reveal = Some(now);

@@ -188,8 +188,15 @@ pub fn local_slides(store: &Store, cfg: &Config, search: &str) -> Vec<Slide> {
         } {
             continue;
         }
+        // The size from the file's header, so the mosaic has the shape before the picture comes.
+        let (width, height) = match kind {
+            MediaType::Image | MediaType::Gif => image::ImageReader::open(&file.abs).ok().and_then(|r| r.with_guessed_format().ok()?.into_dimensions().ok()).unwrap_or((0, 0)),
+            _ => (0, 0),
+        };
         slides.push(Slide {
             site_id: "LOCL".into(),
+            width: width as i64,
+            height: height as i64,
             id: Value::String(file.abs.clone()),
             preview_file_url: file.abs.clone(),
             viewable_website_post_url: file.abs.clone(),

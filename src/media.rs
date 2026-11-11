@@ -26,6 +26,22 @@ const KEEP_BYTES: usize = 1536 << 20;
 const AT_ONCE: usize = 6;
 // A bigger video isn't fetched ahead: mpv reads it from the site as it plays.
 const MAX_VIDEO: u64 = 200 << 20;
+// A file of your own asked for as a thumbnail (`thumb`) is shrunk to this when it is decoded; '|' is never in a Windows path.
+const THUMB: &str = "|thumb";
+const THUMB_SIDE: u32 = 640;
+// Textures made in one frame at most: more at once is a visible stutter.
+const UPLOADS_PER_FRAME: usize = 4;
+
+/// What a mosaic tile or thumbnail asks for: sites' thumbnails are small already; a file of your own is
+/// decoded small (a camera picture would be 64 MB on the graphics card in every tile).
+// ponytail: decoded again each session; a thumbnail cache on disk if opening a big folder is too slow.
+pub fn thumb(url: &str) -> String {
+    if url.is_empty() || net::web_url(url).is_some() || url.ends_with(THUMB) {
+        url.to_string()
+    } else {
+        format!("{url}{THUMB}")
+    }
+}
 
 pub struct Frame {
     pub texture: TextureHandle,
@@ -118,12 +134,16 @@ pub struct MediaCache {
     // The tick at the last poll (the start of the last frame).
     frame: u64,
     limit: Arc<tokio::sync::Semaphore>,
+    // Decodes at once: one per core, so a folder of camera pictures doesn't decode fifty at a time.
+    cpu: Arc<tokio::sync::Semaphore>,
 }
 
 impl MediaCache {
     pub fn new() -> MediaCache {
         let (tx, rx) = channel();
-        MediaCache { entries: HashMap::new(), loading: HashMap::new(), tx, rx, tick: 0, frame: 0, limit: Arc::new(tokio::sync::Semaphore::new(AT_ONCE)) }
+        let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let (limit, cpu) = (Arc::new(tokio::sync::Semaphore::new(AT_ONCE)), Arc::new(tokio::sync::Semaphore::new(cores)));
+        MediaCache { entries: HashMap::new(), loading: HashMap::new(), tx, rx, tick: 0, frame: 0, limit, cpu }
     }
 
     pub fn get(&mut self, url: &str) -> Option<&State> {
@@ -156,20 +176,28 @@ impl MediaCache {
         }
         self.entries.insert(url.to_string(), (State::Loading, self.tick));
         let key = url.to_string();
-        let (tx, engine, url, limit) = (self.tx.clone(), engine.clone(), url.to_string(), self.limit.clone());
+        let (tx, engine, url, limit, cpu) = (self.tx.clone(), engine.clone(), url.to_string(), self.limit.clone(), self.cpu.clone());
         let task = engine.rt.clone().spawn(async move {
             let result = if video {
                 let _turn = limit.acquire().await;
                 fetch_video(&engine, &url).await
             } else {
-                let bytes = if net::web_url(&url).is_some() {
+                // A file is read only when it can be decoded, so fifty big files aren't in memory at once.
+                let web = net::web_url(&url).is_some();
+                let early = if web { None } else { cpu.acquire().await.ok() };
+                let bytes = if web {
                     let _turn = limit.acquire().await;
                     net::get_bytes(&engine.client, &engine.store, &url).await
                 } else {
-                    tokio::fs::read(&url).await.map_err(|_| "file not found".to_string())
+                    tokio::fs::read(url.strip_suffix(THUMB).unwrap_or(&url)).await.map_err(|_| "file not found".to_string())
                 };
+                let _cpu = match early {
+                    Some(permit) => Some(permit),
+                    None => cpu.acquire().await.ok(),
+                };
+                let small = url.ends_with(THUMB);
                 match bytes {
-                    Ok(bytes) => tokio::task::spawn_blocking(move || decode(&bytes)).await.unwrap_or_else(|_| Err("decoding failed".into())),
+                    Ok(bytes) => tokio::task::spawn_blocking(move || if small { decode_thumb(&bytes) } else { decode(&bytes) }).await.unwrap_or_else(|_| Err("decoding failed".into())),
                     Err(e) => Err(e),
                 }
             };
@@ -182,7 +210,13 @@ impl MediaCache {
     /// Moves what has arrived into textures, and lets the oldest go when there are too many. What the last
     /// frame drew stays, however many (a screen full of pool covers), or it would be loaded again and again.
     pub fn poll(&mut self, ctx: &egui::Context) {
-        while let Ok((url, result)) = self.rx.try_recv() {
+        for n in 0.. {
+            if n == UPLOADS_PER_FRAME {
+                // The rest wait for the next frame.
+                ctx.request_repaint();
+                break;
+            }
+            let Ok((url, result)) = self.rx.try_recv() else { break };
             self.loading.remove(&url);
             let state = match result {
                 Ok(Decoded::Video(file)) => State::File(file),
@@ -321,6 +355,13 @@ fn decode(bytes: &[u8]) -> Result<Decoded, String> {
     Ok(Decoded::Frames(vec![(to_color(shrink(image)), Duration::ZERO)]))
 }
 
+// A thumbnail of a file: the first frame, at most THUMB_SIDE on its longer side.
+fn decode_thumb(bytes: &[u8]) -> Result<Decoded, String> {
+    let image = image::load_from_memory(bytes).map_err(|_| "not a picture".to_string())?;
+    let image = if image.width() > THUMB_SIDE || image.height() > THUMB_SIDE { image.thumbnail(THUMB_SIDE, THUMB_SIDE) } else { image };
+    Ok(Decoded::Frames(vec![(to_color(image), Duration::ZERO)]))
+}
+
 // The file's name is the address's hash, so nothing from the site ends up in a path.
 async fn fetch_video(engine: &Engine, url: &str) -> Result<Decoded, String> {
     let response = net::get(&engine.client, &engine.store, url, Duration::from_secs(120)).await?;
@@ -341,13 +382,24 @@ fn shrink(image: image::DynamicImage) -> image::DynamicImage {
 }
 
 fn to_color(image: image::DynamicImage) -> ColorImage {
-    let rgba = image.to_rgba8();
+    let rgba = image.into_rgba8();
     ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn own_files_are_decoded_small() {
+        assert_eq!(thumb("https://e621.net/a.jpg"), "https://e621.net/a.jpg");
+        assert_eq!(thumb(r"C:\p\a.jpg"), r"C:\p\a.jpg|thumb");
+        assert_eq!(thumb(&thumb(r"C:\p\a.jpg")), r"C:\p\a.jpg|thumb");
+        let mut png = vec![];
+        image::DynamicImage::new_rgb8(2000, 1000).write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        let Ok(Decoded::Frames(frames)) = decode_thumb(&png) else { panic!() };
+        assert_eq!(frames[0].0.size, [THUMB_SIDE as usize, THUMB_SIDE as usize / 2]);
+    }
 
     #[test]
     fn a_video_file_goes_with_its_entry() {
