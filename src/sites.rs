@@ -122,11 +122,11 @@ impl Config {
         if !self.explicit && !self.questionable && !self.safe {
             return true;
         }
-        match rating {
-            "e" => self.explicit,
-            "q" => self.questionable,
-            // Danbooru's "g" (general) is safe.
-            "s" | "g" => self.safe,
+        // Sites give "e" or "explicit"; Danbooru's and Gelbooru's "g"/"general" is safe.
+        match rating.chars().next() {
+            Some('e') => self.explicit,
+            Some('q') => self.questionable,
+            Some('s' | 'g') => self.safe,
             _ => false,
         }
     }
@@ -514,9 +514,7 @@ fn dapi(c: &Config, site: Site, body: &str) -> Result<(Vec<Slide>, usize), Strin
             }
             let tags = field("tags");
             let tags = tags.trim().to_string();
-            // Safebooru and Gelbooru had no rating filter in the web version; Safebooru is all safe anyway.
-            let rating = (!matches!(site, Site::Safebooru | Site::Gelbooru)).then(|| field("rating"));
-            let kind = c.accepts(&file, rating.as_deref(), &tags)?;
+            let kind = c.accepts(&file, Some(&field("rating")), &tags)?;
             let id = field("id");
             let fix = |u: &str| if let Some(rest) = u.strip_prefix("//") { format!("https://{rest}") } else { u.to_string() };
             let view = format!("{}/index.php?page=post&s=view&id={id}", site.url());
@@ -628,5 +626,13 @@ mod tests {
         assert_eq!(parse(&config(), Site::Gelbooru, elements).unwrap().0[0].media_type, MediaType::Gif);
         let error = "<response><error>Missing authentication.</error></response>";
         assert!(parse(&config(), Site::Rule34, error).unwrap_err().starts_with("Missing authentication."));
+    }
+
+    #[test]
+    fn gelbooru_rating_is_filtered() {
+        let post = |id: u32, rating: &str| format!("<post><id>{id}</id><file_url>https://i/{id}.jpg</file_url><tags>x</tags><rating>{rating}</rating></post>");
+        let body = format!("<posts>{}{}</posts>", post(1, "general"), post(2, "explicit"));
+        let (slides, _) = parse(&Config { safe: true, ..config() }, Site::Gelbooru, &body).unwrap();
+        assert_eq!(slides.iter().map(|s| s.id.to_string()).collect::<Vec<_>>(), ["\"1\""]);
     }
 }
