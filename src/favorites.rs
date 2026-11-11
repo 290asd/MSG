@@ -79,8 +79,11 @@ impl Favorites {
         let before = self.items.len();
         for slide in slides {
             if !self.contains(&slide) {
+                self.keys.insert(slide.key());
+                if !slide.md5.is_empty() {
+                    self.md5s.insert(slide.md5.clone());
+                }
                 self.items.push(slide);
-                self.reindex();
             }
         }
         self.items.len() - before
