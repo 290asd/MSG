@@ -112,10 +112,17 @@ unsafe fn fit_chain(gl: &glow::Context, chain: &mut Vec<Level>, w: i32, h: i32) 
     }
 }
 
-unsafe fn pass(gl: &glow::Context, program: glow::Program, from: &Level, to: &Level) {
+/// `part` (x0, y0, x1, y1 in window pixels) as it is in `level`, a level `scale` times smaller.
+fn part_in(part: [i32; 4], scale: i32, level: &Level) -> [i32; 4] {
+    let up = |v: i32| (v + scale - 1) / scale;
+    [part[0] / scale, part[1] / scale, up(part[2]).min(level.w), up(part[3]).min(level.h)]
+}
+
+unsafe fn pass(gl: &glow::Context, program: glow::Program, from: &Level, to: &Level, part: [i32; 4]) {
     unsafe {
         gl.bind_framebuffer(glow::FRAMEBUFFER, Some(to.fbo));
         gl.viewport(0, 0, to.w, to.h);
+        gl.scissor(part[0], part[1], part[2] - part[0], part[3] - part[1]);
         gl.use_program(Some(program));
         gl.bind_texture(glow::TEXTURE_2D, Some(from.texture));
         gl.uniform_2_f32(gl.get_uniform_location(program, "h").as_ref(), 0.5 / to.w as f32, 0.5 / to.h as f32);
@@ -123,8 +130,8 @@ unsafe fn pass(gl: &glow::Context, program: glow::Program, from: &Level, to: &Le
     }
 }
 
-/// The shape that blurs what is under `rect`.
-// ponytail: the whole window is blurred for each surface; it is a few small passes, a scissor per surface if it ever shows.
+/// The shape that blurs what is under `rect`. Only the part of the window the blur reaches is blurred, so a
+/// small surface costs little; each surface blurs again, as what is under it may have been drawn since the last.
 pub fn frost(ctx: &egui::Context, rect: Rect, look: Look, opacity: f32) -> Shape {
     if matches!(PROGRAMS.get(), Some(None)) {
         return Shape::rect_filled(rect, look.radius, tok(ctx).raised.gamma_multiply(opacity));
@@ -145,26 +152,41 @@ pub fn frost(ctx: &egui::Context, rect: Rect, look: Look, opacity: f32) -> Shape
                 gl.bind_framebuffer(glow::FRAMEBUFFER, window);
                 return;
             }
+            let area = rect.intersect(info.clip_rect);
+            if !area.is_positive() {
+                gl.bind_framebuffer(glow::FRAMEBUFFER, window);
+                return;
+            }
             let passes = look.passes.clamp(1, LEVELS);
+            let (left, top) = ((area.left() * ppp).floor() as i32, (area.top() * ppp).floor() as i32);
+            let (right, bottom) = ((area.right() * ppp).ceil() as i32, (area.bottom() * ppp).ceil() as i32);
+            // The surface and as far around it as the blur reaches (each level's filter reads a texel or two of
+            // its level, twice over), from the bottom of the window as GL counts, on the smallest level's grid.
+            let (reach, grid) = (4 << passes, 1 << LEVELS);
+            let part = [
+                (left - reach).max(0) / grid * grid,
+                (sh - bottom - reach).max(0) / grid * grid,
+                ((right + reach + grid - 1) / grid * grid).min(sw),
+                ((sh - top + reach + grid - 1) / grid * grid).min(sh),
+            ];
             gl.disable(glow::SCISSOR_TEST);
             gl.disable(glow::BLEND);
             gl.bind_framebuffer(glow::READ_FRAMEBUFFER, window);
             gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, Some(chain[0].fbo));
-            gl.blit_framebuffer(0, 0, sw, sh, 0, 0, chain[0].w, chain[0].h, glow::COLOR_BUFFER_BIT, glow::LINEAR);
+            let first = part_in(part, 2, &chain[0]);
+            gl.blit_framebuffer(part[0], part[1], part[2], part[3], first[0], first[1], first[2], first[3], glow::COLOR_BUFFER_BIT, glow::LINEAR);
             gl.bind_vertex_array(Some(programs.vao));
             gl.active_texture(glow::TEXTURE0);
+            gl.enable(glow::SCISSOR_TEST);
             for i in 1..passes {
-                pass(gl, programs.down, &chain[i - 1], &chain[i]);
+                pass(gl, programs.down, &chain[i - 1], &chain[i], part_in(part, 2 << i, &chain[i]));
             }
             for i in (1..passes).rev() {
-                pass(gl, programs.up, &chain[i], &chain[i - 1]);
+                pass(gl, programs.up, &chain[i], &chain[i - 1], part_in(part, 1 << i, &chain[i - 1]));
             }
             gl.bind_framebuffer(glow::FRAMEBUFFER, window);
             gl.viewport(0, 0, sw, sh);
-            let area = rect.intersect(info.clip_rect);
-            if area.is_positive() {
-                let (left, top) = ((area.left() * ppp).floor() as i32, (area.top() * ppp).floor() as i32);
-                let (right, bottom) = ((area.right() * ppp).ceil() as i32, (area.bottom() * ppp).ceil() as i32);
+            {
                 gl.enable(glow::SCISSOR_TEST);
                 gl.scissor(left, sh - bottom, right - left, bottom - top);
                 gl.enable(glow::BLEND);
