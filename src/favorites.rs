@@ -34,10 +34,11 @@ pub enum Order {
 
 impl Favorites {
     pub fn load(store: &Store) -> Favorites {
-        let items: Vec<Slide> = match store.get("personalListItems") {
-            Some(Value::Array(list)) => list.into_iter().filter_map(|v| serde_json::from_value(v).ok()).collect(),
+        // Read in place: the list is several MB, a copy first would double the work at start.
+        let items: Vec<Slide> = store.with("personalListItems", |list| match list {
+            Some(Value::Array(list)) => list.iter().filter_map(|v| serde::Deserialize::deserialize(v).ok()).collect(),
             _ => vec![],
-        };
+        });
         let mut favorites = Favorites { items, keys: HashSet::new(), md5s: HashSet::new(), view: vec![], site: None, filter: String::new(), random: false, order: Order::Saved };
         favorites.reindex();
         favorites.rebuild(&|_| true);

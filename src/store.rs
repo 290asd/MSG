@@ -124,6 +124,11 @@ impl Store {
         self.data.lock().unwrap().get(key).cloned()
     }
 
+    /// Reads a value without copying it (for big ones read often).
+    pub fn with<R>(&self, key: &str, read: impl FnOnce(Option<&Value>) -> R) -> R {
+        read(self.data.lock().unwrap().get(key))
+    }
+
     pub fn flag(&self, key: &str) -> bool {
         matches!(self.get(key), Some(Value::Bool(true)))
     }

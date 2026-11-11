@@ -375,7 +375,7 @@ pub fn save_pool(store: &Arc<Store>, id: u64, name: &str, count: usize, cover: &
 pub fn saved_pools(store: &Store) -> Vec<Value> {
     let mut pools: Vec<Value> = store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default();
     match store.string("poolsSort").as_deref() {
-        Some("name") => pools.sort_by_key(|p| p["name"].as_str().unwrap_or("").to_lowercase()),
+        Some("name") => pools.sort_by_cached_key(|p| p["name"].as_str().unwrap_or("").to_lowercase()),
         Some("pages") => pools.sort_by_key(|p| std::cmp::Reverse(p["count"].as_u64().unwrap_or(0))),
         _ => pools.reverse(),
     }

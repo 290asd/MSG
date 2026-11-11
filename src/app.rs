@@ -90,6 +90,11 @@ fn note<T>(back: &mut Vec<(Screen, Option<T>)>, here: &mut Screen, now: Screen, 
         back.pop();
     } else {
         back.push((was, replaced));
+        // Each step can hold a whole search: the oldest are forgotten.
+        const STEPS: usize = 30;
+        if back.len() > STEPS {
+            back.remove(0);
+        }
     }
 }
 
@@ -1090,8 +1095,14 @@ impl App {
         let ctx = ui.ctx().clone();
         let field = egui::Id::new("search box");
         let search = theme::icon_button(ui, icon::SEARCH, "Search", false).clicked();
-        let history: Vec<String> = self.store.get("searchHistory").and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().rev().filter_map(|v| v.as_str().map(String::from)).collect();
-        let history_button = (!history.is_empty()).then(|| theme::icon_button(ui, icon::HISTORY, "Earlier searches", self.suggest.history));
+        // The list is read only while it is open.
+        let has_history = self.store.with("searchHistory", |v| v.and_then(Value::as_array).is_some_and(|a| !a.is_empty()));
+        let history: Vec<String> = if self.suggest.history {
+            self.store.with("searchHistory", |v| v.and_then(Value::as_array).map(|a| a.iter().rev().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default())
+        } else {
+            vec![]
+        };
+        let history_button = has_history.then(|| theme::icon_button(ui, icon::HISTORY, "Earlier searches", self.suggest.history));
         if history_button.as_ref().is_some_and(|b| b.clicked()) {
             let open = !self.suggest.history;
             self.close_search_list();
