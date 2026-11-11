@@ -970,10 +970,6 @@ impl App {
                 if self.on_home() {
                     self.home_switch(ui);
                 }
-                // The mosaic keeps the search bar (or the favorites bar).
-                if self.show_mosaic {
-                    self.mosaic_bar(ui);
-                }
                 if self.mode == Mode::Slideshow {
                     self.search_extras(ui);
                     self.search_field(ui);

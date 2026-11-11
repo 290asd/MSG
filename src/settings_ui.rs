@@ -142,6 +142,7 @@ impl App {
             }
             self.check(ui, "mosaicFirst", true, "Open searches and favorites as a mosaic (off: straight to the slideshow)");
         });
+        self.following(ui);
         theme::group(ui, "Browsing", |ui| {
             let add = self.text("tagClick") == "add";
             if let Some(n) = theme::row(ui, "Clicking a tag", |ui| theme::choice(ui, &["Searches for it", "Adds it to the search"], if add { 1 } else { 0 })) {
@@ -565,29 +566,26 @@ impl App {
     }
 
     /// The mosaic's part of the top bar, right to left (see top_bar); the search or favorites bar comes after it.
-    pub fn mosaic_bar(&mut self, ui: &mut egui::Ui) {
-        if self.on_reading() {
-            let list = super::session::reading_list(&self.store);
-            let mut remove = None;
-            let label = if self.compact(ui) { list.len().to_string() } else { format!("Following ({})", list.len()) };
-            ui.menu_button((theme::glyph(icon::FOLLOW, 14.0), label), |ui| {
-                if list.is_empty() {
-                    ui.label("Search for an artist or tag and press ☆ Follow.");
-                }
-                for (tags, sites) in &list {
-                    ui.horizontal(|ui| {
-                        if ui.small_button("✕").on_hover_text("Stop following").clicked() {
-                            remove = Some(tags.clone());
-                        }
-                        let names: Vec<&str> = sites.iter().map(|s| s.name()).collect();
-                        ui.label(format!("{tags} · {}", names.join(", ")));
-                    });
-                }
-            });
-            if let Some(tags) = remove {
-                self.toggle_follow(&tags);
-                self.start_reading();
+    /// What the reading list follows, and stopping it (Settings → Appearance).
+    fn following(&mut self, ui: &mut egui::Ui) {
+        let list = super::session::reading_list(&self.store);
+        let mut remove = None;
+        theme::group(ui, "Following", |ui| {
+            if list.is_empty() {
+                theme::row(ui, "Nothing followed yet. Search for an artist or tag and press Follow.", |_| {});
             }
+            for (tags, sites) in &list {
+                let names: Vec<&str> = sites.iter().map(|s| s.name()).collect();
+                theme::row(ui, format!("{}  ·  {}", tags.replace('_', " "), names.join(", ")), |ui| {
+                    if theme::icon_button(ui, icon::CLOSE, "Stop following", false).clicked() {
+                        remove = Some(tags.clone());
+                    }
+                });
+            }
+        });
+        // The mosaic reads the list again when it is next opened.
+        if let Some(tags) = remove {
+            self.toggle_follow(&tags);
         }
     }
 
