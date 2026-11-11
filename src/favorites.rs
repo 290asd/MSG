@@ -115,9 +115,9 @@ impl Favorites {
         if random {
             self.view.shuffle(&mut rand::thread_rng());
         } else if self.order == Order::Newest {
-            self.view.sort_by_key(|s| std::cmp::Reverse(s.timestamp()));
+            self.view.sort_by_cached_key(|s| std::cmp::Reverse(s.timestamp()));
         } else if self.order == Order::Oldest {
-            self.view.sort_by_key(Slide::timestamp);
+            self.view.sort_by_cached_key(Slide::timestamp);
         }
     }
 }

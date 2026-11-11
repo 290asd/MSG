@@ -288,8 +288,8 @@ pub fn sort_method(text: &str) -> Sort {
 
 pub fn sort_slides(slides: &mut [Slide], sort: Sort) {
     match sort {
-        Sort::NewestFirst => slides.sort_by_key(|s| std::cmp::Reverse(s.timestamp())),
-        Sort::OldestFirst => slides.sort_by_key(|s| s.timestamp()),
+        Sort::NewestFirst => slides.sort_by_cached_key(|s| std::cmp::Reverse(s.timestamp())),
+        Sort::OldestFirst => slides.sort_by_cached_key(|s| s.timestamp()),
         Sort::ScoreDesc => slides.sort_by_key(|s| std::cmp::Reverse(s.score)),
         Sort::ScoreAsc => slides.sort_by_key(|s| s.score),
     }
