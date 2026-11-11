@@ -178,10 +178,11 @@ impl Downloader {
     }
 }
 
-// e621's API from here: its rate limit wants a pause between requests.
+// e621's API from here, logged in, in e621's turn (net::turn).
 pub async fn e621_json(engine: &Engine, path_and_query: &str) -> Result<Value, String> {
-    sleep(Duration::from_millis(700)).await;
-    let mut request = engine.client.get(format!("https://e621.net{path_and_query}")).timeout(Duration::from_secs(30));
+    let url = format!("https://e621.net{path_and_query}");
+    net::turn(&url).await;
+    let mut request = engine.client.get(url).timeout(Duration::from_secs(30));
     if let (Some(login), Some(key)) = (engine.store.string("e621Login"), engine.store.string("e621ApiKey")) {
         request = request.basic_auth(login, Some(key));
     }

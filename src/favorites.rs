@@ -190,6 +190,7 @@ pub fn sync_e621(engine: &Engine, tx: &Sender<Msg>, slide: &Slide, faved: bool) 
     let id = super::slide::id_text(&slide.id);
     let (client, tx, engine) = (engine.client.clone(), tx.clone(), engine.clone());
     engine.rt.clone().spawn(async move {
+        net::turn("https://e621.net/").await;
         let request = if faved {
             client.post("https://e621.net/favorites.json").form(&[("post_id", id.as_str())])
         } else {
@@ -233,8 +234,6 @@ pub fn fetch_tag_groups(engine: &Engine, tx: Sender<Msg>, items: &[Slide]) {
             let Ok((slides, _)) = net::get_text(&engine.client, &engine.store, &url).await.and_then(|body| sites::parse(&cfg, Site::E621, &body)) else { break };
             found.extend(chunk.iter().map(|id| (id.clone(), Map::new())));
             found.extend(slides.into_iter().filter_map(|s| Some((super::slide::id_text(&s.id), s.tag_groups?))));
-            // Stay under e621's rate limit, as the import does.
-            tokio::time::sleep(Duration::from_secs(1)).await;
         }
         let _ = tx.send(Msg::TagGroups(found));
         engine.wake();
@@ -279,8 +278,6 @@ pub fn import(engine: &Engine, tx: Sender<Msg>) {
                         break;
                     }
                 }
-                // Stay under the sites' rate limits (e621 allows about 2 requests per second).
-                tokio::time::sleep(Duration::from_secs(1)).await;
             }
             // Sites list favorites newest first; the list keeps the newest last.
             all.reverse();

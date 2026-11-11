@@ -66,11 +66,6 @@ pub fn reading_list(store: &Store) -> Vec<(String, Vec<Site>)> {
         .collect()
 }
 
-/// For each cursor, how many before it are on the same site.
-fn same_site_before(cursors: &[Cursor]) -> Vec<u32> {
-    cursors.iter().enumerate().map(|(i, c)| cursors[..i].iter().filter(|d| d.site == c.site).count() as u32).collect()
-}
-
 /// What background work tells the window.
 pub enum Msg {
     Batch(Batch),
@@ -178,21 +173,16 @@ impl Search {
         }
         self.loading = true;
         let cursors = std::mem::take(&mut self.cursors);
-        let waits = same_site_before(&cursors);
         let (cfg, text, generation, engine) = (self.cfg.clone(), self.text.clone(), self.generation, engine.clone());
         engine.rt.clone().spawn(async move {
             let tasks: Vec<_> = cursors
                 .into_iter()
-                .zip(waits)
-                .map(|(cursor, wait)| {
+                .map(|cursor| {
                     let (engine, cfg) = (engine.clone(), cfg.clone());
                     let text = cursor.query.clone().unwrap_or_else(|| text.clone());
-                    // The reading list asks one site many times: half a second apart (e621 allows two a second).
+                    // The reading list asks one site many times: each waits for the site's turn (net::turn).
                     // ponytail: the batch waits for the last one (30 e621 entries ≈ 15 s); a batch per entry if that is too slow.
-                    tokio::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_millis(500) * wait).await;
-                        fetch_page(&engine, &cfg, cursor, &text).await
-                    })
+                    tokio::spawn(async move { fetch_page(&engine, &cfg, cursor, &text).await })
                 })
                 .collect();
             let (mut cursors, mut slides, mut warnings, mut owners) = (vec![], vec![], vec![], HashMap::new());
@@ -507,7 +497,6 @@ mod tests {
         let search = Search::many(1, &reading_list(&store), &store);
         let cursors: Vec<(Site, &str)> = search.cursors.iter().map(|c| (c.site, c.query.as_deref().unwrap_or(""))).collect();
         assert_eq!(cursors, [(Site::E621, "a"), (Site::Safebooru, "a"), (Site::E621, "b")]);
-        assert_eq!(same_site_before(&search.cursors), [0, 0, 1]);
     }
 
     #[test]
