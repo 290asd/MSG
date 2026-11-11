@@ -272,18 +272,18 @@ pub enum Sort {
 }
 
 pub fn sort_method(text: &str) -> Sort {
-    const TERMS: [(&str, Sort); 4] = [
-        (r"(?:order|sort):(?:id|id_asc)\b", Sort::OldestFirst),
-        (r"(?:order|sort):id_desc\b", Sort::NewestFirst),
-        (r"(?:order|sort):(?:score|score_desc)\b", Sort::ScoreDesc),
-        (r"(?:order|sort):score_asc\b", Sort::ScoreAsc),
-    ];
-    for (pattern, sort) in TERMS {
-        if RegexBuilder::new(pattern).case_insensitive(true).build().unwrap().is_match(text) {
-            return sort;
-        }
-    }
-    Sort::NewestFirst
+    static TERMS: std::sync::LazyLock<Vec<(regex::Regex, Sort)>> = std::sync::LazyLock::new(|| {
+        [
+            (r"(?:order|sort):(?:id|id_asc)\b", Sort::OldestFirst),
+            (r"(?:order|sort):id_desc\b", Sort::NewestFirst),
+            (r"(?:order|sort):(?:score|score_desc)\b", Sort::ScoreDesc),
+            (r"(?:order|sort):score_asc\b", Sort::ScoreAsc),
+        ]
+        .into_iter()
+        .map(|(pattern, sort)| (RegexBuilder::new(pattern).case_insensitive(true).build().unwrap(), sort))
+        .collect()
+    });
+    TERMS.iter().find(|(re, _)| re.is_match(text)).map_or(Sort::NewestFirst, |(_, sort)| *sort)
 }
 
 pub fn sort_slides(slides: &mut [Slide], sort: Sort) {

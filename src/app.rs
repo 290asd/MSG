@@ -380,8 +380,8 @@ impl App {
 
     pub fn rebuild_favorites(&mut self) {
         let offline = self.flag("offlineMode", false);
-        let copies = self.copies.clone();
-        self.fav.rebuild(&|s| !offline || downloads::display_url(&copies, &s.file_url) != s.file_url);
+        let copies = &self.copies;
+        self.fav.rebuild(&|s| !offline || downloads::display_url(copies, &s.file_url) != s.file_url);
     }
 
     // ---------- the list being shown ----------
