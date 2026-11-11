@@ -651,13 +651,31 @@ impl App {
 
     /// One picture of a mosaic: on the surface colour until it has come, then fading in.
     pub fn tile(&mut self, ui: &mut egui::Ui, rect: egui::Rect, id: egui::Id, url: &str) -> egui::Response {
+        self.tile_in(ui, rect, id, url, None)
+    }
+
+    /// `veil`: while a mosaic's first screen is still coming, how far this picture has come out (0 until all of
+    /// them are here); till then it is a silhouette (see `mosaic_page`).
+    fn tile_in(&mut self, ui: &mut egui::Ui, rect: egui::Rect, id: egui::Id, url: &str, veil: Option<f32>) -> egui::Response {
         let response = ui.interact(rect, id, egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
         let ctx = ui.ctx().clone();
         let t = tok(&ctx);
-        let shown = rect;
         let url = super::downloads::display_url(&self.copies, url);
         self.media.request(&self.engine, &url);
         let ready = matches!(self.media.get(&url), Some(State::Ready(_)));
+        if let Some(out) = veil {
+            let done = ready || matches!(self.media.get(&url), Some(State::Failed(_)));
+            silhouette(ui, rect, done, 1.0 - out);
+            if let Some(State::Ready(p)) = self.media.get(&url) {
+                if out > 0.0 {
+                    // Growing a little into its place as it comes out.
+                    let shown = egui::Rect::from_center_size(rect.center(), rect.size() * (0.96 + 0.04 * out));
+                    super::app::paint_fit(ui, shown, &p.frames[0].texture, p.size, out, TILE_RADIUS as f32);
+                }
+            }
+            return response;
+        }
+        let shown = rect;
         let fade = ctx.animate_bool_with_time(id.with("in"), ready, theme::smooth());
         if fade < 1.0 {
             ui.painter().rect_filled(shown, TILE_RADIUS, t.surface);
@@ -684,7 +702,15 @@ impl App {
             let text = if favorites {
                 "No favorites to show."
             } else if self.search.as_ref().is_some_and(|s| s.loading) {
-                "Loading…"
+                // The posts are still being read: a mosaic of silhouettes that the pictures will fill.
+                const SHAPES: [f32; 8] = [1.4, 0.75, 1.0, 1.25, 0.66, 1.5, 0.9, 1.1];
+                let target = self.number("readingThumbWidth", 220.0) as f32;
+                let shapes: Vec<f32> = SHAPES.iter().cycle().take(200).copied().collect();
+                let (cells, _, _) = masonry(&shapes, rect.width() - theme::S2, target);
+                for cell in cells.iter().map(|c| c.translate(rect.min.to_vec2())).filter(|c| c.intersects(rect)) {
+                    silhouette(ui, cell, false, 1.0);
+                }
+                return;
             } else if self.reading_list && super::session::reading_list(&self.store).is_empty() {
                 "Nothing followed yet. Search for an artist or tag and press Follow."
             } else {
@@ -712,13 +738,45 @@ impl App {
                 }
             }
             let t = tok(ui.ctx());
+            let url_of = |slide: &Slide| {
+                let video = slide.media_type == MediaType::Video;
+                slide.sample_file_url.clone().filter(|u| big && !video && !u.is_empty()).unwrap_or_else(|| slide.preview_file_url.clone())
+            };
+            // The first screen comes out at once when all its pictures are here (or after a while, if some are
+            // slow): till then they are silhouettes, and those whose picture has come stand out, like a loading
+            // bar. Then they come out from the top down.
+            let ctx = ui.ctx().clone();
+            let now = ctx.input(|i| i.time);
+            let key = egui::Id::new(("mosaic reveal", self.mode as usize, generation));
+            let (since, mut reveal) = ctx.data(|d| d.get_temp::<(f64, Option<f64>)>(key)).unwrap_or((now, None));
+            if reveal.is_none() {
+                let visible: Vec<String> = cells.iter().enumerate().filter(|(_, c)| c.intersects(viewport)).map(|(n, _)| super::downloads::display_url(&self.copies, &url_of(&self.list()[n]))).collect();
+                let here = visible.iter().filter(|u| matches!(self.media.get(u), Some(State::Ready(_) | State::Failed(_)))).count();
+                if here == visible.len() || now - since > 8.0 {
+                    reveal = Some(now);
+                }
+            }
+            const WAVE: f64 = 0.35;
+            let spread = (theme::fade() as f64 / 0.14 * WAVE).min(1.0);
+            let length = spread + theme::fade() as f64;
+            let veiling = reveal.is_none_or(|at| now - at < length);
+            ctx.data_mut(|d| d.insert_temp(key, (since, reveal)));
+            if veiling {
+                ctx.request_repaint();
+            }
             for (n, cell) in cells.iter().enumerate().filter(|(_, c)| c.intersects(viewport)) {
                 let slide = self.list()[n].clone();
                 let video = slide.media_type == MediaType::Video;
-                let url = slide.sample_file_url.clone().filter(|u| big && !video && !u.is_empty()).unwrap_or_else(|| slide.preview_file_url.clone());
+                let url = url_of(&slide);
                 let tile = cell.translate(origin);
                 let id = ui.id().with(("post", n));
-                let response = self.tile(ui, tile, id, &url);
+                let veil = veiling.then(|| {
+                    let Some(at) = reveal else { return 0.0 };
+                    let delay = ((cell.top() - viewport.top()) / viewport.height().max(1.0)).clamp(0.0, 1.0) as f64 * spread;
+                    let fade = theme::fade() as f64;
+                    if fade == 0.0 { 1.0 } else { ((now - at - delay) / fade).clamp(0.0, 1.0) as f32 }
+                });
+                let response = self.tile_in(ui, tile, id, &url, veil);
                 let faved = self.fav.contains(&slide);
                 if !favorites && faved {
                     ui.painter().rect_stroke(tile, TILE_RADIUS, egui::Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
@@ -796,6 +854,25 @@ pub fn masonry(ratios: &[f32], width: f32, target: f32) -> (Vec<egui::Rect>, f32
         })
         .collect();
     (cells, heights.iter().copied().fold(0.0, f32::max) + theme::S3, column)
+}
+
+/// A picture's place before it shows: a light passing over it while it is on its way, a coral-tinged surface once
+/// it is here. `strength` fades the silhouette as the picture comes out over it.
+fn silhouette(ui: &egui::Ui, rect: egui::Rect, here: bool, strength: f32) {
+    if strength <= 0.0 {
+        return;
+    }
+    let t = tok(ui.ctx());
+    let color = if here {
+        t.surface.lerp_to_gamma(t.accent, 0.22)
+    } else {
+        // The light moves down and to the right across the whole mosaic.
+        let time = ui.input(|i| i.time) as f32;
+        let wave = 0.5 + 0.5 * (time * 2.4 - (rect.center().x + rect.center().y) * 0.004).sin();
+        t.surface.lerp_to_gamma(t.hover, wave * 0.6)
+    };
+    ui.painter().rect_filled(rect, TILE_RADIUS, color.gamma_multiply(strength));
+    ui.ctx().request_repaint();
 }
 
 /// The post's artist, where the site says who that is.
