@@ -7,6 +7,7 @@ mod favorites;
 mod files;
 mod glass;
 mod hotkeys;
+mod logo;
 mod media;
 mod net;
 mod session;
@@ -20,7 +21,7 @@ mod store;
 fn main() -> eframe::Result {
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build().expect("async runtime");
     let store = store::Store::load(files::user_data(), files::legacy_dir());
-    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../img/msg_icon_white_256.png")).ok();
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../img/msg_icon_256.png")).ok();
     let mut viewport = eframe::egui::ViewportBuilder::default().with_inner_size([1280.0, 900.0]).with_min_inner_size([640.0, 480.0]).with_title("MSG");
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);

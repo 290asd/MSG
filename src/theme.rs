@@ -365,13 +365,6 @@ pub fn drawer_row(ui: &mut egui::Ui, icon: char, label: &str, on: bool) -> egui:
     response
 }
 
-/// The app's mark, in white: painted in a colour through the tint.
-pub fn logo(ctx: &egui::Context) -> egui::TextureHandle {
-    let picture = image::load_from_memory(include_bytes!("../img/msg_icon_white_48.png")).expect("the icon is part of the program").to_rgba8();
-    let size = [picture.width() as usize, picture.height() as usize];
-    ctx.load_texture("logo", egui::ColorImage::from_rgba_unmultiplied(size, picture.as_raw()), egui::TextureOptions::LINEAR)
-}
-
 pub fn icon_font(size: f32) -> FontId {
     FontId::new(size, family("icons"))
 }

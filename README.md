@@ -1,15 +1,12 @@
 # MSG
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="img/msg_icon_white_256.png">
-  <img src="img/msg_icon_black_256.png" width="120" align="right" alt="MSG logo">
-</picture>
+<img src="img/msg_icon_256.png" width="120" align="right" alt="MSG logo">
 
 A desktop slideshow for booru sites: e621, Danbooru, Gelbooru, Rule34, Derpibooru, Tantabus and your own folders of images and videos. Search with tags, watch the results as a slideshow, keep favorites, save pools (comics), download, and use hotkeys.
 
 MSG is a native Windows program written in Rust, with its window drawn by [egui](https://github.com/emilk/egui). It is based on version 10.6 of Chirmaya's [BooruSlideshow](https://github.com/Chirmaya/BooruSlideshow) browser extension: the slideshow, the site searches and the favorites come from it, ported from JavaScript to Rust.
 
-The name: MSG, monosodium glutamate, is food additive E621. The logo (`img/msg_logo.svg`, and `img/msg_logo_small.svg` for 32 px and below) is its structural formula.
+The name: MSG, monosodium glutamate, is food additive E621. The logo (`img/msg_logo.svg`) is its molecule as a ball-and-stick model: carbon grey, oxygen coral, nitrogen lavender and the sodium ion apricot. It turns slowly in the app (Settings › Appearance › Turn the logo). `img/logo.py` draws the icon files from the same model as `src/logo.rs`.
 
 ## Features
 

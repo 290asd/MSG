@@ -1,6 +1,7 @@
 // The settings page, the saved pools page and the mosaic page.
 use super::app::{App, Mode, Tab, TOP_INSET};
 use super::hotkeys::{self, ACTIONS};
+use super::logo;
 use super::media::State;
 use super::sites::Site;
 use super::slide::{MediaType, Slide};
@@ -76,8 +77,8 @@ impl App {
             ui.vertical_centered(|ui| {
                 ui.set_max_width(ui.available_width().min(560.0));
                 ui.add_space(theme::S6 * 2.0);
-                let (logo, _) = ui.allocate_exact_size(Vec2::splat(56.0), egui::Sense::hover());
-                ui.painter().image(self.logo.id(), logo, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), t.accent);
+                let (logo, _) = ui.allocate_exact_size(Vec2::new(144.0, 96.0), egui::Sense::hover());
+                logo::paint(ui.painter(), logo, logo::angle(ui.ctx(), self.flag("spinLogo", true)), &t);
                 ui.add_space(theme::S3);
                 ui.label(RichText::new("Welcome to MSG").font(theme::semibold(24.0)));
                 if let Some(text) = &imported {
@@ -175,6 +176,7 @@ impl App {
                 self.set("animations", json!(speed));
                 theme::set_motion(ctx, speed);
             }
+            self.check(ui, "spinLogo", true, "Turn the logo");
         });
         theme::group(ui, "Front page", |ui| {
             let chosen = if self.reading_home() { 0 } else if self.hot_home() { 1 } else { 2 };
@@ -496,6 +498,8 @@ impl App {
     }
 
     fn tab_about(&mut self, ui: &mut egui::Ui) {
+        let (logo, _) = ui.allocate_exact_size(Vec2::new(240.0, 160.0), egui::Sense::hover());
+        logo::paint(ui.painter(), logo, logo::angle(ui.ctx(), self.flag("spinLogo", true)), &tok(ui.ctx()));
         ui.heading(format!("MSG {}", env!("CARGO_PKG_VERSION")));
         theme::group(ui, "", |ui| {
             ui.add_space(theme::S2);

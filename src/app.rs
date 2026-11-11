@@ -3,6 +3,7 @@
 use super::downloads::{self, Downloader};
 use super::favorites::{self, Favorites};
 use super::glass;
+use super::logo;
 use super::hotkeys::{self, Hotkeys};
 use super::theme::{self, icon, tok};
 use super::media::{self, MediaCache, State};
@@ -167,7 +168,6 @@ pub struct App {
     unfave: Option<(String, Instant)>,
     pub progress: String,
     pub recording: Option<(String, usize)>,
-    pub logo: egui::TextureHandle,
     suggest: Suggest,
     /// The reading list as it was left (and the slide it was on), so that Home is there at once.
     home_kept: Option<(Search, usize, Instant)>,
@@ -246,7 +246,6 @@ impl App {
             unfave: None,
             progress: String::new(),
             recording: None,
-            logo: theme::logo(&cc.egui_ctx),
             suggest: Suggest::default(),
             home_kept: None,
             wheel: 0.0,
@@ -1239,8 +1238,8 @@ impl App {
         let column = ui.max_rect();
         let card = egui::Rect::from_min_max(column.min + Vec2::splat(RAIL_MARGIN), egui::pos2(column.left() + RAIL_MARGIN + RAIL_W, column.bottom() - RAIL_MARGIN));
         glass::panel(ui, card, glass::bar(&ctx));
-        let logo = egui::Rect::from_center_size(egui::pos2(card.center().x, card.top() + 24.0), Vec2::splat(26.0));
-        ui.painter().image(self.logo.id(), logo, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), t.accent);
+        let logo = egui::Rect::from_center_size(egui::pos2(card.center().x, card.top() + 24.0), Vec2::new(66.0, 44.0));
+        logo::paint(ui.painter(), logo, logo::angle(&ctx, self.flag("spinLogo", true)), &t);
         let (settings, pools) = (self.show_settings, self.show_pools && !self.show_settings);
         let favorites = self.mode == Mode::Favorites && !pools && !settings;
         let items = [(icon::HOME, "Home", "home", self.on_home()), (icon::POOLS, "Pools", "openPools", pools), (icon::HEART, "Favorites", "openFavorites", favorites), (icon::SETTINGS, "Settings", "openSettings", settings)];
