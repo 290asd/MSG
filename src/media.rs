@@ -16,6 +16,8 @@ use std::time::Duration;
 // Bigger pictures are shrunk: a GPU texture has a size limit (and 8K RGBA is 130 MB).
 const MAX_SIDE: u32 = 4096;
 const MAX_GIF_FRAMES: usize = 400;
+/// All of an animation's frames together, decoded; several are decoded at once.
+const MAX_GIF_BYTES: usize = 256 << 20;
 // What has been loaded stays for the session, up to this many files and this much picture data (on the graphics card).
 const KEEP: usize = 3000;
 const KEEP_BYTES: usize = 1536 << 20;
@@ -297,13 +299,19 @@ fn decode(bytes: &[u8]) -> Result<Decoded, String> {
     let format = image::guess_format(bytes).map_err(|_| "not a picture".to_string())?;
     if format == image::ImageFormat::Gif {
         let decoder = image::codecs::gif::GifDecoder::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
-        let mut frames = vec![];
+        let (mut frames, mut size) = (vec![], 0);
+        // A long or big animation stops at the limit: every frame is kept decoded.
         for frame in decoder.into_frames().take(MAX_GIF_FRAMES) {
             let frame = frame.map_err(|e| e.to_string())?;
             let (n, d) = frame.delay().numer_denom_ms();
             // Browsers treat 0 and 10 ms as 100 ms.
             let ms = if d == 0 || n / d <= 10 { 100 } else { n / d };
-            frames.push((to_color(shrink(image::DynamicImage::ImageRgba8(frame.into_buffer()))), Duration::from_millis(ms as u64)));
+            let image = to_color(shrink(image::DynamicImage::ImageRgba8(frame.into_buffer())));
+            size += image.pixels.len() * 4;
+            if size > MAX_GIF_BYTES && !frames.is_empty() {
+                break;
+            }
+            frames.push((image, Duration::from_millis(ms as u64)));
         }
         if !frames.is_empty() {
             return Ok(Decoded::Frames(frames));
@@ -316,10 +324,7 @@ fn decode(bytes: &[u8]) -> Result<Decoded, String> {
 // The file's name is the address's hash, so nothing from the site ends up in a path.
 async fn fetch_video(engine: &Engine, url: &str) -> Result<Decoded, String> {
     let response = net::get(&engine.client, &engine.store, url, Duration::from_secs(120)).await?;
-    if response.content_length().is_some_and(|size| size > MAX_VIDEO) {
-        return Err("too big".into());
-    }
-    let bytes = response.bytes().await.map_err(|_| "network error".to_string())?;
+    let bytes = net::read_at_most(response, MAX_VIDEO).await?;
     let mut hash = DefaultHasher::new();
     url.hash(&mut hash);
     let path = video_dir().join(format!("{:x}", hash.finish()));

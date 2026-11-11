@@ -116,8 +116,26 @@ pub async fn get_text(client: &Client, store: &Store, url: &str) -> Result<Strin
     get(client, store, url, Duration::from_secs(30)).await?.text().await.map_err(describe)
 }
 
+/// The biggest picture read into memory.
+const MAX_PICTURE: u64 = 200 << 20;
+
 pub async fn get_bytes(client: &Client, store: &Store, url: &str) -> Result<Vec<u8>, String> {
-    get(client, store, url, Duration::from_secs(60)).await?.bytes().await.map(|b| b.to_vec()).map_err(describe)
+    read_at_most(get(client, store, url, Duration::from_secs(60)).await?, MAX_PICTURE).await
+}
+
+/// The body, unless it is bigger than `max` bytes (by its Content-Length or by what comes).
+pub async fn read_at_most(mut response: reqwest::Response, max: u64) -> Result<Vec<u8>, String> {
+    if response.content_length().is_some_and(|size| size > max) {
+        return Err("too big".into());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(describe)? {
+        if body.len() as u64 + chunk.len() as u64 > max {
+            return Err("too big".into());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 #[cfg(test)]
