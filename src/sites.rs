@@ -325,6 +325,14 @@ pub fn request_url(c: &Config, cursor: &Cursor, search: &str) -> Option<String> 
 /// The slides in one answer, and how many posts the answer held before filtering
 /// (fewer than the page size means the results have run out).
 pub fn parse(c: &Config, site: Site, body: &str) -> Result<(Vec<Slide>, usize), String> {
+    // Only web addresses from a site: anything else would be read as a local file or handed to mpv.
+    let web = |u: &str| crate::net::web_url(u).is_some();
+    let (mut slides, n) = parse_posts(c, site, body)?;
+    slides.retain(|s| web(&s.file_url) && [Some(&s.preview_file_url), s.sample_file_url.as_ref()].into_iter().flatten().all(|u| u.is_empty() || web(u)));
+    Ok((slides, n))
+}
+
+fn parse_posts(c: &Config, site: Site, body: &str) -> Result<(Vec<Slide>, usize), String> {
     match site {
         Site::E621 => json_posts(body, Some("posts")).map(|p| (p.iter().filter_map(|v| e621(c, v)).collect(), p.len())),
         Site::Danbooru => json_posts(body, None).map(|p| (p.iter().filter_map(|v| danbooru(c, v)).collect(), p.len())),
@@ -625,5 +633,15 @@ mod tests {
         let body = format!("<posts>{}{}</posts>", post(1, "general"), post(2, "explicit"));
         let (slides, _) = parse(&Config { safe: true, ..config() }, Site::Gelbooru, &body).unwrap();
         assert_eq!(slides.iter().map(|s| s.id.to_string()).collect::<Vec<_>>(), ["\"1\""]);
+    }
+
+    #[test]
+    fn only_web_addresses() {
+        let post = |id: u32, file: &str| format!("<post><id>{id}</id><file_url>{file}</file_url><preview_url>https://i/t.jpg</preview_url><tags>x</tags></post>");
+        let body = format!("<posts>{}{}{}</posts>", post(1, "https://i/a.jpg"), post(2, "C:/Windows/win.ini.png"), post(3, "file:///C:/a.png"));
+        let (slides, n) = parse(&config(), Site::Gelbooru, &body).unwrap();
+        assert_eq!((slides.len(), n), (1, 3));
+        let body = r#"[{"id":5,"rating":"g","file_url":"httpx:C:/a.png","preview_file_url":"/p.jpg","tag_string":"a","md5":"m"}]"#;
+        assert!(parse(&config(), Site::Danbooru, body).unwrap().0.is_empty());
     }
 }
