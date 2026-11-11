@@ -35,6 +35,10 @@ color_quant = "1.1"
 # The window's handle, for the colour of Windows' title bar. Comes with eframe anyway.
 raw-window-handle = "0.6"
 
+# build.rs: the exe's icon (img/msg_icon.ico). Needs rc.exe from the Windows SDK, which the C++ Build Tools bring.
+[build-dependencies]
+winresource = "0.1"
+
 [profile.release]
 opt-level = 3
 lto = true
