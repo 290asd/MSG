@@ -148,6 +148,8 @@ pub struct App {
     pub show_tags: bool,
     pub show_controls: bool,
     pub show_settings: bool,
+    /// The welcome page of the first start, over everything until it is closed.
+    pub onboarding: bool,
     pub tab: Tab,
     pub show_pools: bool,
     /// The mosaic page over the slideshow, and whether `search` is the reading list's.
@@ -165,7 +167,7 @@ pub struct App {
     unfave: Option<(String, Instant)>,
     pub progress: String,
     pub recording: Option<(String, usize)>,
-    logo: egui::TextureHandle,
+    pub logo: egui::TextureHandle,
     suggest: Suggest,
     /// The reading list as it was left (and the slide it was on), so that Home is there at once.
     home_kept: Option<(Search, usize, Instant)>,
@@ -205,6 +207,8 @@ impl App {
         let ctx = cc.egui_ctx.clone();
         let engine = Engine { rt: rt.handle().clone(), client: super::net::client(), store: store.clone(), wake: Arc::new(move || ctx.request_repaint()) };
         let downloader = Downloader::new(engine.clone(), tx.clone());
+        // A test run with a search goes straight to it.
+        let onboarding = store.first_run && std::env::var_os("MSG_SEARCH").is_none();
         let mut app = App {
             rt,
             engine,
@@ -229,6 +233,7 @@ impl App {
             show_tags: false,
             show_controls: true,
             show_settings: false,
+            onboarding,
             tab: Tab::Appearance,
             show_pools: false,
             show_mosaic: false,
@@ -863,7 +868,7 @@ impl App {
     }
 
     fn handle_keys(&mut self, ctx: &egui::Context) {
-        if self.recording.is_some() {
+        if self.recording.is_some() || self.onboarding {
             return;
         }
         let (events, wants_text) = (ctx.input(|i| i.events.clone()), ctx.egui_wants_keyboard_input());
@@ -2071,6 +2076,15 @@ impl eframe::App for App {
         self.preload();
 
         self.ambient(ui, ctx.content_rect());
+        if self.onboarding {
+            if ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
+                self.onboarding = false;
+            }
+            egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| self.onboarding_page(ui));
+            self.test_hook(&ctx);
+            self.test_script(&ctx);
+            return;
+        }
         // The pages have the rail, and a toolbar over them (settings over pools over the mosaic; Back returns there).
         if self.covered() || self.current().is_none() {
             egui::Panel::left("rail").exact_size(RAIL_SPACE).resizable(false).show_separator_line(false).frame(egui::Frame::NONE).show(ui, |ui| self.rail(ui));

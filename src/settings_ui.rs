@@ -57,6 +57,53 @@ impl App {
         rfd::FileDialog::new().set_title(title).pick_folder().map(|p| p.to_string_lossy().into_owned())
     }
 
+    /// The welcome page of the first start: the basics in a few lines, and whether the BooruSlideshow settings came along.
+    pub fn onboarding_page(&mut self, ui: &mut egui::Ui) {
+        let t = tok(ui.ctx());
+        let keys = |id: &str| self.hotkeys.map.get(id).map(|codes| codes.iter().map(|&c| hotkeys::label(c)).collect::<Vec<_>>().join(" / ")).unwrap_or_default();
+        let basics = [
+            ("Home", "The newest posts of the searches you follow. Search for a tag and press ☆ Follow to add it.".to_string()),
+            ("Search", "Type tags in the bar at the top. Suggestions come as you type; Enter takes one.".to_string()),
+            ("Mosaic and slideshow", "Click a picture to open it. Enter or Space starts the slideshow, Esc goes back.".to_string()),
+            ("In the slideshow", format!(
+                "{} and {} change the picture, so does the wheel. {} plays or pauses, {} faves, {} shows the tags. The rest is in the drawer at the left edge.",
+                keys("previous"), keys("next"), keys("playPause"), keys("favorite"), keys("toggleTags"),
+            )),
+            ("Settings", "Sites and accounts, hotkeys, filters and the look are behind the gear in the rail.".to_string()),
+        ];
+        let imported = self.store.imported.then(|| format!("Your BooruSlideshow settings and {} favorites were brought over.", self.fav.items.len()));
+        egui::ScrollArea::vertical().id_salt("onboarding").auto_shrink(false).show(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.set_max_width(ui.available_width().min(560.0));
+                ui.add_space(theme::S6 * 2.0);
+                let (logo, _) = ui.allocate_exact_size(Vec2::splat(56.0), egui::Sense::hover());
+                ui.painter().image(self.logo.id(), logo, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), t.accent);
+                ui.add_space(theme::S3);
+                ui.label(RichText::new("Welcome to MSG").font(theme::semibold(24.0)));
+                if let Some(text) = &imported {
+                    ui.add_space(theme::S2);
+                    ui.label(RichText::new(text).color(t.accent));
+                }
+                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                    theme::group(ui, "", |ui| {
+                        for (title, text) in &basics {
+                            ui.add_space(10.0);
+                            ui.label(RichText::new(*title).font(theme::medium(14.0)));
+                            ui.label(RichText::new(text).color(t.text2));
+                            ui.add_space(10.0);
+                        }
+                    });
+                });
+                ui.add_space(theme::S6);
+                let start = egui::Button::new(RichText::new("Get started").font(theme::medium(15.0)).color(t.base)).fill(t.accent).min_size(Vec2::new(160.0, 40.0));
+                if ui.add(start).clicked() {
+                    self.onboarding = false;
+                }
+                ui.add_space(theme::S6);
+            });
+        });
+    }
+
     /// The settings as a page that fills the window: the sections on glass at the left, the chosen one beside them.
     pub fn settings_page(&mut self, ui: &mut egui::Ui) {
         const LIST_W: f32 = 212.0;

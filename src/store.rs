@@ -11,6 +11,10 @@ pub struct Store {
     pub data: Mutex<Map<String, Value>>,
     file: PathBuf,
     pending: AtomicBool,
+    /// No settings.json of MSG's own was found at start (the onboarding page is shown).
+    pub first_run: bool,
+    /// On the first run, the old BooruSlideshow settings were found and copied over.
+    pub imported: bool,
 }
 
 impl Store {
@@ -18,11 +22,14 @@ impl Store {
     /// `legacy_dir` is the folder used before the rename to MSG; its settings.json is copied over on the first start.
     pub fn load(dir: PathBuf, legacy_dir: PathBuf) -> Arc<Store> {
         let file = dir.join("settings.json");
-        let (data, fresh) = match read_json(&file) {
-            Some(data) => (data, false),
-            None => (read_json(&legacy_dir.join("settings.json")).unwrap_or_default(), true),
+        let (data, fresh, imported) = match read_json(&file) {
+            Some(data) => (data, false, false),
+            None => match read_json(&legacy_dir.join("settings.json")) {
+                Some(data) => (data, true, true),
+                None => (Map::new(), true, false),
+            },
         };
-        let store = Arc::new(Store { data: Mutex::new(data), file, pending: AtomicBool::new(false) });
+        let store = Arc::new(Store { data: Mutex::new(data), file, pending: AtomicBool::new(false), first_run: fresh, imported });
         if fresh {
             store.save();
         }
