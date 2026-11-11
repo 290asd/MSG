@@ -41,8 +41,6 @@ pub fn config(store: &Store) -> Config {
         blacklist: text("blacklist").split_whitespace().map(String::from).collect(),
         derpibooru_key: text("derpibooruApiKey"),
         tantabus_key: text("tantabusApiKey"),
-        e621_login: text("e621Login"),
-        e621_key: text("e621ApiKey"),
         gelbooru_user: text("gelbUserId"),
         gelbooru_key: text("gelbApiKey"),
         rule34_user: text("rule34UserId"),
@@ -296,7 +294,7 @@ async fn fetch_page(engine: &Engine, cfg: &Config, mut cursor: Cursor, text: &st
     }
     if site == Site::E621 && cursor.pool.is_none() {
         if let Some(id) = sites::pool_id(text) {
-            match net::get_text(&engine.client, &engine.store, &sites::pool_url(cfg, id)).await {
+            match net::get_text(&engine.client, &engine.store, &sites::pool_url(id)).await {
                 Ok(body) => match parse_pool(&body) {
                     Some(pool) => cursor.pool = Some(pool),
                     None => {

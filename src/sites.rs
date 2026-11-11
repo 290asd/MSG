@@ -99,8 +99,6 @@ pub struct Config {
     pub blacklist: HashSet<String>,
     pub derpibooru_key: String,
     pub tantabus_key: String,
-    pub e621_login: String,
-    pub e621_key: String,
     pub gelbooru_user: String,
     pub gelbooru_key: String,
     pub rule34_user: String,
@@ -274,16 +272,9 @@ pub fn pool_id(search: &str) -> Option<u64> {
     re.captures(search.trim())?.get(1)?.as_str().parse().ok()
 }
 
-fn e621_login(c: &Config) -> String {
-    if !c.e621_login.is_empty() && !c.e621_key.is_empty() {
-        format!("&login={}&api_key={}", enc(&c.e621_login), enc(&c.e621_key))
-    } else {
-        String::new()
-    }
-}
-
-pub fn pool_url(c: &Config, id: u64) -> String {
-    format!("https://e621.net/pools/{id}.json{}", e621_login(c).replacen('&', "?", 1))
+// e621's login goes as basic auth (net::get), not in the address.
+pub fn pool_url(id: u64) -> String {
+    format!("https://e621.net/pools/{id}.json")
 }
 
 /// The address of the next page of results, or None when there is nothing to ask a server (own folders).
@@ -297,9 +288,9 @@ pub fn request_url(c: &Config, cursor: &Cursor, search: &str) -> Option<String> 
         Site::E621 => {
             if let Some(pool) = &cursor.pool {
                 let ids: Vec<String> = pool.post_ids.iter().skip(cursor.page * limit).take(limit).map(|i| i.to_string()).collect();
-                format!("{base}/posts.json?tags=id:{}&limit={limit}{}", ids.join(","), e621_login(c))
+                format!("{base}/posts.json?tags=id:{}&limit={limit}", ids.join(","))
             } else {
-                format!("{base}/posts.json?tags={query}&page={page}&limit={limit}{}", e621_login(c))
+                format!("{base}/posts.json?tags={query}&page={page}&limit={limit}")
             }
         }
         Site::Danbooru => format!("{base}/posts.json?tags={query}&page={page}&limit={limit}"),

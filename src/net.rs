@@ -91,6 +91,12 @@ pub async fn get(client: &Client, store: &Store, url: &str, timeout: Duration) -
     if let Some(referer) = referer_for(&url) {
         request = request.header(header::REFERER, referer);
     }
+    // e621's login as basic auth: reqwest drops the header on a redirect to another host, unlike a key in the address.
+    if url.host_str() == Some("e621.net") {
+        if let (Some(login), Some(key)) = (store.string("e621Login"), store.string("e621ApiKey")) {
+            request = request.basic_auth(login, Some(key));
+        }
+    }
     let response = request.send().await.map_err(describe)?;
     let status = response.status();
     if !status.is_success() {
