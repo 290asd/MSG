@@ -1,16 +1,20 @@
 // Everything chrome.storage.sync/local held in the extension lives in one JSON file (settings.json).
-// The file holds the favorites too (several MB), so writes are grouped: at most one every 300 ms, off the
+// The file holds the favorites too (several MB), so writes are grouped: one when the changes stop for 300 ms, off the
 // main thread, to a temporary file first so a crash mid-write can't corrupt it.
 use serde_json::{Map, Value};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub struct Store {
     pub data: Mutex<Map<String, Value>>,
     file: PathBuf,
     pending: AtomicBool,
+    // The last change, so a write waits till the changes stop (a slider being dragged is written once).
+    changed: Mutex<Instant>,
+    // One write at a time, the newest last.
+    writing: Mutex<()>,
     /// No settings.json of MSG's own was found at start (the onboarding page is shown).
     pub first_run: bool,
     /// On the first run, the old BooruSlideshow settings were found and copied over.
@@ -56,30 +60,52 @@ impl Store {
             }
             Err(e) => return Err(format!("{} can't be read ({e}).", file.display())),
         };
-        let store = Arc::new(Store { data: Mutex::new(data), file, pending: AtomicBool::new(false), first_run: fresh, imported, broken, _lock: lock });
+        let store = Arc::new(Store {
+            data: Mutex::new(data),
+            file,
+            pending: AtomicBool::new(false),
+            changed: Mutex::new(Instant::now()),
+            writing: Mutex::new(()),
+            first_run: fresh,
+            imported,
+            broken,
+            _lock: lock,
+        });
         if fresh {
             store.save();
         }
         Ok(store)
     }
 
+    /// Writes the file once nothing has changed for 300 ms.
     pub fn save(self: &Arc<Self>) {
+        const QUIET: Duration = Duration::from_millis(300);
+        *self.changed.lock().unwrap() = Instant::now();
         if self.pending.swap(true, Ordering::SeqCst) {
             return;
         }
         let store = Arc::clone(self);
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(300));
+            loop {
+                let quiet = store.changed.lock().unwrap().elapsed();
+                if quiet >= QUIET {
+                    break;
+                }
+                std::thread::sleep(QUIET - quiet);
+            }
             store.flush();
         });
     }
 
     /// Writes right away if a write is waiting; also called on quit.
     pub fn flush(&self) {
+        let _writing = self.writing.lock().unwrap();
         if !self.pending.swap(false, Ordering::SeqCst) {
             return;
         }
-        let json = serde_json::to_vec(&*self.data.lock().unwrap()).unwrap_or_default();
+        // A copy is quicker than the JSON, so the window waits for the lock only that long.
+        let data = self.data.lock().unwrap().clone();
+        let json = serde_json::to_vec(&data).unwrap_or_default();
         if let Some(dir) = self.file.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
