@@ -21,6 +21,7 @@ pub mod icon {
     pub const HOME: char = '\u{e0f5}';
     pub const MOSAIC: char = '\u{e0ff}';
     pub const SAVED: char = '\u{e060}';
+    pub const HOT: char = '\u{e0d2}';
     pub const SLIDESHOW: char = '\u{e080}';
     pub const PLAY: char = '\u{e13c}';
     pub const PAUSE: char = '\u{e12e}';

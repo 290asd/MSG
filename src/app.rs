@@ -8,7 +8,7 @@ use super::theme::{self, icon, tok};
 use super::media::{self, MediaCache, State};
 use super::session::{self, Engine, Msg, Search};
 use super::settings_ui::masonry;
-use super::sites::Site;
+use super::sites::{self, Site};
 use super::video::Player;
 use super::slide::{MediaType, Slide};
 use crate::store::Store;
@@ -39,6 +39,10 @@ const RAIL_SPACE: f32 = RAIL_W + RAIL_MARGIN * 2.0;
 pub const TOP_INSET: f32 = 60.0;
 /// How long the reading list is kept to come back to, before Home reads it again.
 const HOME_KEEP: Duration = Duration::from_secs(600);
+/// The Hottest front page's search, the period after it (`sites::site_query` makes it each site's age filter).
+const HOT_QUERY: &str = "order:score hot:";
+/// The front page's forms in the order of the switch and the setting.
+pub const FRONT_PAGES: [&str; 3] = ["reading", "hot", "search"];
 /// How long typing has to pause before the sites are asked for tags.
 const SUGGEST_WAIT: Duration = Duration::from_millis(180);
 
@@ -285,6 +289,8 @@ impl App {
             app.start_search(&text);
         } else if app.reading_home() {
             app.open_reading();
+        } else if app.hot_home() {
+            app.open_hot();
         }
         app.here = app.screen();
         app
@@ -315,7 +321,17 @@ impl App {
 
     /// The front page is the reading list's mosaic, unless the quick search cards were chosen.
     pub fn reading_home(&self) -> bool {
-        self.text("frontPage") != "search"
+        !matches!(self.text("frontPage").as_str(), "search" | "hot")
+    }
+
+    /// The front page is the hottest posts of the chosen time (`hotPeriod`).
+    pub fn hot_home(&self) -> bool {
+        self.text("frontPage") == "hot"
+    }
+
+    /// The Hottest front page is the page on top.
+    pub fn on_hot(&self) -> bool {
+        self.on_mosaic() && self.mode == Mode::Slideshow && self.search.as_ref().is_some_and(|s| s.text.starts_with(HOT_QUERY))
     }
 
     /// Searches open as a mosaic, not straight as a slideshow.
@@ -401,7 +417,7 @@ impl App {
 
     /// The front page is showing, in either of its forms.
     pub fn on_home(&self) -> bool {
-        self.on_reading() || (!self.covered() && self.mode == Mode::Slideshow && self.search.is_none())
+        self.on_reading() || self.on_hot() || (!self.covered() && self.mode == Mode::Slideshow && self.search.is_none())
     }
 
     /// From the mosaic to the slideshow, running from the first post.
@@ -501,6 +517,37 @@ impl App {
             history.drain(..extra);
             self.set("searchHistory", Value::Array(history));
         }
+        self.load_more();
+    }
+
+    /// The Hottest front page: the best scored posts of the chosen time on the ticked sites that can search by age.
+    /// Not saved in the history.
+    pub fn open_hot(&mut self) {
+        let period = match self.text("hotPeriod").as_str() {
+            p @ ("day" | "month" | "year") => p.to_string(),
+            _ => "week".to_string(),
+        };
+        let text = format!("{HOT_QUERY}{period}");
+        self.mode = Mode::Slideshow;
+        self.show_pools = false;
+        self.show_settings = false;
+        self.show_mosaic = true;
+        if self.on_hot() && self.search.as_ref().is_some_and(|s| s.text == text) {
+            return;
+        }
+        let sites: Vec<Site> = session::ticked_sites(&self.store).into_iter().filter(|s| sites::hot_supported(*s)).collect();
+        if sites.is_empty() {
+            self.notice("Hottest needs e621, Danbooru, Konachan, Yande.re, Derpibooru or Tantabus ticked (Sites ▾).");
+            return;
+        }
+        self.generation += 1;
+        self.close_search_list();
+        self.query.clear();
+        self.set_aside_search();
+        self.search = Some(Search::new(self.generation, &text, sites, &self.store));
+        self.reading_list = false;
+        self.cur[Mode::Slideshow as usize] = 0;
+        self.shown_at = None;
         self.load_more();
     }
 
@@ -786,6 +833,7 @@ impl App {
                 self.reading_list = false;
                 self.open_reading();
             }
+            "home" if self.hot_home() => self.open_hot(),
             "home" => {
                 self.mode = Mode::Slideshow;
                 self.set_aside_search();
@@ -992,10 +1040,11 @@ impl App {
 
     /// The two forms of the front page; the choice is the Front page setting.
     fn home_switch(&mut self, ui: &mut egui::Ui) {
-        let chosen = if self.on_reading() { 0 } else { 1 };
-        if let Some(n) = theme::segmented(ui, &if self.compact(ui) { [(icon::MOSAIC, ""), (icon::SAVED, "")] } else { [(icon::MOSAIC, "Mosaic"), (icon::SAVED, "Saved searches")] }, chosen) {
+        let chosen = if self.on_reading() { 0 } else if self.on_hot() { 1 } else { 2 };
+        let names = if self.compact(ui) { [(icon::MOSAIC, ""), (icon::HOT, ""), (icon::SAVED, "")] } else { [(icon::MOSAIC, "Mosaic"), (icon::HOT, "Hottest"), (icon::SAVED, "Saved searches")] };
+        if let Some(n) = theme::segmented(ui, &names, chosen) {
             if n != chosen {
-                self.set("frontPage", json!(if n == 0 { "reading" } else { "search" }));
+                self.set("frontPage", json!(FRONT_PAGES[n]));
                 self.act(&ui.ctx().clone(), "home");
             }
         }
@@ -1008,7 +1057,7 @@ impl App {
                 let cover = self.search.as_ref().and_then(|s| s.slides.first().map(|x| x.preview_file_url.clone())).unwrap_or_default();
                 self.save_pool(pool.0, pool.1, pool.2, cover);
             }
-        } else if let Some(tags) = self.search.as_ref().map(|s| s.text.clone()).filter(|t| !t.is_empty() && !self.reading_list) {
+        } else if let Some(tags) = self.search.as_ref().map(|s| s.text.clone()).filter(|t| !t.is_empty() && !self.reading_list && !t.starts_with(HOT_QUERY)) {
             let following = session::reading_list(&self.store).iter().any(|(t, _)| *t == tags);
             let word = if self.compact(ui) { "" } else if following { "Following" } else { "Follow" };
             let text = (theme::glyph(if following { icon::FOLLOWING } else { icon::FOLLOW }, 14.0), word);

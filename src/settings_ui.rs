@@ -130,9 +130,14 @@ impl App {
             }
         });
         theme::group(ui, "Front page", |ui| {
-            let reading = self.reading_home();
-            if let Some(n) = theme::row(ui, "Show", |ui| theme::choice(ui, &["Mosaic", "Saved searches"], if reading { 0 } else { 1 })) {
-                self.set("frontPage", json!(if n == 0 { "reading" } else { "search" }));
+            let chosen = if self.reading_home() { 0 } else if self.hot_home() { 1 } else { 2 };
+            if let Some(n) = theme::row(ui, "Show", |ui| theme::choice(ui, &["Mosaic", "Hottest", "Saved searches"], chosen)) {
+                self.set("frontPage", json!(super::app::FRONT_PAGES[n]));
+            }
+            let periods = ["day", "week", "month", "year"];
+            let chosen = periods.iter().position(|p| *p == self.text("hotPeriod")).unwrap_or(1);
+            if let Some(n) = theme::row(ui, "Hottest of the last", |ui| theme::choice(ui, &["Day", "Week", "Month", "Year"], chosen)) {
+                self.set("hotPeriod", json!(periods[n]));
             }
             self.check(ui, "quickCards", true, "Saved searches on the front page");
             let mut limit = self.auto_follow_limit();

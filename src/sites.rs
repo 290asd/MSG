@@ -1,7 +1,7 @@
 // The booru sites: the URL of a page of results and how each site's answer becomes slides.
 // Ported from the browser extension's site managers (JavaScript). Realbooru (an HTML scraper) is left out.
 use super::slide::{iso_date, id_text, MediaType, Slide};
-use regex::RegexBuilder;
+use regex::{Regex, RegexBuilder};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
 
@@ -195,12 +195,34 @@ pub fn site_query(site: Site, text: &str) -> String {
         Site::Rule34 | Site::Safebooru => RULE34_TERMS,
         Site::Local => &[],
     };
-    let mut query = text.trim().to_string();
+    let mut query = hot_query(site, text.trim());
     for (pattern, replacement) in terms {
         let re = RegexBuilder::new(pattern).case_insensitive(true).build().expect("term pattern");
         query = re.replace(&query, *replacement).into_owned();
     }
     query.trim().to_string()
+}
+
+/// The sites that can search by age, so they can show the hottest posts (the others would give the best of all time).
+pub fn hot_supported(site: Site) -> bool {
+    matches!(site, Site::E621 | Site::Danbooru | Site::Konachan | Site::Yandere | Site::Derpibooru | Site::Tantabus)
+}
+
+/// `hot:day|week|month|year` (the Hottest front page) as the site's own age filter.
+fn hot_query(site: Site, text: &str) -> String {
+    let re = Regex::new(r"(?i)\bhot:(day|week|month|year)\b").expect("hot pattern");
+    re.replace(text, |c: &regex::Captures| {
+        let period = c[1].to_lowercase();
+        let days = match period.as_str() { "day" => 1, "week" => 7, "month" => 30, _ => 365 };
+        match site {
+            Site::E621 => format!("date:{period}"),
+            Site::Danbooru => format!("age:<{}", match period.as_str() { "day" => "1d", "week" => "1w", "month" => "1mo", _ => "1y" }),
+            Site::Konachan | Site::Yandere => format!("date:>={}", (chrono::Local::now() - chrono::Duration::days(days)).format("%Y-%m-%d")),
+            Site::Derpibooru | Site::Tantabus => format!("created_at.gte:{days} days ago"),
+            _ => String::new(),
+        }
+    })
+    .into_owned()
 }
 
 // Philomena wants commas between the tags and spaces inside them, except in these fields.
@@ -521,6 +543,13 @@ fn dapi(c: &Config, site: Site, body: &str) -> Result<(Vec<Slide>, usize), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hot_terms_become_age_filters() {
+        assert_eq!(site_query(Site::E621, "order:score hot:week"), "order:score date:week");
+        assert_eq!(site_query(Site::Danbooru, "order:score hot:month"), "order:score age:<1mo");
+        assert_eq!(site_query(Site::Rule34, "order:score hot:day"), "sort:score");
+    }
 
     #[test]
     fn tag_suggestions_of_every_kind_of_answer() {
