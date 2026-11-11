@@ -72,7 +72,10 @@ impl App {
             )),
             ("Settings", "Sites and accounts, hotkeys, filters and the look are behind the gear in the rail.".to_string()),
         ];
-        let imported = self.store.imported.then(|| format!("Your BooruSlideshow settings and {} favorites were brought over.", self.fav.items.len()));
+        let imported = match &self.store.broken {
+            Some(aside) => Some(format!("settings.json couldn't be read, so MSG started empty. The old file is kept as {}.", aside.display())),
+            None => self.store.imported.then(|| format!("Your BooruSlideshow settings and {} favorites were brought over.", self.fav.items.len())),
+        };
         egui::ScrollArea::vertical().id_salt("onboarding").auto_shrink(false).show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.set_max_width(ui.available_width().min(560.0));

@@ -15,6 +15,8 @@ pub struct Store {
     pub first_run: bool,
     /// On the first run, the old BooruSlideshow settings were found and copied over.
     pub imported: bool,
+    /// settings.json couldn't be read, so it was moved here and MSG started empty.
+    pub broken: Option<PathBuf>,
 }
 
 impl Store {
@@ -22,14 +24,30 @@ impl Store {
     /// `legacy_dir` is the folder used before the rename to MSG; its settings.json is copied over on the first start.
     pub fn load(dir: PathBuf, legacy_dir: PathBuf) -> Arc<Store> {
         let file = dir.join("settings.json");
-        let (data, fresh, imported) = match read_json(&file) {
-            Some(data) => (data, false, false),
-            None => match read_json(&legacy_dir.join("settings.json")) {
-                Some(data) => (data, true, true),
-                None => (Map::new(), true, false),
+        let mut broken = None;
+        let (data, fresh, imported) = match std::fs::read(&file) {
+            Ok(bytes) => match parse(&bytes) {
+                Some(data) => (data, false, false),
+                // A file that can't be read is never written over: it is put aside and MSG starts empty.
+                None => {
+                    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+                    let aside = dir.join(format!("settings.broken-{secs}.json"));
+                    if let Err(e) = std::fs::rename(&file, &aside) {
+                        panic!("{} can't be read and couldn't be put aside ({e}). Fix or move it by hand.", file.display());
+                    }
+                    broken = Some(aside);
+                    (Map::new(), true, false)
+                }
             },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                match std::fs::read(legacy_dir.join("settings.json")).ok().and_then(|b| parse(&b)) {
+                    Some(data) => (data, true, true),
+                    None => (Map::new(), true, false),
+                }
+            }
+            Err(e) => panic!("{} can't be read ({e}).", file.display()),
         };
-        let store = Arc::new(Store { data: Mutex::new(data), file, pending: AtomicBool::new(false), first_run: fresh, imported });
+        let store = Arc::new(Store { data: Mutex::new(data), file, pending: AtomicBool::new(false), first_run: fresh, imported, broken });
         if fresh {
             store.save();
         }
@@ -57,10 +75,13 @@ impl Store {
             let _ = std::fs::create_dir_all(dir);
         }
         let tmp = self.file.with_extension("json.tmp");
-        if std::fs::write(&tmp, json).is_ok() {
-            if let Err(e) = std::fs::rename(&tmp, &self.file) {
-                eprintln!("Saving the settings failed: {e}");
-            }
+        // sync_all before the rename, or a power cut can leave an empty settings.json behind.
+        let written = std::fs::File::create(&tmp).and_then(|mut f| {
+            std::io::Write::write_all(&mut f, &json)?;
+            f.sync_all()
+        });
+        if let Err(e) = written.and_then(|_| std::fs::rename(&tmp, &self.file)) {
+            eprintln!("Saving the settings failed: {e}");
         }
     }
 
@@ -80,8 +101,8 @@ impl Store {
     }
 }
 
-fn read_json(file: &std::path::Path) -> Option<Map<String, Value>> {
-    match serde_json::from_slice(&std::fs::read(file).ok()?).ok()? {
+fn parse(bytes: &[u8]) -> Option<Map<String, Value>> {
+    match serde_json::from_slice(bytes).ok()? {
         Value::Object(map) => Some(map),
         _ => None,
     }
@@ -95,5 +116,21 @@ mod tests {
         let text = r#"{"b":1,"a":{"z":1,"y":2}}"#;
         let value: serde_json::Value = serde_json::from_str(text).unwrap();
         assert_eq!(serde_json::to_string(&value).unwrap(), text);
+    }
+
+    // A settings.json that doesn't parse is put aside, never written over.
+    #[test]
+    fn keeps_a_broken_file() {
+        let dir = std::env::temp_dir().join("msg-native-broken");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("settings.json"), b"{\"favorites\": [1, 2").unwrap();
+        let store = super::Store::load(dir.clone(), dir.join("none"));
+        let aside = store.broken.clone().expect("put aside");
+        assert_eq!(std::fs::read(&aside).unwrap(), b"{\"favorites\": [1, 2");
+        assert!(store.first_run);
+        store.flush();
+        assert_eq!(std::fs::read(dir.join("settings.json")).unwrap(), b"{}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
