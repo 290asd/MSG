@@ -36,16 +36,23 @@ pub const BEST: f32 = 0.6;
 /// The model is tipped towards the viewer, so that the turn shows depth.
 const TILT: f32 = 0.45;
 
-/// The angle to draw now. The logo turns 20 frames a second, only while `spin` is on, animations are on and the window
-/// is active; otherwise it stands at `BEST`. Any number of callers a frame is fine.
-pub fn angle(ctx: &egui::Context, spin: bool) -> f32 {
-    let (focused, time) = ctx.input(|i| (i.viewport().focused.unwrap_or(true), i.time));
-    if spin && focused && theme::fade() > 0.0 {
-        ctx.request_repaint_after(Duration::from_millis(50));
-        BEST + time as f32 * 0.5
-    } else {
-        BEST
+/// The angle to draw now. With `spin` (the setting) on, animations on and the window active, the logo turns 20 frames
+/// a second while `moving` (the rail: while the pointer is over it, as each turn repaints the whole window) and
+/// stays where it was otherwise; with `spin` off it stands at `BEST`. Any number of callers a frame is fine.
+pub fn angle(ctx: &egui::Context, spin: bool, moving: bool) -> f32 {
+    if !spin || theme::fade() == 0.0 {
+        return BEST;
     }
+    let (focused, time) = ctx.input(|i| (i.viewport().focused.unwrap_or(true), i.time));
+    let id = egui::Id::new("logo angle");
+    let (last, mut angle) = ctx.data(|d| d.get_temp::<(f64, f32)>(id)).unwrap_or((time, BEST));
+    if moving && focused {
+        // A long gap (the window was inactive) doesn't jump.
+        angle += (time - last).clamp(0.0, 0.1) as f32 * 0.5;
+        ctx.request_repaint_after(Duration::from_millis(50));
+    }
+    ctx.data_mut(|d| d.insert_temp(id, (time, angle)));
+    angle
 }
 
 /// Paints the model turned by `angle` into `rect`, the atoms in the theme's colours.

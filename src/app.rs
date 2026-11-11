@@ -1239,7 +1239,7 @@ impl App {
         let card = egui::Rect::from_min_max(column.min + Vec2::splat(RAIL_MARGIN), egui::pos2(column.left() + RAIL_MARGIN + RAIL_W, column.bottom() - RAIL_MARGIN));
         glass::panel(ui, card, glass::bar(&ctx));
         let logo = egui::Rect::from_center_size(egui::pos2(card.center().x, card.top() + 24.0), Vec2::new(66.0, 44.0));
-        logo::paint(ui.painter(), logo, logo::angle(&ctx, self.flag("spinLogo", true)), &t);
+        logo::paint(ui.painter(), logo, logo::angle(&ctx, self.flag("spinLogo", true), ui.rect_contains_pointer(card)), &t);
         let (settings, pools) = (self.show_settings, self.show_pools && !self.show_settings);
         let favorites = self.mode == Mode::Favorites && !pools && !settings;
         let items = [(icon::HOME, "Home", "home", self.on_home()), (icon::POOLS, "Pools", "openPools", pools), (icon::HEART, "Favorites", "openFavorites", favorites), (icon::SETTINGS, "Settings", "openSettings", settings)];
