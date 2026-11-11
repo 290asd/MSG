@@ -876,8 +876,14 @@ impl App {
         for action in self.hotkeys.pressed(&events, wants_text, mouse) {
             self.act(ctx, action);
         }
-        // Fixed keys: Enter also plays and pauses, F11 is fullscreen, Esc goes back, 1–0 are the quick searches.
+        // Fixed keys: Enter also plays and pauses, F11 is fullscreen, Esc and mouse back go back, 1–0 are the quick searches.
         for event in &events {
+            // Mouse back as in a browser, unless the user bound it to something.
+            if let egui::Event::PointerButton { button: egui::PointerButton::Extra1, pressed: true, modifiers, .. } = event {
+                if !modifiers.any() && !self.hotkeys.map.values().any(|c| c.contains(&203)) {
+                    self.act(ctx, "back");
+                }
+            }
             if let egui::Event::Key { key, pressed: true, repeat: false, modifiers, .. } = event {
                 match key {
                     egui::Key::F11 => {
