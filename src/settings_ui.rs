@@ -739,8 +739,17 @@ impl App {
                 if let Some(cell) = cells.get(self.idx()) {
                     let top = egui::Rect::from_min_size(egui::pos2(cell.left(), cell.center().y - rect.height() / 3.0), Vec2::new(1.0, 1.0));
                     ui.scroll_to_rect_animation(top.translate(origin), Some(egui::Align::Min), egui::style::ScrollAnimation::none());
+                    let now = ui.input(|i| i.time);
+                    let idx = self.idx();
+                    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("mosaic flash"), (idx, now)));
                 }
             }
+            // The post the slideshow was on flashes twice, so the eye finds where it was.
+            const FLASH: f64 = 1.8;
+            let flash = ui.ctx().data(|d| d.get_temp::<(usize, f64)>(egui::Id::new("mosaic flash"))).and_then(|(n, at)| {
+                let p = (ui.input(|i| i.time) - at) / FLASH;
+                (p < 1.0).then_some((n, p as f32))
+            });
             let t = tok(ui.ctx());
             let url_of = |slide: &Slide| {
                 let video = slide.media_type == MediaType::Video;
@@ -784,6 +793,13 @@ impl App {
                 let faved = self.fav.contains(&slide);
                 if !favorites && faved {
                     ui.painter().rect_stroke(tile, TILE_RADIUS, egui::Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
+                }
+                if let Some((_, p)) = flash.filter(|(f, _)| *f == n) {
+                    let pulse = (p * 2.0 * std::f32::consts::TAU).cos() * -0.5 + 0.5;
+                    let fade = 1.0 - p;
+                    ui.painter().rect_filled(tile, TILE_RADIUS, egui::Color32::WHITE.gamma_multiply(0.35 * pulse * fade));
+                    ui.painter().rect_stroke(tile, TILE_RADIUS, egui::Stroke::new(3.0, t.accent.gamma_multiply(fade)), egui::StrokeKind::Inside);
+                    ui.ctx().request_repaint();
                 }
                 if video {
                     theme::badge(ui, egui::Rect::from_min_size(tile.min + Vec2::splat(6.0), Vec2::splat(24.0)), theme::glyph_text(icon::PLAY), theme::icon_font(12.0), egui::Color32::WHITE);
