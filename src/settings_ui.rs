@@ -566,9 +566,6 @@ impl App {
 
     /// The mosaic's part of the top bar, right to left (see top_bar); the search or favorites bar comes after it.
     pub fn mosaic_bar(&mut self, ui: &mut egui::Ui) {
-        if self.mode != Mode::Favorites && ui.add_enabled(!self.list().is_empty(), egui::Button::new((theme::glyph(icon::PLAY, 14.0), if self.compact(ui) { "" } else { "Slideshow" }))).clicked() {
-            self.start_slideshow();
-        }
         if self.on_reading() {
             let list = super::session::reading_list(&self.store);
             let mut remove = None;
