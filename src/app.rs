@@ -401,7 +401,12 @@ impl App {
     }
 
     pub fn current(&self) -> Option<Slide> {
-        self.list().get(self.idx()).cloned()
+        self.current_ref().cloned()
+    }
+
+    /// The slide on the screen, borrowed (for what is asked on every frame).
+    pub fn current_ref(&self) -> Option<&Slide> {
+        self.list().get(self.idx())
     }
 
     /// A page is over the slideshow: no clock, no video, no downloads for it, and no keys that act on its slide.
@@ -1270,8 +1275,7 @@ impl App {
         // Under the settings and the pools the last one stays.
         if !self.show_settings && !self.show_pools {
             // On the mosaic its first picture (on the saved searches the first cover), in the slideshow the one showing.
-            let cover = self.covers.get(&self.first_cover).cloned();
-            let shown = if self.show_mosaic { self.list().first().cloned() } else { self.current().or(cover) };
+            let shown = if self.show_mosaic { self.list().first() } else { self.current_ref().or(self.covers.get(&self.first_cover)) };
             if let Some(url) = shown.map(|s| thumb_source(&self.copies_or(&s.preview_file_url))) {
                 self.media.request(&self.engine, &url);
                 if url != self.ambient.0 && matches!(self.media.get(&url), Some(State::Ready(_))) {
@@ -1434,7 +1438,7 @@ impl App {
     fn player(&mut self, ctx: &egui::Context) {
         let area = ctx.content_rect();
         let (idle, pointer) = ctx.input(|i| (i.pointer.time_since_last_movement(), i.pointer.hover_pos()));
-        let video = self.current().is_some_and(|s| s.media_type == MediaType::Video) && self.video.is_some();
+        let video = self.current_ref().is_some_and(|s| s.media_type == MediaType::Video) && self.video.is_some();
         let status = self.video.as_ref().filter(|_| video).map(|p| p.status());
         let over = pointer.is_some_and(|p| self.player_rect.expand(theme::S3).contains(p));
         let show = over || self.drawer_forced || idle < CHROME_SECS || status.as_ref().is_some_and(|s| s.paused) || egui::Popup::is_any_open(ctx);
@@ -1474,8 +1478,8 @@ impl App {
                     if theme::icon_button(ui, icon::NEXT, "Next", false).clicked() {
                         self.move_by(1);
                     }
-                    let faved = self.current().is_some_and(|s| self.fav.contains(&s));
-                    let armed = self.current().is_some_and(|s| self.unfave_armed(&s));
+                    let faved = self.current_ref().is_some_and(|s| self.fav.contains(s));
+                    let armed = self.current_ref().is_some_and(|s| self.unfave_armed(s));
                     if let Some((_, at)) = self.unfave.as_ref().filter(|_| armed) {
                         // Back to the plain heart when the wait is over.
                         ui.ctx().request_repaint_after(UNFAVE_WAIT.saturating_sub(at.elapsed()));
@@ -2090,7 +2094,7 @@ impl eframe::App for App {
             return;
         }
         // The pages have the rail, and a toolbar over them (settings over pools over the mosaic; Back returns there).
-        if self.covered() || self.current().is_none() {
+        if self.covered() || self.current_ref().is_none() {
             egui::Panel::left("rail").exact_size(RAIL_SPACE).resizable(false).show_separator_line(false).frame(egui::Frame::NONE).show(ui, |ui| self.rail(ui));
             egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
                 if self.show_settings {

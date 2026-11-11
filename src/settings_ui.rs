@@ -782,10 +782,12 @@ impl App {
                 ctx.request_repaint();
             }
             for (n, cell) in cells.iter().enumerate().filter(|(_, c)| c.intersects(viewport)) {
-                let slide = self.list()[n].clone();
-                let video = slide.media_type == MediaType::Video;
-                let url = url_of(&slide);
                 let tile = cell.translate(origin);
+                // What the tile needs of its post, without a copy of the post on every frame.
+                let hovered = ui.rect_contains_pointer(tile);
+                let slide = &self.list()[n];
+                let (video, url, faved) = (slide.media_type == MediaType::Video, url_of(slide), self.fav.contains(slide));
+                let artist = if hovered { artist_of(slide) } else { None };
                 let id = ui.id().with(("post", n));
                 let veil = veiling.then(|| {
                     let Some(at) = reveal else { return 0.0 };
@@ -794,7 +796,6 @@ impl App {
                     if fade == 0.0 { 1.0 } else { ((now - at - delay) / fade).clamp(0.0, 1.0) as f32 }
                 });
                 let response = self.tile_in(ui, tile, id, &url, veil);
-                let faved = self.fav.contains(&slide);
                 if !favorites && faved {
                     ui.painter().rect_stroke(tile, TILE_RADIUS, egui::Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
                 }
@@ -808,13 +809,13 @@ impl App {
                 if video {
                     theme::badge(ui, egui::Rect::from_min_size(tile.min + Vec2::splat(6.0), Vec2::splat(24.0)), theme::glyph_text(icon::PLAY), theme::icon_font(12.0), egui::Color32::WHITE);
                 }
-                if ui.rect_contains_pointer(tile) {
+                if hovered {
                     let corner = egui::Rect::from_min_size(egui::pos2(tile.right() - 34.0, tile.top() + 6.0), Vec2::splat(28.0));
                     let tip = if faved { "Remove from the favorites" } else { "Add to the favorites" };
                     if theme::overlay_button(ui, corner, id.with("heart"), theme::heart_text(faved), theme::heart_font(faved, 15.0), if faved { t.accent } else { egui::Color32::WHITE }, tip).clicked() {
-                        fave = Some(slide.clone());
+                        fave = Some(self.list()[n].clone());
                     }
-                    if let Some(name) = artist_of(&slide) {
+                    if let Some(name) = artist {
                         if theme::overlay_chip(ui, tile, id.with("artist"), &name.replace('_', " ")).clicked() {
                             artist_search = Some(name);
                         }
