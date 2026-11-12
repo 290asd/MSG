@@ -198,6 +198,7 @@ impl App {
                 self.set("autoFollowArtists", json!(limit.round()));
             }
             self.check(ui, "mosaicFirst", true, "Open searches and favorites as a mosaic (off: straight to the slideshow)");
+            self.check(ui, "mosaicDates", false, "Divide mosaics by date");
         });
         self.following(ui);
         theme::group(ui, "Browsing", |ui| {
@@ -728,12 +729,23 @@ impl App {
             return;
         }
         let target = self.number("readingThumbWidth", 220.0) as f32;
-        let (cells, total, column) = masonry(&ratios, rect.width() - theme::S2, target);
+        // A list read again starts from the top.
+        let generation = if favorites { self.fav_view } else { self.search.as_ref().map_or(0, |s| s.generation) };
+        // The days are read again only when the list changes, not on every frame.
+        let dates = self.flag("mosaicDates", false).then(|| {
+            let key = egui::Id::new(("mosaic days", self.mode as usize, generation, ratios.len()));
+            ui.ctx().data(|d| d.get_temp::<std::sync::Arc<(Vec<usize>, Vec<Option<chrono::NaiveDate>>)>>(key)).unwrap_or_else(|| {
+                let days: Vec<_> = self.list().iter().map(post_day).collect();
+                let dates = std::sync::Arc::new((day_starts(&days), days));
+                ui.ctx().data_mut(|d| d.insert_temp(key, dates.clone()));
+                dates
+            })
+        });
+        let starts = dates.as_ref().map_or(&[][..], |d| &d.0[..]);
+        let (cells, headers, total, column) = masonry_in_sections(&ratios, starts, rect.width() - theme::S2, target);
         // Wide columns get the sites' larger samples, as their thumbnails are about 150 px.
         let big = column * ui.ctx().pixels_per_point() > 200.0;
         let (mut go, mut near_end, mut fave, mut artist_search) = (None, false, None, None);
-        // A list read again starts from the top.
-        let generation = if favorites { self.fav_view } else { self.search.as_ref().map_or(0, |s| s.generation) };
         egui::ScrollArea::vertical().id_salt(("mosaic", self.mode as usize, generation)).auto_shrink(false).show_viewport(ui, |ui, viewport| {
             ui.set_height(total);
             near_end = viewport.bottom() + rect.height() >= total;
@@ -780,6 +792,16 @@ impl App {
             ctx.data_mut(|d| d.insert_temp(key, (since, reveal)));
             if veiling {
                 ctx.request_repaint();
+            }
+            if let Some(dates) = &dates {
+                let today = chrono::Local::now().date_naive();
+                for (top, start) in headers.iter().zip(&dates.0) {
+                    let header = egui::Rect::from_min_size(egui::pos2(0.0, *top), Vec2::new(rect.width(), SECTION_HEADER));
+                    if header.intersects(viewport) {
+                        let at = egui::pos2(theme::S1, header.center().y) + origin;
+                        ui.painter().text(at, egui::Align2::LEFT_CENTER, day_label(dates.1[*start], today), theme::semibold(15.0), t.text);
+                    }
+                }
             }
             for (n, cell) in cells.iter().enumerate().filter(|(_, c)| c.intersects(viewport)) {
                 let tile = cell.translate(origin);
@@ -866,19 +888,60 @@ impl App {
 /// column, starting below the toolbar. Very tall or wide ones are kept within 1:4 and 3:1 (letterboxed).
 /// Returns the places, the height of them all and the width of a column.
 pub fn masonry(ratios: &[f32], width: f32, target: f32) -> (Vec<egui::Rect>, f32, f32) {
+    let (cells, _, total, column) = masonry_in_sections(ratios, &[], width, target);
+    (cells, total, column)
+}
+
+/// The height of a date over a mosaic's section.
+const SECTION_HEADER: f32 = 40.0;
+
+/// `masonry`, but the pictures from each index in `starts` (ascending) on begin below all the ones before them,
+/// under a header. Also returns the top of each header.
+pub fn masonry_in_sections(ratios: &[f32], starts: &[usize], width: f32, target: f32) -> (Vec<egui::Rect>, Vec<f32>, f32, f32) {
     let columns = ((width + THUMB_GAP) / (target + THUMB_GAP)).floor().max(1.0) as usize;
     let column = (width - THUMB_GAP * (columns - 1) as f32) / columns as f32;
     let mut heights = vec![TOP_INSET; columns];
+    let mut headers = Vec::with_capacity(starts.len());
+    let mut next = starts.iter().peekable();
     let cells = ratios
         .iter()
-        .map(|ratio| {
+        .enumerate()
+        .map(|(n, ratio)| {
+            if next.next_if(|s| **s == n).is_some() {
+                let top = heights.iter().copied().fold(TOP_INSET, f32::max) + if n == 0 { 0.0 } else { theme::S3 };
+                headers.push(top);
+                heights.fill(top + SECTION_HEADER);
+            }
             let c = (0..columns).min_by(|a, b| heights[*a].total_cmp(&heights[*b])).unwrap_or(0);
             let cell = egui::Rect::from_min_size(egui::pos2(c as f32 * (column + THUMB_GAP), heights[c]), Vec2::new(column, column * ratio.clamp(0.25, 3.0)));
             heights[c] = cell.bottom() + THUMB_GAP;
             cell
         })
         .collect();
-    (cells, heights.iter().copied().fold(0.0, f32::max) + theme::S3, column)
+    (cells, headers, heights.iter().copied().fold(0.0, f32::max) + theme::S3, column)
+}
+
+/// Where a mosaic gets a new date: wherever a post is from another day (local time) than the one before it.
+fn day_starts(days: &[Option<chrono::NaiveDate>]) -> Vec<usize> {
+    (0..days.len()).filter(|&n| n == 0 || days[n] != days[n - 1]).collect()
+}
+
+/// "Today", "Yesterday", "Monday 9 November", with the year when it isn't this one.
+fn day_label(day: Option<chrono::NaiveDate>, today: chrono::NaiveDate) -> String {
+    use chrono::Datelike;
+    match day {
+        None => "Date unknown".into(),
+        Some(d) if d == today => "Today".into(),
+        Some(d) if Some(d) == today.pred_opt() => "Yesterday".into(),
+        Some(d) if d.year() == today.year() => d.format("%A %-d %B").to_string(),
+        Some(d) => d.format("%A %-d %B %Y").to_string(),
+    }
+}
+
+/// The local day of a post, if the site said when it was posted.
+fn post_day(slide: &Slide) -> Option<chrono::NaiveDate> {
+    let ts = slide.timestamp();
+    (ts > 0).then(|| chrono::DateTime::from_timestamp(ts, 0)).flatten().map(|d| d.with_timezone(&chrono::Local).date_naive())
 }
 
 /// A picture's place before it shows: a light passing over it while it is on its way, a coral-tinged surface once
@@ -919,5 +982,22 @@ mod tests {
         // The first column is the shorter one by then.
         assert_eq!((cells[2].left(), cells[2].top()), (0.0, TOP_INSET + 106.0));
         assert!(cells.iter().all(|c| c.right() <= 206.0 && c.bottom() < total));
+    }
+
+    #[test]
+    fn sections_start_below_everything_before_them() {
+        let d = |n| chrono::NaiveDate::from_ymd_opt(2026, 11, n);
+        let starts = day_starts(&[d(12), d(12), d(11), None]);
+        assert_eq!(starts, [0, 2, 3]);
+        let (cells, headers, _, _) = masonry_in_sections(&[1.0, 2.0, 1.0, 1.0], &starts, 206.0, 100.0);
+        assert_eq!(headers[0], TOP_INSET);
+        assert_eq!(cells[0].top(), TOP_INSET + SECTION_HEADER);
+        // The third picture goes under the taller second one, at the left.
+        assert!(headers[1] > cells[1].bottom() && cells[2].top() == headers[1] + SECTION_HEADER && cells[2].left() == 0.0);
+        let today = d(12).unwrap();
+        assert_eq!(day_label(d(12), today), "Today");
+        assert_eq!(day_label(d(11), today), "Yesterday");
+        assert_eq!(day_label(d(9), today), "Monday 9 November");
+        assert_eq!(day_label(chrono::NaiveDate::from_ymd_opt(2025, 1, 2), today), "Thursday 2 January 2025");
     }
 }
