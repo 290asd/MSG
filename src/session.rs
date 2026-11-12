@@ -10,7 +10,7 @@ use regex::RegexBuilder;
 use reqwest::Client;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
-use std::sync::{mpsc::Sender, Arc};
+use std::sync::{mpsc::Sender, Arc, Mutex};
 
 /// Shared by everything that talks to the network: the runtime the work runs on, the client and the settings.
 /// `wake` tells the window (or the terminal) that something arrived; the shared code knows nothing of egui.
@@ -85,20 +85,20 @@ pub enum Msg {
 }
 
 /// Asks the sites for tags starting with `word`: together, the most used first. A site that fails is just left out.
+/// A new word cancels the requests still waiting for the last one.
 pub fn suggest_tags(engine: &Engine, tx: Sender<Msg>, sites: Vec<Site>, word: String, token: u64) {
+    static LAST: Mutex<Option<tokio::task::AbortHandle>> = Mutex::new(None);
     let engine = engine.clone();
-    engine.rt.clone().spawn(async move {
-        let tasks: Vec<_> = sites
-            .into_iter()
-            .filter_map(|site| sites::tag_suggestions_url(site, &word))
-            .map(|url| {
-                let engine = engine.clone();
-                tokio::spawn(async move { net::get_text(&engine.client, &engine.store, &url).await.map(|body| sites::parse_tag_suggestions(&body)).unwrap_or_default() })
-            })
-            .collect();
+    let task = engine.rt.clone().spawn(async move {
+        // Dropping the set (when this task is aborted) aborts the requests in it.
+        let mut tasks = tokio::task::JoinSet::new();
+        for url in sites.into_iter().filter_map(|site| sites::tag_suggestions_url(site, &word)) {
+            let engine = engine.clone();
+            tasks.spawn(async move { net::get_text(&engine.client, &engine.store, &url).await.map(|body| sites::parse_tag_suggestions(&body)).unwrap_or_default() });
+        }
         let mut counts: HashMap<String, u64> = HashMap::new();
-        for task in tasks {
-            for (tag, count) in task.await.unwrap_or_default() {
+        while let Some(found) = tasks.join_next().await {
+            for (tag, count) in found.unwrap_or_default() {
                 *counts.entry(tag).or_default() += count;
             }
         }
@@ -108,6 +108,9 @@ pub fn suggest_tags(engine: &Engine, tx: Sender<Msg>, sites: Vec<Site>, word: St
         let _ = tx.send(Msg::Suggestions { token, tags });
         engine.wake();
     });
+    if let Some(last) = LAST.lock().unwrap().replace(task.abort_handle()) {
+        last.abort();
+    }
 }
 
 pub struct Batch {
@@ -351,15 +354,19 @@ async fn fetch_page(engine: &Engine, cfg: &Config, mut cursor: Cursor, text: &st
 }
 
 /// The first post the sites give for a search (a quick search's card).
+/// It asks in the background, so the user's own searches go first.
 pub async fn first_slide(engine: &Engine, sites: Vec<Site>, text: &str) -> Option<Slide> {
-    let cfg = config(&engine.store);
-    for site in sites.into_iter().filter(|s| *s != Site::Local) {
-        let (_, slides, _) = fetch_page(engine, &cfg, Cursor::new(site), text).await;
-        if let Some(slide) = slides.into_iter().find(|s| s.media_type != super::slide::MediaType::Video) {
-            return Some(slide);
+    net::BACKGROUND.scope((), async {
+        let cfg = config(&engine.store);
+        for site in sites.into_iter().filter(|s| *s != Site::Local) {
+            let (_, slides, _) = fetch_page(engine, &cfg, Cursor::new(site), text).await;
+            if let Some(slide) = slides.into_iter().find(|s| s.media_type != super::slide::MediaType::Video) {
+                return Some(slide);
+            }
         }
-    }
-    None
+        None
+    })
+    .await
 }
 
 /// Adds the pool to settings.json → savedPools (last, as the newest; once).

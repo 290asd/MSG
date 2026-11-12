@@ -51,19 +51,56 @@ const HOLD_BACK: Duration = Duration::from_secs(30);
 // Each site's next free turn.
 static NEXT: LazyLock<Mutex<HashMap<String, Instant>>> = LazyLock::new(Default::default);
 
-/// The time of `host`'s next turn, taken: the one after it is `gap` later.
-fn reserve(next: &mut HashMap<String, Instant>, host: &str, now: Instant) -> Instant {
-    let at = next.get(host).map_or(now, |t| (*t).max(now));
-    next.insert(host.to_string(), at + gap(host));
-    at
+// How many requests that aren't in the background wait for each site.
+static WAITING: LazyLock<Mutex<HashMap<String, usize>>> = LazyLock::new(Default::default);
+
+tokio::task_local! {
+    /// Requests made inside `BACKGROUND.scope((), …)` (the cards' covers) go only when no other request waits for the site.
+    pub static BACKGROUND: ();
+}
+
+/// Takes `host`'s turn if it is free now; otherwise how long until it is. A turn is taken only when a request
+/// goes, so a request that is cancelled while waiting doesn't use one up.
+fn take(next: &mut HashMap<String, Instant>, host: &str, now: Instant) -> Option<Duration> {
+    match next.get(host) {
+        Some(t) if *t > now => Some(*t - now),
+        _ => {
+            next.insert(host.to_string(), now + gap(host));
+            None
+        }
+    }
+}
+
+struct Waiting(String);
+
+impl Drop for Waiting {
+    fn drop(&mut self) {
+        if let Some(n) = WAITING.lock().unwrap().get_mut(&self.0) {
+            *n -= 1;
+        }
+    }
 }
 
 /// Waits for the site's turn. Every API request comes through here, so the features together stay under the limit.
 /// Pictures don't: they are a few at once (media.rs, downloads.rs).
 pub async fn turn(url: &str) {
     let Some(host) = web_url(url).and_then(|u| u.host_str().map(String::from)) else { return };
-    let at = reserve(&mut NEXT.lock().unwrap(), &host, Instant::now());
-    tokio::time::sleep(at.saturating_duration_since(Instant::now())).await;
+    let background = BACKGROUND.try_with(|_| ()).is_ok();
+    let _waiting = (!background).then(|| {
+        *WAITING.lock().unwrap().entry(host.clone()).or_default() += 1;
+        Waiting(host.clone())
+    });
+    loop {
+        let wait = if background && WAITING.lock().unwrap().get(&host).is_some_and(|n| *n > 0) {
+            Some(gap(&host))
+        } else {
+            take(&mut NEXT.lock().unwrap(), &host, Instant::now())
+        };
+        match wait {
+            Some(wait) => tokio::time::sleep(wait).await,
+            None => return,
+        }
+    }
 }
 
 fn hold_back(next: &mut HashMap<String, Instant>, host: &str, now: Instant) {
@@ -146,18 +183,22 @@ mod tests {
     fn turns_are_a_gap_apart_per_site() {
         let (mut next, now) = (HashMap::new(), Instant::now());
         let half = Duration::from_millis(500);
-        assert_eq!(reserve(&mut next, "e621.net", now), now);
-        assert_eq!(reserve(&mut next, "e621.net", now), now + half);
-        assert_eq!(reserve(&mut next, "e621.net", now + Duration::from_secs(5)), now + Duration::from_secs(5));
+        assert_eq!(take(&mut next, "e621.net", now), None);
+        assert_eq!(take(&mut next, "e621.net", now), Some(half));
+        // Waiting doesn't take the turn: whoever asks when it is free gets it.
+        assert_eq!(take(&mut next, "e621.net", now), Some(half));
+        assert_eq!(take(&mut next, "e621.net", now + half), None);
+        assert_eq!(take(&mut next, "e621.net", now + Duration::from_secs(5)), None);
         // Another site doesn't wait for e621.
-        assert_eq!(reserve(&mut next, "api.rule34.xxx", now), now);
-        assert_eq!(reserve(&mut next, "api.rule34.xxx", now), now + Duration::from_secs(1));
-        assert_eq!(reserve(&mut next, "danbooru.donmai.us", now), now);
-        assert_eq!(reserve(&mut next, "danbooru.donmai.us", now), now + Duration::from_millis(100));
+        assert_eq!(take(&mut next, "api.rule34.xxx", now), None);
+        assert_eq!(take(&mut next, "api.rule34.xxx", now), Some(Duration::from_secs(1)));
+        assert_eq!(take(&mut next, "danbooru.donmai.us", now), None);
+        assert_eq!(take(&mut next, "danbooru.donmai.us", now), Some(Duration::from_millis(100)));
         // A "too many" answer holds the site back, and a hold doesn't shorten a later turn.
         hold_back(&mut next, "yande.re", now);
-        assert_eq!(reserve(&mut next, "yande.re", now), now + HOLD_BACK);
+        assert_eq!(take(&mut next, "yande.re", now), Some(HOLD_BACK));
+        assert_eq!(take(&mut next, "yande.re", now + HOLD_BACK), None);
         hold_back(&mut next, "yande.re", now);
-        assert_eq!(reserve(&mut next, "yande.re", now), now + HOLD_BACK + half);
+        assert_eq!(take(&mut next, "yande.re", now), Some(HOLD_BACK + half));
     }
 }
