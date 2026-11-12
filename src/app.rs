@@ -538,19 +538,14 @@ impl App {
     /// The Hottest front page: the best scored posts of the chosen time on the ticked sites that can search by age.
     /// Not saved in the history.
     pub fn open_hot(&mut self) {
-        let period = match self.text("hotPeriod").as_str() {
-            p @ ("day" | "month" | "year") => p.to_string(),
-            _ => "week".to_string(),
-        };
-        let text = format!("{HOT_QUERY}{period}");
+        let (text, sites) = self.hot_search();
         self.mode = Mode::Slideshow;
         self.show_pools = false;
         self.show_settings = false;
         self.show_mosaic = true;
-        if self.on_hot() && self.search.as_ref().is_some_and(|s| s.text == text) {
+        if self.search.as_ref().is_some_and(|s| s.text == text) && self.search_current() {
             return;
         }
-        let sites: Vec<Site> = session::ticked_sites(&self.store).into_iter().filter(|s| sites::hot_supported(*s)).collect();
         if sites.is_empty() {
             self.notice("Hottest needs e621, Danbooru, Konachan, Yande.re, Derpibooru or Tantabus ticked (Sites ▾).");
             return;
@@ -561,6 +556,43 @@ impl App {
         self.set_aside_search();
         self.search = Some(Search::new(self.generation, &text, sites, &self.store));
         self.reading_list = false;
+        self.cur[Mode::Slideshow as usize] = 0;
+        self.shown_at = None;
+        self.load_more();
+    }
+
+    /// Hottest's search words (with the chosen period) and the ticked sites that can search by age.
+    fn hot_search(&self) -> (String, Vec<Site>) {
+        let period = self.text("hotPeriod");
+        let period = if matches!(period.as_str(), "day" | "month" | "year") { period.as_str() } else { "week" };
+        (format!("{HOT_QUERY}{period}"), session::ticked_sites(&self.store).into_iter().filter(|s| sites::hot_supported(*s)).collect())
+    }
+
+    /// The search as it would start now, with the settings as they are now (nothing is read yet).
+    fn search_now(&self, search: &Search) -> Search {
+        if self.reading_list {
+            Search::many(self.generation, &session::reading_list(&self.store), &self.store)
+        } else if search.text.starts_with(HOT_QUERY) {
+            let (text, sites) = self.hot_search();
+            Search::new(self.generation, &text, sites, &self.store)
+        } else {
+            Search::new(self.generation, &search.text, session::ticked_sites(&self.store), &self.store)
+        }
+    }
+
+    /// No setting the search reads has changed since it started: what it has loaded can be shown as it is.
+    fn search_current(&self) -> bool {
+        self.search.as_ref().is_some_and(|s| s.same_as(&self.search_now(s)))
+    }
+
+    /// After the settings page: the search starts again only if a setting it reads was changed there.
+    fn renew_search(&mut self) {
+        let Some(old) = self.search.as_ref().filter(|_| !self.search_current()) else { return };
+        let mut new = self.search_now(old);
+        self.generation += 1;
+        new.generation = self.generation;
+        self.search = Some(new);
+        self.home_kept = None;
         self.cur[Mode::Slideshow as usize] = 0;
         self.shown_at = None;
         self.load_more();
@@ -583,7 +615,8 @@ impl App {
     /// The followed searches together, newest first (not saved in the history).
     pub fn start_reading(&mut self) {
         // Coming back from elsewhere soon: as it was left. Asked for on the list itself: read again.
-        let kept = if self.reading_list { None } else { self.home_kept.take().filter(|k| k.2.elapsed() < HOME_KEEP) };
+        let now = Search::many(self.generation, &session::reading_list(&self.store), &self.store);
+        let kept = if self.reading_list { None } else { self.home_kept.take().filter(|k| k.2.elapsed() < HOME_KEEP && k.0.same_as(&now)) };
         self.generation += 1;
         self.query.clear();
         self.set_aside_search();
@@ -595,7 +628,9 @@ impl App {
             self.cur[Mode::Slideshow as usize] = slide;
             return;
         }
-        self.search = Some(Search::many(self.generation, &session::reading_list(&self.store), &self.store));
+        let mut now = now;
+        now.generation = self.generation;
+        self.search = Some(now);
         self.cur[Mode::Slideshow as usize] = 0;
         self.load_more();
     }
@@ -844,8 +879,11 @@ impl App {
             "openSettings" => self.show_settings = !self.show_settings,
             "showInterface" => self.show_controls = !self.show_controls,
             // Back to the front page: the quick search cards (a new search starts from there as before), or the reading list read again.
+            // Under a page (settings) the reading list is shown as it was, unless a setting it reads changed.
             "home" if self.reading_home() => {
-                self.reading_list = false;
+                if self.on_reading() || self.mode != Mode::Slideshow || !self.search_current() {
+                    self.reading_list = false;
+                }
                 self.open_reading();
             }
             "home" if self.hot_home() => self.open_hot(),
@@ -2078,6 +2116,9 @@ impl eframe::App for App {
         let now = self.screen();
         if now != self.here {
             self.changed_at = Some(Instant::now());
+            if self.here.settings && !now.settings {
+                self.renew_search();
+            }
         }
         if let Some(window) = self.window.filter(|_| self.title_theme != Some(ctx.theme())) {
             self.title_theme = Some(ctx.theme());

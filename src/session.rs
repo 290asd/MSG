@@ -135,6 +135,8 @@ pub struct Search {
     pub cfg: Config,
     seen: HashSet<String>,
     include_dupes: bool,
+    // What it was started with (each cursor's words and site), to tell whether the settings have changed since.
+    basis: Vec<(Option<String>, Site)>,
 }
 
 impl Search {
@@ -146,6 +148,7 @@ impl Search {
             text: text.trim().to_string(),
             slides: vec![],
             loading: false,
+            basis: sites.iter().map(|s| (None, *s)).collect(),
             cursors: sites.into_iter().map(Cursor::new).collect(),
             cfg: config(store),
             seen: HashSet::new(),
@@ -157,7 +160,13 @@ impl Search {
     pub fn many(generation: u64, entries: &[(String, Vec<Site>)], store: &Store) -> Search {
         let mut search = Search::new(generation, "", vec![], store);
         search.cursors = entries.iter().flat_map(|(tags, sites)| sites.iter().map(|s| Cursor { query: Some(tags.clone()), ..Cursor::new(*s) })).collect();
+        search.basis = search.cursors.iter().map(|c| (c.query.clone(), c.site)).collect();
         search
+    }
+
+    /// Would give the same posts as `other` (same words, sites and filters): no need to read it again.
+    pub fn same_as(&self, other: &Search) -> bool {
+        self.text == other.text && self.basis == other.basis && self.cfg == other.cfg && self.include_dupes == other.include_dupes
     }
 
     /// (id, name, page count) of the e621 pool being read.
@@ -518,6 +527,14 @@ mod tests {
         let search = Search::many(1, &reading_list(&store), &store);
         let cursors: Vec<(Site, &str)> = search.cursors.iter().map(|c| (c.site, c.query.as_deref().unwrap_or(""))).collect();
         assert_eq!(cursors, [(Site::E621, "a"), (Site::Safebooru, "a"), (Site::E621, "b")]);
+        // Only a change in what it reads makes it another search.
+        assert!(search.same_as(&Search::many(2, &reading_list(&store), &store)));
+        store.data.lock().unwrap().insert("readingList".into(), serde_json::json!([{"tags": "a", "sites": ["E621"]}]));
+        assert!(!search.same_as(&Search::many(1, &reading_list(&store), &store)));
+        let plain = Search::new(1, "x", vec![Site::E621], &store);
+        assert!(plain.same_as(&Search::new(1, "x", vec![Site::E621], &store)));
+        store.data.lock().unwrap().insert("blacklist".into(), serde_json::json!("y"));
+        assert!(!plain.same_as(&Search::new(1, "x", vec![Site::E621], &store)));
     }
 
     #[test]

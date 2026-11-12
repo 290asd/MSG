@@ -88,7 +88,7 @@ impl Site {
 }
 
 /// The settings a search reads, taken from settings.json when the search starts.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Config {
     pub images: bool,
     pub gifs: bool,
