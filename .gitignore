@@ -1,2 +1,5 @@
 target/
 *.zip
+# libmpv (LGPL, tens of MB) sits next to the exe for testing; it isn't shipped.
+*.dll
+claude-kayttoohje.html
