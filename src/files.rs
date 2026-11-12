@@ -77,7 +77,12 @@ pub fn safe_file_name(url: &str) -> String {
 
 pub fn clean_file_name(name: &str) -> String {
     let replaced: String = name.chars().map(|c| if "<>:\"/\\|?*".contains(c) || (c as u32) < 32 { '_' } else { c }).collect();
-    replaced.trim_start_matches('.').trim().chars().take(200).collect()
+    let name: String = replaced.trim_start_matches('.').trim().chars().take(200).collect();
+    // Windows won't make a file named CON, NUL, COM1… with any extension.
+    let stem = name.split('.').next().unwrap_or("").trim_end().to_ascii_uppercase();
+    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.as_bytes()[3].is_ascii_digit());
+    if device { format!("_{name}") } else { name }
 }
 
 pub struct LocalFile {
@@ -221,6 +226,9 @@ mod tests {
     #[test]
     fn file_names_are_safe() {
         assert_eq!(clean_file_name("..a<b>:c.png"), "a_b__c.png");
+        assert_eq!(clean_file_name("nul.png"), "_nul.png");
+        assert_eq!(clean_file_name("Com3.tar.gz"), "_Com3.tar.gz");
+        assert_eq!(clean_file_name("console.png"), "console.png");
         assert_eq!(safe_file_name("https://x.net/data/a%20b.jpg?x=1"), "a b.jpg");
     }
 

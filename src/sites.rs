@@ -384,7 +384,7 @@ fn e621(c: &Config, post: &Value) -> Option<Slide> {
     // Without a login a globally blacklisted post has no URL; it can be rebuilt from the md5.
     let url = match str_of(file, "url") {
         Some(u) => u.to_string(),
-        None if md5.len() >= 4 && str_of(file, "ext").is_some() => {
+        None if md5.len() >= 4 && md5.is_ascii() && str_of(file, "ext").is_some() => {
             format!("https://static1.e621.net/data/{}/{}/{md5}.{}", &md5[..2], &md5[2..4], str_of(file, "ext")?)
         }
         None => return None,
