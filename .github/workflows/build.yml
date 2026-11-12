@@ -1,10 +1,14 @@
-# Builds MSG for Windows when a version tag (v2.0.0, …) is pushed and attaches the exe to that tag's GitHub release
-# (the release is created if it does not exist). Can also be run by hand (Actions → Build → Run workflow).
+# Checks every push to main and every pull request (clippy, tests, known vulnerabilities in the dependencies).
+# On a version tag (v2.0.0, …) it also builds MSG for Windows and attaches the exe and its SHA-256 to that tag's
+# GitHub release (the release is created if it does not exist). Can also be run by hand (Actions → Build → Run workflow).
+# Actions are pinned to commits, not tags, and the toolchain to a version, so a release builds the same way each time.
 name: Build
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
     inputs:
       tag:
@@ -18,10 +22,19 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
-      - run: cargo build --release
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: 1.98.1
+          components: clippy
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-audit
+      - run: cargo audit
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --release --locked
       # libmpv is not bundled: videos need mpv-2.dll next to the exe (see README).
       - name: Attach MSG.exe to the release
         if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/')
@@ -31,5 +44,6 @@ jobs:
           TAG: ${{ inputs.tag != '' && inputs.tag || github.ref_name }}
         run: |
           cp target/release/MSG.exe MSG-windows-x64.exe
+          sha256sum MSG-windows-x64.exe > MSG-windows-x64.exe.sha256
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "MSG $TAG" --notes "MSG $TAG"
-          gh release upload "$TAG" MSG-windows-x64.exe --clobber
+          gh release upload "$TAG" MSG-windows-x64.exe MSG-windows-x64.exe.sha256 --clobber
