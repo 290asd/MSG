@@ -26,6 +26,8 @@ const KEEP_BYTES: usize = 1536 << 20;
 const AT_ONCE: usize = 6;
 // A bigger video isn't fetched ahead: mpv reads it from the site as it plays.
 const MAX_VIDEO: u64 = 200 << 20;
+/// Megabytes of pictures kept on the disk between starts, unless the settings say otherwise.
+pub const DISK_MB: f64 = 1024.0;
 // A file of your own asked for as a thumbnail (`thumb`) is shrunk to this when it is decoded; '|' is never in a Windows path.
 const THUMB: &str = "|thumb";
 const THUMB_SIDE: u32 = 640;
@@ -119,6 +121,69 @@ pub fn clear_video_files() {
     let _ = std::fs::create_dir_all(video_dir());
 }
 
+/// Pictures from the sites kept between starts (`diskCacheMB`, 0 = off), in the local, not roaming, data folder.
+fn disk_dir() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("MSG").join("cache")
+}
+
+pub fn disk_limit(store: &super::store::Store) -> u64 {
+    let mb = store.get("diskCacheMB").and_then(|v| v.as_f64()).unwrap_or(DISK_MB);
+    (mb.max(0.0) as u64) << 20
+}
+
+// The file's name is the address's hash, so nothing from the site ends up in a path.
+fn disk_path(url: &str) -> PathBuf {
+    let mut hash = DefaultHasher::new();
+    url.hash(&mut hash);
+    disk_dir().join(format!("{:x}", hash.finish()))
+}
+
+/// Lets the least recently used pictures go until the folder is within `limit` (on starting, off the UI thread).
+// ponytail: only when the program starts; a long session can go over the limit until the next start.
+pub fn trim_disk_cache(limit: u64) {
+    trim(&disk_dir(), limit);
+}
+
+fn trim(dir: &std::path::Path, limit: u64) {
+    let Ok(dir) = std::fs::read_dir(dir) else { return };
+    let mut files: Vec<(std::time::SystemTime, u64, PathBuf)> = dir
+        .flatten()
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            Some((meta.modified().ok()?, meta.len(), e.path()))
+        })
+        .collect();
+    files.sort();
+    let mut total: u64 = files.iter().map(|f| f.1).sum();
+    for (_, size, path) in files {
+        if total <= limit {
+            break;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            total -= size;
+        }
+    }
+}
+
+/// A site's picture from the disk if it was kept, otherwise from the site (and then kept, if there is room).
+async fn get_cached(engine: &Engine, url: &str) -> Result<Vec<u8>, String> {
+    let path = disk_path(url);
+    if let Ok(bytes) = tokio::fs::read(&path).await {
+        // Used now: it is the last to go.
+        let _ = std::fs::File::options().write(true).open(&path).and_then(|f| f.set_modified(std::time::SystemTime::now()));
+        return Ok(bytes);
+    }
+    let bytes = net::get_bytes(&engine.client, &engine.store, url).await?;
+    if disk_limit(&engine.store) > 0 {
+        // Written under another name first, so a file cut short (the program closed) is never read as a picture.
+        let part = path.with_extension("part");
+        if tokio::fs::create_dir_all(disk_dir()).await.is_ok() && tokio::fs::write(&part, &bytes).await.is_ok() {
+            let _ = tokio::fs::rename(&part, &path).await;
+        }
+    }
+    Ok(bytes)
+}
+
 enum Decoded {
     Frames(Vec<(ColorImage, Duration)>),
     Video(TempVideo),
@@ -187,7 +252,7 @@ impl MediaCache {
                 let early = if web { None } else { cpu.acquire().await.ok() };
                 let bytes = if web {
                     let _turn = limit.acquire().await;
-                    net::get_bytes(&engine.client, &engine.store, &url).await
+                    get_cached(&engine, &url).await
                 } else {
                     tokio::fs::read(url.strip_suffix(THUMB).unwrap_or(&url)).await.map_err(|_| "file not found".to_string())
                 };
@@ -399,6 +464,21 @@ mod tests {
         image::DynamicImage::new_rgb8(2000, 1000).write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
         let Ok(Decoded::Frames(frames)) = decode_thumb(&png) else { panic!() };
         assert_eq!(frames[0].0.size, [THUMB_SIDE as usize, THUMB_SIDE as usize / 2]);
+    }
+
+    #[test]
+    fn the_disk_cache_lets_the_oldest_go() {
+        let dir = std::env::temp_dir().join("msg-native-test-cache");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (old, new) = (dir.join("old"), dir.join("new"));
+        std::fs::write(&old, [0u8; 100]).unwrap();
+        std::fs::write(&new, [0u8; 100]).unwrap();
+        let hour_ago = std::time::SystemTime::now() - Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&old).unwrap().set_modified(hour_ago).unwrap();
+        trim(&dir, 150);
+        assert!(!old.exists() && new.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

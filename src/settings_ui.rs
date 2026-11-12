@@ -2,7 +2,7 @@
 use super::app::{App, Mode, Tab, TOP_INSET};
 use super::hotkeys::{self, ACTIONS};
 use super::logo;
-use super::media::State;
+use super::media::{self, State};
 use super::sites::Site;
 use super::slide::{MediaType, Slide};
 use super::theme::{self, icon, tok};
@@ -243,6 +243,11 @@ impl App {
             let mut secs = self.number("secondsPerSlide", 6.0);
             if theme::row(ui, "Seconds per slide", |ui| ui.add(egui::DragValue::new(&mut secs).range(1.0..=600.0)).changed()) {
                 self.set("secondsPerSlide", json!(secs));
+            }
+            let mut mb = self.number("diskCacheMB", media::DISK_MB);
+            let hover = "Pictures from the sites are kept on the disk and open at once the next time. The oldest go when MSG starts, if there are more. 0 = nothing is kept.";
+            if theme::row(ui, "Pictures kept on disk between starts (MB)", |ui| ui.add(egui::DragValue::new(&mut mb).range(0.0..=100000.0).speed(10.0)).on_hover_text(hover).changed()) {
+                self.set("diskCacheMB", json!(mb.round()));
             }
             self.check(ui, "autoFitSlide", true, "Fit the picture to the window");
             ui.add_enabled_ui(!self.flag("autoFitSlide", true), |ui| {
