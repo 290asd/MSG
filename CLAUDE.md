@@ -46,7 +46,9 @@ Vanhat versiot ovat vain git-historiassa, eikä niitä kehitetä: Electron (tagi
 
 ## Julkaisu
 - Versio on `Cargo.toml`:ssa. `changelog.txt` on alkuperäisen laajennuksen historia (versioon 10.6 asti). Älä kirjaa sinne omia muutoksia.
-- Julkaisu: nosta versio, committaa, tee tagi `vX.Y.Z` ja pushaa se. `.github/workflows/build.yml` rakentaa Windows-exen ja liittää sen releaseen (`MSG-windows-x64.exe`, ilman libmpv:tä). Tarkista lopuksi, että releasessa on exe.
+- Julkaisu: nosta versio, committaa, tee tagi `vX.Y.Z` ja pushaa se. `.github/workflows/build.yml` rakentaa Windows-exen ja liittää sen releaseen (`MSG-windows-x64.exe` ja sen `.sha256`, ilman libmpv:tä). Tarkista lopuksi, että releasessa on exe.
+- CI (päätös 12.11.2026) ajaa jokaisesta pushista mainiin ja PR:stä `cargo audit`, `cargo clippy -- -D warnings` ja `cargo test`, kaikki `--locked`. Actionit on kiinnitetty commit-SHA:han ja Rust versioon 1.98.1; päivitä ne käsin. Aja `cargo audit` ja clippy paikallisesti ennen julkaisua.
+- MSG kirjoittaa paniikit tiedostoon `crash.txt` datakansiossa (`%APPDATA%\MSG`).
 - Julkaisu ei sisällä käyttäjän suosikkeja, asetuksia tai API-avaimia. Ne ovat koneen datakansiossa, ja uusi kone alkaa tyhjästä.
 - Paikalliset buildit (`target/`) ovat `.gitignore`ssa.
 
