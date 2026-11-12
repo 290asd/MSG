@@ -43,7 +43,6 @@ pub mod icon {
     pub const SETTINGS: char = '\u{e154}';
     pub const BACK: char = '\u{e06e}';
     pub const CLOSE: char = '\u{e1b2}';
-    pub const RANDOM: char = '\u{e15e}';
     pub const VOLUME: char = '\u{e1ab}';
     pub const MUTED: char = '\u{e1ac}';
     pub const PALETTE: char = '\u{e1dd}';

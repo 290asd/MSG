@@ -81,7 +81,7 @@ impl App {
                 ui.set_max_width(ui.available_width().min(560.0));
                 ui.add_space(theme::S6 * 2.0);
                 let (logo, _) = ui.allocate_exact_size(Vec2::new(144.0, 96.0), egui::Sense::hover());
-                logo::paint(ui.painter(), logo, logo::angle(ui.ctx(), self.flag("spinLogo", true), true), &t);
+                logo::paint(ui.painter(), logo, logo::angle(ui.ctx(), self.flag("spinLogo", true), true), t);
                 ui.add_space(theme::S3);
                 ui.label(RichText::new("Welcome to MSG").font(theme::semibold(24.0)));
                 if let Some(text) = &imported {
@@ -502,7 +502,7 @@ impl App {
 
     fn tab_about(&mut self, ui: &mut egui::Ui) {
         let (logo, _) = ui.allocate_exact_size(Vec2::new(240.0, 160.0), egui::Sense::hover());
-        logo::paint(ui.painter(), logo, logo::angle(ui.ctx(), self.flag("spinLogo", true), true), &tok(ui.ctx()));
+        logo::paint(ui.painter(), logo, logo::angle(ui.ctx(), self.flag("spinLogo", true), true), tok(ui.ctx()));
         ui.heading(format!("MSG {}", env!("CARGO_PKG_VERSION")));
         theme::group(ui, "", |ui| {
             ui.add_space(theme::S2);

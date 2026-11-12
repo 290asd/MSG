@@ -128,7 +128,8 @@ pub enum Tab {
 }
 
 pub struct App {
-    pub rt: tokio::runtime::Runtime,
+    /// Kept only so the runtime lives as long as the window; the work goes through `engine.rt`.
+    _rt: tokio::runtime::Runtime,
     pub engine: Engine,
     pub store: Arc<Store>,
     pub tx: Sender<Msg>,
@@ -215,7 +216,7 @@ impl App {
         // A test run with a search goes straight to it.
         let onboarding = store.first_run && std::env::var_os("MSG_SEARCH").is_none();
         let mut app = App {
-            rt,
+            _rt: rt,
             engine,
             fav: Favorites::load(&store),
             hotkeys: Hotkeys::load(&store),
@@ -672,7 +673,7 @@ impl App {
                 }
                 Msg::Notice(text) => self.notice(text),
                 Msg::Cover { key, slide } => {
-                    self.covers.insert(key, slide);
+                    self.covers.insert(key, *slide);
                 }
                 Msg::Progress(text) => self.progress = text,
                 Msg::Imported { site, slides } => {
@@ -866,11 +867,10 @@ impl App {
             }
             "openReadingList" => self.open_reading(),
             // Esc: the screen before; with none left, out of fullscreen.
-            "back" => {
-                if !self.go_back() && ctx.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
+            "back"
+                if !self.go_back() && ctx.input(|i| i.viewport().fullscreen.unwrap_or(false)) => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
                 }
-            }
             _ => {}
         }
         ctx.request_repaint();
@@ -1255,7 +1255,7 @@ impl App {
         let card = egui::Rect::from_min_max(column.min + Vec2::splat(RAIL_MARGIN), egui::pos2(column.left() + RAIL_MARGIN + RAIL_W, column.bottom() - RAIL_MARGIN));
         glass::panel(ui, card, glass::bar(&ctx));
         let logo = egui::Rect::from_center_size(egui::pos2(card.center().x, card.top() + 24.0), Vec2::new(66.0, 44.0));
-        logo::paint(ui.painter(), logo, logo::angle(&ctx, self.flag("spinLogo", true), ui.rect_contains_pointer(card)), &t);
+        logo::paint(ui.painter(), logo, logo::angle(&ctx, self.flag("spinLogo", true), ui.rect_contains_pointer(card)), t);
         let (settings, pools) = (self.show_settings, self.show_pools && !self.show_settings);
         let favorites = self.mode == Mode::Favorites && !pools && !settings;
         let items = [(icon::HOME, "Home", "home", self.on_home()), (icon::POOLS, "Pools", "openPools", pools), (icon::HEART, "Favorites", "openFavorites", favorites), (icon::SETTINGS, "Settings", "openSettings", settings)];
@@ -1922,7 +1922,7 @@ impl App {
             let (engine, tx, sites, tags, key) = (self.engine.clone(), self.tx.clone(), cards[i].1.clone(), cards[i].2.clone(), cards[i].3.clone());
             self.engine.rt.spawn(async move {
                 if let Some(slide) = session::first_slide(&engine, sites, &tags).await {
-                    let _ = tx.send(Msg::Cover { key, slide });
+                    let _ = tx.send(Msg::Cover { key, slide: Box::new(slide) });
                     engine.wake();
                 }
             });

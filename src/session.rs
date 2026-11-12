@@ -75,7 +75,7 @@ pub enum Msg {
     /// A background job changed the settings file (offline copies): reread what depends on it.
     Downloaded(String),
     /// The first result of a quick search, for its card on the front page.
-    Cover { key: String, slide: Slide },
+    Cover { key: String, slide: Box<Slide> },
     /// Find pools in favorites: the pools that weren't saved yet.
     Pools(Vec<Value>),
     /// The tag categories of e621 favorites saved without them (post id → categories).
@@ -341,7 +341,7 @@ async fn fetch_page(engine: &Engine, cfg: &Config, mut cursor: Cursor, text: &st
                 None => count < limit,
             };
             if let Some(pool) = &cursor.pool {
-                let position = |s: &Slide| pool.post_ids.iter().position(|id| s.id == Value::from(*id)).unwrap_or(usize::MAX);
+                let position = |s: &Slide| pool.post_ids.iter().position(|id| s.id == *id).unwrap_or(usize::MAX);
                 slides.sort_by_key(position);
             }
             (cursor, slides, None)

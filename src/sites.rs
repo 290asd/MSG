@@ -135,7 +135,7 @@ impl Config {
 
     fn accepts(&self, file_url: &str, rating: Option<&str>, tags: &str) -> Option<MediaType> {
         let kind = MediaType::from_path(file_url);
-        (self.allows_media(kind) && rating.map_or(true, |r| self.allows_rating(r)) && !self.is_blacklisted(tags)).then_some(kind)
+        (self.allows_media(kind) && rating.is_none_or(|r| self.allows_rating(r)) && !self.is_blacklisted(tags)).then_some(kind)
     }
 }
 
@@ -446,7 +446,7 @@ fn moebooru(c: &Config, site: Site, post: &Value) -> Option<Slide> {
     let kind = c.accepts(&file, post.get("rating").and_then(Value::as_str), &tags)?;
     let id = post.get("id")?.clone();
     let created = post.get("created_at");
-    let seconds = created.and_then(|v| v.get("s")).or(created).map(|v| id_text(v)).unwrap_or_default();
+    let seconds = created.and_then(|v| v.get("s")).or(created).map(id_text).unwrap_or_default();
     Some(Slide {
         site_id: site.id().into(),
         viewable_website_post_url: format!("{}/post/show/{}", site.url(), id_text(&id)),

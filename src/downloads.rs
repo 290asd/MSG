@@ -40,8 +40,6 @@ async fn download_file(engine: &Engine, url: &str, path: &Path) -> Result<Outcom
 struct Auto {
     running: bool,
     again: bool,
-    // Bumped by every schedule(): a waiting timer that isn't the latest does nothing.
-    timer: u64,
 }
 
 pub struct Downloader {
@@ -117,7 +115,7 @@ impl Downloader {
                             };
                             counts[slot].fetch_add(1, Ordering::SeqCst);
                             let done: usize = counts.iter().map(|c| c.load(Ordering::SeqCst)).sum();
-                            if done % 10 == 0 {
+                            if done.is_multiple_of(10) {
                                 Self::say(&engine, &tx, format!("Downloading favorites: {done} / {}", urls.len()));
                             }
                         }

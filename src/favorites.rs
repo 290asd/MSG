@@ -115,7 +115,7 @@ impl Favorites {
     /// Filters by the site menu and the tag filter; `keep` can drop more (offline: only downloaded ones).
     pub fn rebuild(&mut self, keep: &dyn Fn(&Slide) -> bool) {
         let (site, filter, random) = (self.site.clone(), self.filter.clone(), self.random);
-        self.view = self.items.iter().filter(|s| site.as_ref().map_or(true, |x| *x == s.site_id) && keep(s) && matches_filter(&s.tags, &filter)).cloned().collect();
+        self.view = self.items.iter().filter(|s| site.as_ref().is_none_or(|x| *x == s.site_id) && keep(s) && matches_filter(&s.tags, &filter)).cloned().collect();
         if random {
             self.view.shuffle(&mut rand::thread_rng());
         } else if self.order == Order::Newest {

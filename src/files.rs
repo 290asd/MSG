@@ -64,7 +64,7 @@ pub fn download_path(store: &Store, relative: &str) -> Result<PathBuf, String> {
 /// A file name from a URL, safe for Windows: no folders, no reserved characters.
 pub fn safe_file_name(url: &str) -> String {
     let name = net::web_url(url)
-        .and_then(|u| u.path_segments().and_then(|s| s.last().map(str::to_string)))
+        .and_then(|u| u.path_segments().and_then(|mut s| s.next_back().map(str::to_string)))
         .and_then(|n| urlencoding::decode(&n).ok().map(|n| n.into_owned()))
         .unwrap_or_default();
     let name = clean_file_name(&name);
