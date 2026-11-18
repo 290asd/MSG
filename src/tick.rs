@@ -4,13 +4,21 @@ use std::sync::OnceLock;
 
 const RATE: u32 = 44_100;
 
-/// A WAV of about 25 ms: a 2 kHz tone that dies away fast.
+/// A WAV of 5 ms: a dry, sharp click in the manner of a click wheel. Noise that dies away in about a millisecond,
+/// with its low end taken off (each sample minus the one before), so it clicks instead of thumping.
 // ponytail: fixed sound and volume; a setting if it is too loud or too quiet.
 fn wav() -> Vec<u8> {
-    let samples: Vec<i16> = (0..RATE / 40)
+    let mut seed: u32 = 0x9e37_79b9;
+    let mut last = 0.0;
+    let samples: Vec<i16> = (0..RATE / 200)
         .map(|i| {
             let t = i as f32 / RATE as f32;
-            ((t * 2000.0 * std::f32::consts::TAU).sin() * (-t * 250.0).exp() * 6000.0) as i16
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let noise = (seed >> 8) as f32 / (1 << 24) as f32 * 2.0 - 1.0;
+            let x = noise * (-t * 1200.0).exp();
+            let click = x - last;
+            last = x;
+            (click * 9000.0) as i16
         })
         .collect();
     let data_len = samples.len() as u32 * 2;
