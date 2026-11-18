@@ -92,7 +92,9 @@ pub fn suggest_tags(engine: &Engine, tx: Sender<Msg>, sites: Vec<Site>, word: St
     let task = engine.rt.clone().spawn(async move {
         // Dropping the set (when this task is aborted) aborts the requests in it.
         let mut tasks = tokio::task::JoinSet::new();
-        for url in sites.into_iter().filter_map(|site| sites::tag_suggestions_url(site, &word)) {
+        let hydrus = || Some(format!("{}/add_tags/search_tags?search={}&tag_display_type=display", super::hydrus::base(&engine.store)?, urlencoding::encode(&word.replace('_', " "))));
+        let urls: Vec<String> = sites.into_iter().filter_map(|site| if site == Site::Hydrus { hydrus() } else { sites::tag_suggestions_url(site, &word) }).collect();
+        for url in urls {
             let engine = engine.clone();
             tasks.spawn(async move { net::get_text(&engine.client, &engine.store, &url).await.map(|body| sites::parse_tag_suggestions(&body)).unwrap_or_default() });
         }
@@ -322,6 +324,9 @@ async fn fetch_page(engine: &Engine, cfg: &Config, mut cursor: Cursor, text: &st
         let slides = tokio::task::spawn_blocking(move || files::local_slides(&store, &cfg, &text)).await.unwrap_or_default();
         cursor.exhausted = true;
         return (cursor, slides, None);
+    }
+    if site == Site::Hydrus {
+        return super::hydrus::fetch_page(engine, cfg, cursor, text).await;
     }
     if site == Site::E621 && cursor.pool.is_none() {
         if let Some(id) = sites::pool_id(text) {

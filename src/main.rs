@@ -7,6 +7,7 @@ mod favorites;
 mod files;
 mod glass;
 mod hotkeys;
+mod hydrus;
 mod logo;
 mod media;
 mod net;

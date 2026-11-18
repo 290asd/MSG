@@ -19,6 +19,7 @@ Native Windows, written in Rust with [egui](https://github.com/emilk/egui). Base
 - **Favorites**: import them from e621, Derpibooru and Gelbooru, and keep them in sync with e621.
 - **Pools**: save comics and read them page by page.
 - **Your folders**: your own pictures and videos, shown like any other site.
+- **Hydrus**: search your own Hydrus client (on this computer or your server) like a site, and keep every favorite there with its tags and links, whichever site it came from.
 - **Downloads**, **video** (libmpv) and **rebindable hotkeys**.
 
 Rule34 needs an API key; the other sites can use one for your own account. Add them in Settings.

@@ -226,10 +226,12 @@ impl Player {
         self.set("hwdec", if hardware { "auto-copy-safe" } else { "no" });
     }
 
-    /// Starts `url` (an address or a file). `looped`: play again at the end; `play`: start at once.
-    pub fn load(&mut self, url: &str, referer: Option<&str>, looped: bool, play: bool) {
+    /// Starts `url` (an address or a file). `header`: one more HTTP header, "Name: value" (Hydrus's access key).
+    /// `looped`: play again at the end; `play`: start at once.
+    pub fn load(&mut self, url: &str, referer: Option<&str>, header: Option<&str>, looped: bool, play: bool) {
         self.url = url.to_string();
         self.set("referrer", referer.unwrap_or(""));
+        self.set("http-header-fields", header.unwrap_or(""));
         self.set("loop-file", if looped { "inf" } else { "no" });
         self.command(&["loadfile", url, "replace"]);
         // After the load: a file kept open at its end pauses itself again for as long as it is the one playing.

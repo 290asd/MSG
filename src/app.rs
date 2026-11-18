@@ -857,6 +857,7 @@ impl App {
         let faved = self.fav.toggle(&slide);
         self.fav.save(&self.store);
         favorites::sync_e621(&self.engine, &self.tx, &slide, faved);
+        super::hydrus::sync(&self.engine, &self.tx, &slide, faved);
         if self.mode == Mode::Favorites {
             // The list shrank: stay at the same place.
             let i = self.idx();
@@ -1068,7 +1069,8 @@ impl App {
                     Some(State::File(file)) => file.path(),
                     _ => None,
                 };
-                player.load(file.as_deref().unwrap_or(&url), referer, !to_end, autoplay);
+                let key = super::hydrus::key_for(&self.store, &url).map(|key| format!("{}: {key}", super::hydrus::KEY_HEADER));
+                player.load(file.as_deref().unwrap_or(&url), referer, key.as_deref(), !to_end, autoplay);
                 player.url = url;
             }
             None => player.stop(),

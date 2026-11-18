@@ -262,6 +262,25 @@ impl App {
             self.line(ui, "rule34ApiKey", "Rule34 API key", true);
         });
         theme::note(ui, "Optional, except Rule34 (rule34.xxx → My Account → Options). Kept in settings.json on this computer.");
+        theme::group(ui, "Hydrus", |ui| {
+            self.line(ui, "hydrusUrl", "Client API address", false);
+            self.line(ui, "hydrusKey", "Access key", true);
+            theme::row(ui, "Connection", |ui| {
+                if theme::button(ui, "Test").clicked() {
+                    super::hydrus::check(&self.engine, &self.tx);
+                }
+            });
+            self.check(ui, "hydrusFavorites", true, "Keep favorites in Hydrus too");
+            theme::row(ui, "Send all favorites to Hydrus", |ui| {
+                if theme::button(ui, "Stop").clicked() {
+                    super::hydrus::STOP.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                if theme::button(ui, "Send").clicked() {
+                    super::hydrus::send_all(&self.engine, &self.tx, self.fav.items.clone());
+                }
+            });
+        });
+        theme::note(ui, "Your own Hydrus client (services → manage services → client api, like http://192.168.1.10:45869), with a key that may import URLs and files, edit tags and ratings, and search. Tick Hydrus under Sites to search it: nothing goes to the boorus, and system:favorites finds your favorites. A favorite is sent there with its tags and links and liked on \"favourites\"; unfaving only takes the like away.");
         theme::group(ui, "e621", |ui| {
             self.check(ui, "e621TagCategories", true, "Read the tag categories (artist, species …)");
         });

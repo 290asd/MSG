@@ -134,6 +134,9 @@ pub async fn get(client: &Client, store: &Store, url: &str, timeout: Duration) -
             request = request.basic_auth(login, Some(key));
         }
     }
+    if let Some(key) = super::hydrus::key_for(store, url.as_str()) {
+        request = request.header(super::hydrus::KEY_HEADER, key);
+    }
     let response = request.send().await.map_err(describe)?;
     let status = response.status();
     if !status.is_success() {

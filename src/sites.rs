@@ -17,13 +17,14 @@ pub enum Site {
     Tantabus,
     Xbooru,
     Yandere,
+    Hydrus,
     Local,
 }
 
 impl Site {
-    pub const ALL: [Site; 11] = [
+    pub const ALL: [Site; 12] = [
         Site::Danbooru, Site::Derpibooru, Site::E621, Site::Gelbooru, Site::Konachan, Site::Rule34,
-        Site::Safebooru, Site::Tantabus, Site::Xbooru, Site::Yandere, Site::Local,
+        Site::Safebooru, Site::Tantabus, Site::Xbooru, Site::Yandere, Site::Hydrus, Site::Local,
     ];
 
     /// The id used in settings.json (sitesToSearch) and in saved favorites.
@@ -39,6 +40,7 @@ impl Site {
             Site::Tantabus => "TANT",
             Site::Xbooru => "XBOO",
             Site::Yandere => "YAND",
+            Site::Hydrus => "HYDR",
             Site::Local => "LOCL",
         }
     }
@@ -59,6 +61,7 @@ impl Site {
             Site::Tantabus => "Tantabus",
             Site::Xbooru => "Xbooru",
             Site::Yandere => "Yande.re",
+            Site::Hydrus => "Hydrus",
             Site::Local => "Your folders",
         }
     }
@@ -75,7 +78,8 @@ impl Site {
             Site::Tantabus => "https://www.tantabus.ai",
             Site::Xbooru => "https://xbooru.com",
             Site::Yandere => "https://yande.re",
-            Site::Local => "",
+            // Hydrus's address is in the settings (hydrus::base).
+            Site::Hydrus | Site::Local => "",
         }
     }
 
@@ -133,7 +137,7 @@ impl Config {
         tags.split_whitespace().any(|t| self.blacklist.contains(t))
     }
 
-    fn accepts(&self, file_url: &str, rating: Option<&str>, tags: &str) -> Option<MediaType> {
+    pub fn accepts(&self, file_url: &str, rating: Option<&str>, tags: &str) -> Option<MediaType> {
         let kind = MediaType::from_path(file_url);
         (self.allows_media(kind) && rating.is_none_or(|r| self.allows_rating(r)) && !self.is_blacklisted(tags)).then_some(kind)
     }
@@ -148,6 +152,8 @@ pub struct Cursor {
     pub pool: Option<Pool>,
     /// A reading list entry's own search words (none: the search's).
     pub query: Option<String>,
+    /// Hydrus: all the file ids the search found, read a page at a time.
+    pub ids: Option<Vec<u64>>,
 }
 
 #[derive(Clone, Debug)]
@@ -159,7 +165,7 @@ pub struct Pool {
 
 impl Cursor {
     pub fn new(site: Site) -> Cursor {
-        Cursor { site, page: 0, exhausted: false, pool: None, query: None }
+        Cursor { site, page: 0, exhausted: false, pool: None, query: None, ids: None }
     }
 }
 
@@ -191,7 +197,7 @@ pub fn site_query(site: Site, text: &str) -> String {
         Site::Derpibooru | Site::Tantabus => PHILOMENA_TERMS,
         Site::Gelbooru | Site::Xbooru => GELBOORU_TERMS,
         Site::Rule34 | Site::Safebooru => RULE34_TERMS,
-        Site::Local => &[],
+        Site::Hydrus | Site::Local => &[],
     };
     let mut query = hot_query(site, text.trim());
     for (pattern, replacement) in terms {
@@ -248,7 +254,7 @@ pub fn tag_suggestions_url(site: Site, word: &str) -> Option<String> {
         Site::Rule34 => format!("https://api.rule34.xxx/autocomplete.php?q={w}"),
         Site::Safebooru | Site::Xbooru => format!("{base}/autocomplete.php?q={w}"),
         Site::Derpibooru | Site::Tantabus => format!("{base}/api/v1/json/search/tags?q={w}*&per_page=10"),
-        Site::Local => return None,
+        Site::Hydrus | Site::Local => return None,
     })
 }
 
@@ -318,7 +324,7 @@ pub fn request_url(c: &Config, cursor: &Cursor, search: &str) -> Option<String> 
             format!("https://api.rule34.xxx/index.php?page=dapi&s=post&q=index{auth}&tags={query}&pid={}&limit={limit}", page - 1)
         }
         Site::Safebooru | Site::Xbooru => format!("{base}/index.php?page=dapi&s=post&q=index&tags={query}&pid={}&limit={limit}", page - 1),
-        Site::Local => return None,
+        Site::Hydrus | Site::Local => return None,
     })
 }
 
@@ -341,7 +347,7 @@ fn parse_posts(c: &Config, site: Site, body: &str) -> Result<(Vec<Slide>, usize)
         Site::Konachan | Site::Yandere => json_posts(body, None).map(|p| (p.iter().filter_map(|v| moebooru(c, site, v)).collect(), p.len())),
         Site::Derpibooru | Site::Tantabus => json_posts(body, Some("images")).map(|p| (p.iter().filter_map(|v| philomena(c, site, v)).collect(), p.len())),
         Site::Gelbooru | Site::Rule34 | Site::Safebooru | Site::Xbooru => dapi(c, site, body),
-        Site::Local => Ok((vec![], 0)),
+        Site::Hydrus | Site::Local => Ok((vec![], 0)),
     }
 }
 

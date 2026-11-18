@@ -7,6 +7,7 @@ mod downloads;
 mod favorites;
 mod files;
 mod hotkeys;
+mod hydrus;
 mod net;
 mod session;
 mod sites;
@@ -465,6 +466,7 @@ impl Cli {
         let faved = self.fav.toggle(&slide);
         self.fav.save(&self.engine.store);
         favorites::sync_e621(&self.engine, &self.tx, &slide, faved);
+        hydrus::sync(&self.engine, &self.tx, &slide, faved);
         if self.mode == Mode::Favorites {
             // The list shrank: stay at the same place.
             let i = self.idx();
