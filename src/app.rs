@@ -559,6 +559,11 @@ impl App {
     // ---------- searching ----------
 
     pub fn start_search(&mut self, text: &str) {
+        self.start_search_on(text, None);
+    }
+
+    /// With `only` the search reads that site, whatever is ticked, and stays out of the history (a post's family).
+    pub fn start_search_on(&mut self, text: &str, only: Option<Site>) {
         self.mode = Mode::Slideshow;
         self.show_pools = false;
         self.show_settings = false;
@@ -588,11 +593,6 @@ impl App {
             self.set("searchHistory", Value::Array(history));
         }
         self.load_more();
-        self.start_search_on(text, None);
-    }
-
-    /// With `only` the search reads that site, whatever is ticked, and stays out of the history (a post's family).
-    pub fn start_search_on(&mut self, text: &str, only: Option<Site>) {
     }
 
     /// The Hottest front page: the best scored posts of the chosen time on the ticked sites that can search by age.
@@ -635,6 +635,10 @@ impl App {
         } else if search.text.starts_with(HOT_QUERY) {
             let (text, sites) = self.hot_search();
             Search::new(self.generation, &text, sites, &self.store)
+        } else if let Some(site) = search.only {
+            let mut new = Search::new(self.generation, &search.text, vec![site], &self.store);
+            new.only = Some(site);
+            new
         } else {
             Search::new(self.generation, &search.text, session::ticked_sites(&self.store), &self.store)
         }
@@ -662,10 +666,6 @@ impl App {
     pub fn open_reading(&mut self) {
         self.mode = Mode::Slideshow;
         self.show_pools = false;
-        } else if let Some(site) = search.only {
-            let mut new = Search::new(self.generation, &search.text, vec![site], &self.store);
-            new.only = Some(site);
-            new
         self.show_settings = false;
         self.show_mosaic = true;
         if self.refresh_auto_follow() {
@@ -1788,42 +1788,6 @@ impl App {
         }
     }
 
-    fn tags_panel(&mut self, ui: &mut egui::Ui, slide: &Slide) {
-        let mut clicked: Option<String> = None;
-        egui::ScrollArea::vertical().id_salt("tags").auto_shrink(false).show(ui, |ui| {
-            let t = tok(ui.ctx());
-            let groups = super::slide::tag_groups(slide);
-            for (category, tags) in groups {
-                if !category.is_empty() {
-                    ui.label(RichText::new(category.to_uppercase()).font(theme::medium(10.5)).color(t.muted));
-                }
-                for tag in tags {
-                    let text = RichText::new(tag.replace('_', " ")).color(category_color(&category, t));
-                    if ui.add(egui::Label::new(text).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        clicked = Some(tag);
-                    }
-                }
-                ui.add_space(theme::S2);
-            }
-        });
-        if let Some(tag) = clicked {
-            self.toggle_tag_search(&tag);
-        }
-    }
-
-    /// One picture (or a still of one) in `rect`, if it is at hand.
-    fn draw_picture(&mut self, ui: &egui::Ui, rect: egui::Rect, url: &str, alpha: f32, elapsed: Duration) {
-        if let Some(State::Ready(picture)) = self.media.get(url) {
-            media::paint(ui, rect, &picture.frame_at(elapsed).texture, picture.size, alpha, 0.0);
-            if let Some(after) = picture.next_frame_in(elapsed) {
-                ui.ctx().request_repaint_after(after);
-            }
-        }
-    }
-
-    fn viewer(&mut self, ui: &mut egui::Ui) {
-        let rect = ui.available_rect_before_wrap();
-        let response = ui.allocate_rect(rect, Sense::click());
     /// The post's own links: its pools and family (searches) and where the artist posted it (the browser).
     fn post_links(&self, slide: &Slide) -> Vec<(char, String, String, bool)> {
         let saved = self.store.get("savedPools").and_then(|p| p.as_array().cloned()).unwrap_or_default();
@@ -1846,12 +1810,12 @@ impl App {
         links
     }
 
-        let Some(slide) = self.current() else {
-            self.on_screen = OnScreen::default();
+    fn tags_panel(&mut self, ui: &mut egui::Ui, slide: &Slide) {
+        let mut clicked: Option<String> = None;
         let links = self.post_links(slide);
         let mut link: Option<(String, bool)> = None;
-            self.front_page(ui, rect);
-            return;
+        egui::ScrollArea::vertical().id_salt("tags").auto_shrink(false).show(ui, |ui| {
+            let t = tok(ui.ctx());
             for (glyph, label, target, search) in &links {
                 let row = theme::drawer_row(ui, *glyph, label, false);
                 if (if *search { row } else { row.on_hover_text(target) }).clicked() {
@@ -1861,6 +1825,49 @@ impl App {
             if !links.is_empty() {
                 ui.add_space(theme::S2);
             }
+            let groups = super::slide::tag_groups(slide);
+            for (category, tags) in groups {
+                if !category.is_empty() {
+                    ui.label(RichText::new(category.to_uppercase()).font(theme::medium(10.5)).color(t.muted));
+                }
+                for tag in tags {
+                    let text = RichText::new(tag.replace('_', " ")).color(category_color(&category, t));
+                    if ui.add(egui::Label::new(text).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        clicked = Some(tag);
+                    }
+                }
+                ui.add_space(theme::S2);
+            }
+        });
+        if let Some(tag) = clicked {
+            self.toggle_tag_search(&tag);
+        }
+        match link {
+            Some((search, true)) => self.start_search_on(&search, Site::from_id(&slide.site_id)),
+            Some((url, false)) if net_ok(&url) => {
+                let _ = open::that(&url);
+            }
+            _ => {}
+        }
+    }
+
+    /// One picture (or a still of one) in `rect`, if it is at hand.
+    fn draw_picture(&mut self, ui: &egui::Ui, rect: egui::Rect, url: &str, alpha: f32, elapsed: Duration) {
+        if let Some(State::Ready(picture)) = self.media.get(url) {
+            media::paint(ui, rect, &picture.frame_at(elapsed).texture, picture.size, alpha, 0.0);
+            if let Some(after) = picture.next_frame_in(elapsed) {
+                ui.ctx().request_repaint_after(after);
+            }
+        }
+    }
+
+    fn viewer(&mut self, ui: &mut egui::Ui) {
+        let rect = ui.available_rect_before_wrap();
+        let response = ui.allocate_rect(rect, Sense::click());
+        let Some(slide) = self.current() else {
+            self.on_screen = OnScreen::default();
+            self.front_page(ui, rect);
+            return;
         };
         self.wheel_slides(ui, &response);
         if self.roll.moving() {
@@ -1878,13 +1885,6 @@ impl App {
             if faved {
                 fave_mark(ui, place);
             }
-        match link {
-            Some((search, true)) => self.start_search_on(&search, Site::from_id(&slide.site_id)),
-            Some((url, false)) if net_ok(&url) => {
-                let _ = open::that(&url);
-            }
-            _ => {}
-        }
             return;
         }
         let elapsed = self.shown_at.map(|t| t.elapsed()).unwrap_or_default();
@@ -2164,7 +2164,6 @@ impl App {
         ctx.request_repaint();
     }
 
-    fn test_script(&mut self, ctx: &egui::Context) {
     /// Two fingers to the right pull the page with them; lifting them goes back, or the page springs home.
     fn swipe_back(&mut self, ctx: &egui::Context) {
         let now = Instant::now();
@@ -2253,6 +2252,7 @@ impl App {
         });
     }
 
+    fn test_script(&mut self, ctx: &egui::Context) {
         let dir = std::path::PathBuf::from(std::env::var_os("MSG_SHOT_DIR").unwrap_or_default());
         for event in ctx.input(|i| i.events.clone()) {
             if let egui::Event::Screenshot { image, user_data, .. } = event {
@@ -2406,12 +2406,12 @@ impl eframe::App for App {
         self.ask_tag_groups();
 
         self.ambient(ui, ctx.content_rect());
-        if self.onboarding {
         if self.swipe.x > 0.0 {
             let edge = ctx.content_rect().translate(Vec2::new(self.swipe.x, 0.0));
             ui.painter().add(egui::Shadow { offset: [0, 0], blur: 40, spread: 0, color: Color32::from_black_alpha(110) }.as_shape(edge, 0));
         }
         let page_from = ctx.graphics_mut(|g| g.entry(egui::LayerId::background()).next_idx());
+        if self.onboarding {
             if ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
                 self.onboarding = false;
             }
@@ -2446,8 +2446,8 @@ impl eframe::App for App {
             self.player(&ctx);
             self.drawer(&ctx);
         }
-        self.page_fade(&ctx);
         self.shift_page(&ctx, page_from);
+        self.page_fade(&ctx);
         self.test_hook(&ctx);
         self.test_script(&ctx);
         self.toasts(&ctx);
