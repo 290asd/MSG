@@ -77,6 +77,9 @@ struct Screen {
     search: Option<String>,
 }
 
+/// The space between slides in the strip.
+const ROLL_GAP: f32 = 24.0;
+
 /// A search put aside when another took its place, and the slide it was on.
 type Left = (Search, usize);
 
@@ -179,6 +182,8 @@ pub struct App {
     home_kept: Option<(Search, usize, Instant)>,
     /// Smooth scrolling's distance towards the next slide.
     wheel: f32,
+    /// The slides as a strip under two fingers (with animations on).
+    roll: crate::roll::Roll,
     /// Where the player is (nothing while hidden), whether the drawer is out, and the test script's order to keep it out.
     player_rect: egui::Rect,
     drawer_open: bool,
@@ -255,6 +260,7 @@ impl App {
             suggest: Suggest::default(),
             home_kept: None,
             wheel: 0.0,
+            roll: Default::default(),
             player_rect: egui::Rect::NOTHING,
             drawer_open: false,
             drawer_forced: false,
@@ -1761,6 +1767,12 @@ impl App {
             return;
         };
         self.wheel_slides(ui, &response);
+        if self.roll.moving() {
+            // No fade when it stops: the strip has already brought the picture in.
+            self.on_screen = OnScreen::default();
+            self.strip(ui, rect);
+            return;
+        }
         let t = tok(ui.ctx());
         let url = self.copies_or(&slide.file_url);
         let faved = self.fav.contains(&slide);
@@ -1825,26 +1837,78 @@ impl App {
         }
     }
 
-    /// The wheel goes from slide to slide over the picture, unless a hotkey has the wheel. Down is the next one.
+    /// With animations on the touchpad moves the slides as a strip (`roll.rs`), and a notch slides one in.
     fn wheel_slides(&mut self, ui: &egui::Ui, response: &egui::Response) {
-        if !response.hovered() || self.hotkeys.map.values().flatten().any(|code| hotkeys::is_wheel(*code)) {
-            return;
+        let smooth = theme::smooth() > 0.0;
+        let page = response.rect.height() + ROLL_GAP;
+        let len = self.list().len();
+        let room = |i: usize| (len.saturating_sub(i + 1), i);
+        if response.hovered() && !self.hotkeys.map.values().flatten().any(|code| hotkeys::is_wheel(*code)) {
+            let now = Instant::now();
+            for event in ui.input(|i| i.events.clone()) {
+                let egui::Event::MouseWheel { unit, delta, modifiers, .. } = event else { continue };
+                // Mostly sideways is the swipe back.
+                if modifiers.any() || delta.y == 0.0 || delta.x.abs() > delta.y.abs() {
+                    continue;
+                }
+                // A mouse's notch is a step; a touchpad's many small moves add up to one.
+                if unit == egui::MouseWheelUnit::Point {
+                    if smooth {
+                        self.roll.drag(-delta.y, now, page, room(self.idx()));
+                        continue;
+                    }
+                    self.wheel += delta.y;
+                    if self.wheel.abs() >= 60.0 {
+                        self.move_by(if self.wheel < 0.0 { 1 } else { -1 });
+                        self.wheel = 0.0;
+                    }
+                } else {
+                    let by = if delta.y < 0.0 { 1 } else { -1 };
+                    let room = room(self.idx());
+                    // Past the last one the notch goes round to the start (or waits for more) as before.
+                    if smooth && (if by > 0 { room.0 } else { room.1 }) > 0 {
+                        self.roll.nudge(by, page, room);
+                    } else {
+                        self.move_by(by);
+                    }
+                }
+            }
         }
-        for event in ui.input(|i| i.events.clone()) {
-            let egui::Event::MouseWheel { unit, delta, modifiers, .. } = event else { continue };
-            if modifiers.any() || delta.y == 0.0 {
+        if self.roll.moving() {
+            let moving = self.roll.step(Instant::now(), page, room(self.idx()));
+            loop {
+                let by = self.roll.take_page(page, room(self.idx()));
+                if by == 0 {
+                    break;
+                }
+                self.move_by(by);
+            }
+            if moving {
+                ui.ctx().request_repaint();
+            }
+        }
+    }
+
+    /// The slides around the current one, one window-height apart, while the strip moves.
+    fn strip(&mut self, ui: &egui::Ui, rect: egui::Rect) {
+        let page = rect.height() + ROLL_GAP;
+        let fit = self.flag("autoFitSlide", true);
+        let idx = self.idx() as i64;
+        let near: Vec<(i64, Slide)> = (-2..=2i64).filter_map(|o| Some((o, self.list().get(usize::try_from(idx + o).ok()?)?.clone()))).collect();
+        for (o, slide) in near {
+            let at = rect.translate(Vec2::new(0.0, o as f32 * page - self.roll.y));
+            if !at.intersects(rect) {
                 continue;
             }
-            // A mouse's notch is a step; a touchpad's many small moves add up to one.
-            if unit == egui::MouseWheelUnit::Point {
-                self.wheel += delta.y;
-                if self.wheel.abs() >= 60.0 {
-                    self.move_by(if self.wheel < 0.0 { 1 } else { -1 });
-                    self.wheel = 0.0;
-                }
-            } else {
-                self.move_by(if delta.y < 0.0 { 1 } else { -1 });
-            }
+            // The whole picture if it is here, otherwise the thumbnail (always for a video).
+            let full = self.copies_or(&slide.file_url);
+            let thumb = thumb_source(&self.copies_or(&slide.preview_file_url));
+            let is_full = slide.media_type != MediaType::Video && matches!(self.media.get(&full), Some(State::Ready(_)));
+            let url = if is_full { full } else { thumb };
+            let Some(State::Ready(p)) = self.media.get(&url) else { continue };
+            let (w, h) = (p.size[0] as f32, p.size[1] as f32);
+            let scale = if fit || !is_full { (at.width() / w).min(at.height() / h) } else { 1.0 };
+            self.draw_picture(ui, egui::Rect::from_center_size(at.center(), Vec2::new(w * scale, h * scale)), &url, 1.0, Duration::ZERO);
         }
     }
 

@@ -11,6 +11,7 @@ mod logo;
 mod media;
 mod net;
 mod session;
+mod roll;
 mod settings_ui;
 mod sites;
 mod slide;
