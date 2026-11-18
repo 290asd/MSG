@@ -121,6 +121,20 @@ fn note<T>(back: &mut Vec<(Screen, Option<T>)>, here: &mut Screen, now: Screen, 
     }
 }
 
+/// The slideshow's zoom: the picture `z` times its usual size, moved `offset` from the middle.
+/// It belongs to one picture (`url`) and starts over with the next.
+struct Zoom {
+    url: String,
+    z: f32,
+    offset: Vec2,
+}
+
+impl Zoom {
+    fn new(url: String) -> Zoom {
+        Zoom { url, z: 1.0, offset: Vec2::ZERO }
+    }
+}
+
 /// The picture being shown and the one it is fading in over.
 struct OnScreen {
     url: String,
@@ -214,6 +228,7 @@ pub struct App {
     drawer_open: bool,
     drawer_forced: bool,
     on_screen: OnScreen,
+    zoom: Zoom,
     /// When the screen last changed, for the fade between pages.
     changed_at: Option<Instant>,
     /// The window for Windows' title bar, and the theme it was last painted for.
@@ -293,6 +308,7 @@ impl App {
             drawer_open: false,
             drawer_forced: false,
             on_screen: OnScreen::default(),
+            zoom: Zoom::new(String::new()),
             changed_at: None,
             window: match cc.window_handle().map(|h| h.as_raw()) {
                 Ok(raw_window_handle::RawWindowHandle::Win32(handle)) => Some(handle.hwnd.get()),
@@ -471,6 +487,11 @@ impl App {
     /// A page is over the slideshow: no clock, no video, no downloads for it, and no keys that act on its slide.
     pub fn covered(&self) -> bool {
         self.show_pools || self.show_settings || self.show_mosaic
+    }
+
+    /// The picture on the screen is zoomed in: the wheel and two fingers move it instead of the slides.
+    fn zoomed(&self) -> bool {
+        self.zoom.z > 1.0 && !self.covered() && self.current_ref().is_some_and(|s| self.copies_or(&s.file_url) == self.zoom.url)
     }
 
     /// The mosaic is the page on top.
@@ -1863,13 +1884,18 @@ impl App {
 
     fn viewer(&mut self, ui: &mut egui::Ui) {
         let rect = ui.available_rect_before_wrap();
-        let response = ui.allocate_rect(rect, Sense::click());
+        let response = ui.allocate_rect(rect, Sense::click_and_drag());
         let Some(slide) = self.current() else {
             self.on_screen = OnScreen::default();
             self.front_page(ui, rect);
             return;
         };
-        self.wheel_slides(ui, &response);
+        if self.zoom.url != self.copies_or(&slide.file_url) {
+            self.zoom = Zoom::new(self.copies_or(&slide.file_url));
+        }
+        if !self.zoomed() {
+            self.wheel_slides(ui, &response);
+        }
         if self.roll.moving() {
             // No fade when it stops: the strip has already brought the picture in.
             self.on_screen = OnScreen::default();
@@ -1893,10 +1919,10 @@ impl App {
         let (mut showing, mut place) = (String::new(), egui::Rect::NOTHING);
         match self.media.get(&url) {
             Some(State::Ready(picture)) => {
-                let (w, h) = (picture.size[0] as f32, picture.size[1] as f32);
-                let scale = if self.flag("autoFitSlide", true) { (rect.width() / w).min(rect.height() / h) } else { 1.0 };
+                let size = Vec2::new(picture.size[0] as f32, picture.size[1] as f32);
+                let scale = if self.flag("autoFitSlide", true) { (rect.width() / size.x).min(rect.height() / size.y) } else { 1.0 };
                 showing = url.clone();
-                place = egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale));
+                place = self.zoom_place(ui, &response, rect, size * scale, scale);
             }
             Some(State::Failed(e)) => {
                 let text = format!("Couldn't load the picture ({e})");
@@ -1940,6 +1966,45 @@ impl App {
         }
     }
 
+    /// Where the picture goes, `shown` big as it is usually, `scale` times its own size. Pinch or Ctrl+wheel
+    /// zooms around the pointer and a double click goes between that and its own size (twice that if it is
+    /// already). A picture bigger than the window is moved by dragging, and when zoomed in also by the wheel.
+    fn zoom_place(&mut self, ui: &egui::Ui, response: &egui::Response, rect: egui::Rect, shown: Vec2, scale: f32) -> egui::Rect {
+        let most = (8.0 / scale).max(1.0);
+        let zoom = &mut self.zoom;
+        let zoom_to = |zoom: &mut Zoom, z: f32, at: egui::Pos2| {
+            let z = z.clamp(1.0, most);
+            // The point under the pointer stays there.
+            let centre = at - (at - (rect.center() + zoom.offset)) * (z / zoom.z);
+            zoom.offset = centre - rect.center();
+            zoom.z = z;
+        };
+        if let Some(at) = response.hover_pos() {
+            let delta = ui.input(|i| i.zoom_delta());
+            if delta != 1.0 {
+                zoom_to(zoom, zoom.z * delta, at);
+            }
+            if response.double_clicked() {
+                let z = if zoom.z > 1.0 { 1.0 } else if scale < 0.99 { 1.0 / scale } else { 2.0 };
+                zoom_to(zoom, z, at);
+            }
+        }
+        if response.dragged() {
+            zoom.offset += response.drag_delta();
+        }
+        if zoom.z > 1.0 && response.hovered() {
+            zoom.offset += ui.input(|i| i.smooth_scroll_delta);
+        }
+        let size = shown * zoom.z;
+        let room = ((size - rect.size()) / 2.0).max(Vec2::ZERO);
+        zoom.offset = zoom.offset.clamp(-room, room);
+        if response.dragged() && room != Vec2::ZERO {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        }
+        egui::Rect::from_center_size(rect.center() + zoom.offset, size)
+    }
+
+    /// The wheel goes from slide to slide over the picture, unless a hotkey has the wheel. Down is the next one.
     /// With animations on the touchpad moves the slides as a strip (`roll.rs`), and a notch slides one in.
     fn wheel_slides(&mut self, ui: &egui::Ui, response: &egui::Response) {
         let smooth = theme::smooth() > 0.0;
@@ -2170,10 +2235,12 @@ impl App {
         let width = ctx.content_rect().width();
         let mut dx = 0.0;
         let mut any = false;
+        // A zoomed-in picture takes the fingers itself.
+        let zoomed = self.zoomed();
         for event in ctx.input(|i| i.events.clone()) {
             let egui::Event::MouseWheel { unit, delta, modifiers, .. } = event else { continue };
             // Scrolling down a page with a little sideways in it is not a swipe.
-            if modifiers.any() || delta.x == 0.0 || (self.swipe.x == 0.0 && delta.x.abs() < delta.y.abs()) {
+            if modifiers.any() || delta.x == 0.0 || (self.swipe.x == 0.0 && (zoomed || delta.x.abs() < delta.y.abs())) {
                 continue;
             }
             any = true;
