@@ -1182,7 +1182,7 @@ impl App {
     /// Follow or Save pool, and the sort menu. Right to left in the toolbar, left to right in the drawer.
     fn search_extras(&mut self, ui: &mut egui::Ui) {
         if let Some(pool) = self.search.as_ref().and_then(|s| s.pool()) {
-            if ui.button((theme::glyph(icon::FOLLOW, 14.0), "Save pool")).clicked() {
+            if theme::button(ui, (theme::glyph(icon::FOLLOW, 14.0), "Save pool")).clicked() {
                 let cover = self.search.as_ref().and_then(|s| s.slides.first().map(|x| x.preview_file_url.clone())).unwrap_or_default();
                 self.save_pool(pool.0, pool.1, pool.2, cover);
             }
@@ -1190,7 +1190,7 @@ impl App {
             let following = session::reading_list(&self.store).iter().any(|(t, _)| *t == tags);
             let word = if self.compact(ui) { "" } else if following { "Following" } else { "Follow" };
             let text = (theme::glyph(if following { icon::FOLLOWING } else { icon::FOLLOW }, 14.0), word);
-            if ui.button(text).on_hover_text("The reading list shows the newest posts of what you follow.").clicked() {
+            if theme::button(ui, text).on_hover_text("The reading list shows the newest posts of what you follow.").clicked() {
                 self.toggle_follow(&tags);
             }
         }
@@ -1421,7 +1421,7 @@ impl App {
 
     fn sites_menu(&mut self, ui: &mut egui::Ui) {
         let compact = self.compact(ui);
-        ui.menu_button((theme::glyph(icon::SITES, 14.0), if compact { "" } else { "Sites" }), |ui| {
+        let shine = ui.menu_button((theme::glyph(icon::SITES, 14.0), if compact { "" } else { "Sites" }), |ui| {
             let ticked = session::ticked_sites(&self.store);
             for site in Site::ALL {
                 let mut on = ticked.contains(&site);
@@ -1431,7 +1431,8 @@ impl App {
                 }
             }
         });
-        ui.menu_button((theme::glyph(icon::FILTERS, 14.0), if compact { "" } else { "Filters" }), |ui| {
+        theme::shine(ui, &shine.response);
+        let shine = ui.menu_button((theme::glyph(icon::FILTERS, 14.0), if compact { "" } else { "Filters" }), |ui| {
             for (key, default, label) in [
                 ("includeImages", true, "Images"), ("includeGifs", true, "GIFs"), ("includeWebms", true, "Videos"),
                 ("includeSafe", true, "Safe"), ("includeQuestionable", false, "Questionable"), ("includeExplicit", false, "Explicit"),
@@ -1444,13 +1445,14 @@ impl App {
             }
             ui.label(RichText::new("Applies to the next search.").weak());
         });
+        theme::shine(ui, &shine.response);
     }
 
     fn sort_menu(&mut self, ui: &mut egui::Ui) {
         let current = self.text("searchSort");
         let names = [("", "Default"), ("order:id_desc", "Newest"), ("order:id_asc", "Oldest"), ("order:score_desc", "Highest score"), ("order:score_asc", "Lowest score")];
         let label = names.iter().find(|(v, _)| *v == current).map(|(_, l)| *l).unwrap_or("Default");
-        egui::ComboBox::from_id_salt("sort").selected_text(label).show_ui(ui, |ui| {
+        let shine = egui::ComboBox::from_id_salt("sort").selected_text(label).show_ui(ui, |ui| {
             for (value, name) in names {
                 if ui.selectable_label(current == value, name).clicked() {
                     self.set("searchSort", json!(value));
@@ -1460,6 +1462,7 @@ impl App {
                 }
             }
         });
+        theme::shine(ui, &shine.response);
     }
 
     /// How many are shown, the site and Random.
@@ -1468,7 +1471,7 @@ impl App {
         let counts = self.fav.site_counts();
         let selected = self.fav.site.clone();
         let label = selected.as_ref().and_then(|s| Site::from_id(s)).map(|s| s.name().to_string()).unwrap_or_else(|| format!("All sites ({})", self.fav.items.len()));
-        egui::ComboBox::from_id_salt("favsite").selected_text(label).show_ui(ui, |ui| {
+        let shine = egui::ComboBox::from_id_salt("favsite").selected_text(label).show_ui(ui, |ui| {
             if ui.selectable_label(selected.is_none(), format!("All sites ({})", self.fav.items.len())).clicked() {
                 self.fav.site = None;
                 self.apply_favorite_filter();
@@ -1481,10 +1484,11 @@ impl App {
                 }
             }
         });
+        theme::shine(ui, &shine.response);
         let sort = self.text("favoritesSort");
         let names = [("newest", "Newest"), ("random", "Random"), ("oldest", "Oldest")];
         let label = names.iter().find(|(v, _)| *v == sort).map_or("Newest", |(_, n)| *n);
-        egui::ComboBox::from_id_salt("favsort").selected_text(label).show_ui(ui, |ui| {
+        let shine = egui::ComboBox::from_id_salt("favsort").selected_text(label).show_ui(ui, |ui| {
             for (value, name) in names {
                 if ui.selectable_label(label == name, name).clicked() {
                     self.set("favoritesSort", json!(value));
@@ -1492,6 +1496,7 @@ impl App {
                 }
             }
         });
+        theme::shine(ui, &shine.response);
     }
 
     /// The filter box with its button, right to left.

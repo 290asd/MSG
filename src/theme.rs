@@ -76,6 +76,8 @@ pub struct Tokens {
     /// What lies over the blurred window in a glass surface, and over the blurred picture behind everything.
     pub glass: Color32,
     pub ambient: Color32,
+    /// The white of the shine on the upper half of buttons and bars (Aero); 0 = none.
+    pub gloss: u8,
 }
 
 // Written with the alpha this way because a Color32 holds premultiplied values.
@@ -100,6 +102,7 @@ pub const DARK: Tokens = Tokens {
     press: alpha(0xff, 0x96, 0x78, 60),
     glass: alpha(0x1c, 0x1f, 0x27, 150),
     ambient: alpha(0x17, 0x19, 0x1f, 190),
+    gloss: 0,
 };
 
 pub const LIGHT: Tokens = Tokens {
@@ -119,6 +122,7 @@ pub const LIGHT: Tokens = Tokens {
     press: alpha(0xd9, 0x57, 0x37, 56),
     glass: alpha(0xfa, 0xf7, 0xf2, 170),
     ambient: alpha(0xf3, 0xef, 0xe9, 205),
+    gloss: 0,
 };
 
 /// e621's Hexagon theme (e621ng `_theme_hexagon.scss`): navy, gold links, its tag colours. Dark only.
@@ -139,6 +143,7 @@ pub const E621: Tokens = Tokens {
     press: alpha(0xe8, 0xc4, 0x46, 60),
     glass: alpha(0x0b, 0x1f, 0x3d, 150),
     ambient: alpha(0x02, 0x0f, 0x23, 190),
+    gloss: 0,
 };
 
 /// Frutiger Aero / Windows Vista: sky blue, aqua and grass green, clear glass.
@@ -159,6 +164,7 @@ pub const AERO_LIGHT: Tokens = Tokens {
     press: alpha(0x0a, 0x84, 0xd0, 56),
     glass: alpha(0xf0, 0xf8, 0xff, 140),
     ambient: alpha(0xdc, 0xec, 0xf7, 195),
+    gloss: 120,
 };
 
 pub const AERO_DARK: Tokens = Tokens {
@@ -178,6 +184,7 @@ pub const AERO_DARK: Tokens = Tokens {
     press: alpha(0x45, 0xc3, 0xf5, 60),
     glass: alpha(0x0e, 0x2a, 0x44, 130),
     ambient: alpha(0x07, 0x16, 0x24, 185),
+    gloss: 30,
 };
 
 /// The themes: (setting, name, dark, light). A theme without a light look has `None`.
@@ -356,6 +363,34 @@ pub fn install(ctx: &egui::Context) {
     });
 }
 
+/// The shine on the upper half of a button or bar, `k` of the theme's full strength. Nothing in a theme without gloss.
+pub fn gloss_shape(t: &Tokens, rect: egui::Rect, radius: u8, k: f32) -> egui::Shape {
+    if t.gloss == 0 || k <= 0.0 {
+        return egui::Shape::Noop;
+    }
+    let white = |share: f32| Color32::from_white_alpha((f32::from(t.gloss) * k * share) as u8);
+    let corners = CornerRadius { nw: radius, ne: radius, sw: 0, se: 0 };
+    let half = egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.center().y)).shrink(1.0);
+    let band = egui::Rect::from_min_size(half.min, Vec2::new(half.width(), half.height() * 0.5));
+    egui::Shape::Vec(vec![egui::Shape::rect_filled(half, corners, white(0.55)), egui::Shape::rect_filled(band, corners, white(0.45))])
+}
+
+pub fn gloss(ui: &egui::Ui, rect: egui::Rect, radius: u8, k: f32) {
+    ui.painter().add(gloss_shape(tok(ui.ctx()), rect, radius, k));
+}
+
+/// The shine on one of egui's own buttons, menus and lists, after it is drawn.
+pub fn shine(ui: &egui::Ui, response: &egui::Response) {
+    gloss(ui, response.rect, RADIUS_S, if response.hovered() { 1.0 } else { 0.7 });
+}
+
+/// `ui.button` with the shine.
+pub fn button<'a>(ui: &mut egui::Ui, text: impl egui::IntoAtoms<'a>) -> egui::Response {
+    let response = ui.button(text);
+    shine(ui, &response);
+    response
+}
+
 /// A keyboard user's ring around the widget that has the focus.
 fn focus_ring(ui: &egui::Ui, response: &egui::Response, radius: u8) {
     if response.has_focus() {
@@ -379,6 +414,7 @@ pub fn icon_button_tinted(ui: &mut egui::Ui, icon: char, tip: &str, on: bool, co
     } else if hover > 0.0 {
         ui.painter().rect_filled(rect, RADIUS_S, t.hover.gamma_multiply(hover));
     }
+    gloss(ui, rect, RADIUS_S, if on { 1.0 } else { hover });
     let color = color.unwrap_or(if on { t.accent } else { t.text2.lerp_to_gamma(t.text, hover) });
     let color = if ui.is_enabled() { color } else { t.muted };
     ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, icon.to_string(), FontId::new(17.0, family("icons")), color);
@@ -396,6 +432,7 @@ pub fn rail_item(ui: &mut egui::Ui, rect: egui::Rect, icon: char, label: &str, o
     if !on && hover > 0.0 {
         ui.painter().rect_filled(shape, RADIUS_M, t.control.gamma_multiply(hover));
     }
+    gloss(ui, shape, RADIUS_M, if on { 1.0 } else { hover });
     let color = if !ui.is_enabled() { t.muted.gamma_multiply(0.6) } else if on { t.accent } else { t.text2.lerp_to_gamma(t.text, hover) };
     ui.painter().text(egui::pos2(rect.center().x, rect.top() + 21.0), egui::Align2::CENTER_CENTER, icon.to_string(), FontId::new(20.0, family("icons")), color);
     ui.painter().text(egui::pos2(rect.center().x, rect.top() + 42.0), egui::Align2::CENTER_CENTER, label, medium(10.5), color);
@@ -433,6 +470,7 @@ pub fn drawer_row(ui: &mut egui::Ui, icon: char, label: &str, on: bool) -> egui:
     } else if hover > 0.0 {
         ui.painter().rect_filled(rect, RADIUS_S, t.control.gamma_multiply(hover));
     }
+    gloss(ui, rect, RADIUS_S, if on { 1.0 } else { hover });
     let color = if !ui.is_enabled() { t.muted } else if on { t.accent } else { t.text2.lerp_to_gamma(t.text, hover) };
     ui.painter().text(egui::pos2(rect.left() + 18.0, rect.center().y), egui::Align2::CENTER_CENTER, icon.to_string(), FontId::new(16.0, family("icons")), color);
     ui.painter().text(egui::pos2(rect.left() + 36.0, rect.center().y), egui::Align2::LEFT_CENTER, label, medium(13.0), color);
@@ -495,6 +533,7 @@ pub fn heart_button(ui: &mut egui::Ui, faved: bool, tip: &str, armed: bool) -> e
     } else if response.hovered() {
         ui.painter().rect_filled(rect, RADIUS_S, t.hover);
     }
+    gloss(ui, rect, RADIUS_S, if armed || response.hovered() { 1.0 } else { 0.0 });
     ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, heart_text(faved), heart_font(faved, 17.0), if faved { t.accent } else { t.text2 });
     focus_ring(ui, &response, RADIUS_S);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), tip));
@@ -512,6 +551,7 @@ pub fn toggle(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
     let t = tok(ui.ctx());
     let k = ui.ctx().animate_bool_with_time(response.id, *on, quick());
     ui.painter().rect_filled(rect, 10, t.top.lerp_to_gamma(t.accent, k));
+    gloss(ui, rect, 10, 1.0);
     let x = egui::lerp((rect.left() + 10.0)..=(rect.right() - 10.0), k);
     ui.painter().circle_filled(egui::pos2(x, rect.center().y), 8.0, Color32::WHITE);
     focus_ring(ui, &response, 10);
@@ -531,7 +571,10 @@ pub fn segmented(ui: &mut egui::Ui, options: &[(char, &str)], chosen: usize) -> 
     // The mark slides to the chosen one.
     let mark_x = ui.ctx().animate_value_with_time(area.id.with("mark"), left_of(chosen), smooth());
     let mark_w = ui.ctx().animate_value_with_time(area.id.with("width"), widths[chosen], smooth());
-    ui.painter().rect_filled(egui::Rect::from_min_size(egui::pos2(rect.left() + mark_x, rect.top()), Vec2::new(mark_w, rect.height())).shrink(2.0), 5, t.press);
+    gloss(ui, rect, RADIUS_S, 0.5);
+    let mark = egui::Rect::from_min_size(egui::pos2(rect.left() + mark_x, rect.top()), Vec2::new(mark_w, rect.height())).shrink(2.0);
+    ui.painter().rect_filled(mark, 5, t.press);
+    gloss(ui, mark, 5, 1.0);
     for (n, (icon, text)) in options.iter().enumerate() {
         let cell = egui::Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(widths[n], rect.height()));
         x += widths[n];
@@ -564,6 +607,7 @@ pub fn chip(ui: &mut egui::Ui, text: &str, on: bool) -> egui::Response {
     let galley = ui.painter().layout_no_wrap(text.to_string(), font, if on { t.accent } else { t.text });
     let (rect, response) = ui.allocate_exact_size(Vec2::new((galley.size().x + 16.0).max(28.0), 26.0), Sense::click());
     ui.painter().rect_filled(rect, RADIUS_S, if on { t.press } else if response.hovered() { t.hover } else { t.control });
+    gloss(ui, rect, RADIUS_S, 1.0);
     ui.painter().galley(rect.center() - galley.size() / 2.0, galley, t.text);
     focus_ring(ui, &response, RADIUS_S);
     response

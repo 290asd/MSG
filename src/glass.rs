@@ -209,12 +209,14 @@ pub fn frost(ctx: &egui::Context, rect: Rect, look: Look, opacity: f32) -> Shape
     Shape::Callback(egui::PaintCallback { rect, callback: Arc::new(callback) })
 }
 
-fn surface(ui: &egui::Ui, rect: Rect, look: Look) -> [Shape; 3] {
+fn surface(ui: &egui::Ui, rect: Rect, look: Look) -> [Shape; 4] {
     let t = tok(ui.ctx());
     let shadow = Shadow { offset: [0, 8], blur: 28, spread: 0, color: Color32::from_black_alpha(if ui.visuals().dark_mode { 90 } else { 34 }) };
     [
         shadow.as_shape(rect, look.radius).into(),
         frost(ui.ctx(), rect, look, ui.opacity()),
+        // Tall panels shine only at the top, as a bar would.
+        super::theme::gloss_shape(t, Rect::from_min_size(rect.min, egui::vec2(rect.width(), rect.height().min(56.0))), look.radius as u8, 0.6),
         Shape::rect_stroke(rect, look.radius, Stroke::new(1.0, t.hairline), egui::StrokeKind::Inside),
     ]
 }
@@ -226,7 +228,7 @@ pub fn panel(ui: &egui::Ui, rect: Rect, look: Look) {
 
 /// A glass surface as big as what `add` draws on it.
 pub fn card<R>(ui: &mut egui::Ui, look: Look, margin: Margin, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    let slots = [ui.painter().add(Shape::Noop), ui.painter().add(Shape::Noop), ui.painter().add(Shape::Noop)];
+    let slots = [(); 4].map(|()| ui.painter().add(Shape::Noop));
     let inner = egui::Frame::NONE.inner_margin(margin).show(ui, add);
     for (slot, shape) in slots.into_iter().zip(surface(ui, inner.response.rect, look)) {
         ui.painter().set(slot, shape);

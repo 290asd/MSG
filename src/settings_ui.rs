@@ -100,7 +100,9 @@ impl App {
                 });
                 ui.add_space(theme::S6);
                 let start = egui::Button::new(RichText::new("Get started").font(theme::medium(15.0)).color(t.base)).fill(t.accent).min_size(Vec2::new(160.0, 40.0));
-                if ui.add(start).clicked() {
+                let start = ui.add(start);
+                theme::shine(ui, &start);
+                if start.clicked() {
                     self.onboarding = false;
                 }
                 ui.add_space(theme::S6);
@@ -228,7 +230,7 @@ impl App {
             self.check(ui, "searchSortMenu", false, "Sort menu with the search");
             self.check(ui, "storeHistory", true, "Remember my searches");
             theme::row(ui, "Searches remembered so far", |ui| {
-                if ui.button("Clear the history").clicked() {
+                if theme::button(ui, "Clear the history").clicked() {
                     self.set("searchHistory", json!([]));
                 }
             });
@@ -373,7 +375,7 @@ impl App {
             }
         });
         ui.add_space(theme::S2);
-        if ui.button("Reset all").clicked() {
+        if theme::button(ui, "Reset all").clicked() {
             for action in &ACTIONS {
                 self.hotkeys.map.insert(action.id.to_string(), action.defaults.to_vec());
             }
@@ -405,7 +407,7 @@ impl App {
                 });
             }
             theme::row(ui, "", |ui| {
-                if ui.button("Add folder…").clicked() {
+                if theme::button(ui, "Add folder…").clicked() {
                     if let Some(path) = self.pick_folder("Choose a folder with images and videos") {
                         if !folders.contains(&path) {
                             folders.push(path);
@@ -426,11 +428,11 @@ impl App {
         let current = self.text("downloadFolder");
         theme::group(ui, "Download folder", |ui| {
             theme::row(ui, if current.is_empty() { "Downloads/MSG (default)" } else { current.as_str() }, |ui| {
-                if ui.button("Default").clicked() {
+                if theme::button(ui, "Default").clicked() {
                     self.set("downloadFolder", json!(""));
                     self.settings_changed();
                 }
-                if ui.button("Choose…").clicked() {
+                if theme::button(ui, "Choose…").clicked() {
                     if let Some(path) = self.pick_folder("Choose the download folder") {
                         self.set("downloadFolder", json!(path));
                         self.settings_changed();
@@ -472,7 +474,7 @@ impl App {
         ui.heading("Favorites");
         theme::group(ui, "Your favorites", |ui| {
             theme::row(ui, format!("{} favorites", self.fav.items.len()), |ui| {
-                if ui.button("Import").on_hover_text("From e621, Derpibooru and Gelbooru, with the details under Sites & accounts. Already-added items are skipped.").clicked() {
+                if theme::button(ui, "Import").on_hover_text("From e621, Derpibooru and Gelbooru, with the details under Sites & accounts. Already-added items are skipped.").clicked() {
                     super::favorites::import(&self.engine, self.tx.clone());
                 }
             });
@@ -481,10 +483,10 @@ impl App {
             }
             self.check(ui, "syncE621Favorites", true, "Also fave and unfave on e621 (needs the e621 username and API key)");
             theme::row(ui, "Download all favorites being shown", |ui| {
-                if ui.button("Stop").clicked() {
+                if theme::button(ui, "Stop").clicked() {
                     self.downloader.cancel_bulk();
                 }
-                if ui.button("Download").clicked() {
+                if theme::button(ui, "Download").clicked() {
                     let urls: Vec<String> = self.fav.view.iter().map(|s| s.file_url.clone()).filter(|u| super::net::web_url(u).is_some()).collect();
                     self.downloader.download_many(urls, "MSG/favorites");
                 }
@@ -508,7 +510,7 @@ impl App {
                         changed = true;
                     }
                     let mut ids: Vec<String> = entry["sites"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
-                    ui.menu_button(format!("Sites ({})", ids.len()), |ui| {
+                    let shine = ui.menu_button(format!("Sites ({})", ids.len()), |ui| {
                         for site in Site::ALL {
                             let mut on = ids.iter().any(|i| i == site.id());
                             if ui.checkbox(&mut on, site.name()).changed() {
@@ -521,6 +523,7 @@ impl App {
                             }
                         }
                     });
+                    theme::shine(ui, &shine.response);
                 });
             }
         });
@@ -557,12 +560,13 @@ impl App {
 
     /// The pools page's part of the top bar, right to left (see top_bar).
     pub fn pools_bar(&mut self, ui: &mut egui::Ui) {
-        if ui.button("◀ Back").clicked() {
+        if theme::button(ui, "◀ Back").clicked() {
             self.go_back();
         }
         // One e621 job at a time (the favorites import's progress shows here too).
         let busy = !self.progress.is_empty();
         let find = ui.add_enabled(!busy, egui::Button::new("Find pools in favorites")).on_hover_text("Adds the e621 pools that your e621 favorites are in.");
+        theme::shine(ui, &find);
         if find.clicked() {
             let favorites = self.fav.items.iter().filter(|s| s.site_id == "E621").map(|s| super::slide::id_text(&s.id)).collect();
             let saved = self.store.get("savedPools").and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|p| p["id"].as_u64()).collect();
@@ -571,13 +575,14 @@ impl App {
         let sort = self.text("poolsSort");
         let names = [("added", "Recently added"), ("name", "Name"), ("pages", "Most pages")];
         let label = names.iter().find(|(v, _)| *v == sort).map_or("Recently added", |(_, n)| *n);
-        egui::ComboBox::from_id_salt("poolsort").selected_text(label).show_ui(ui, |ui| {
+        let shine = egui::ComboBox::from_id_salt("poolsort").selected_text(label).show_ui(ui, |ui| {
             for (value, name) in names {
                 if ui.selectable_label(label == name, name).clicked() {
                     self.set("poolsSort", json!(value));
                 }
             }
         });
+        theme::shine(ui, &shine.response);
         if busy {
             ui.label(RichText::new(&self.progress).weak());
         }
