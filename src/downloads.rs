@@ -188,7 +188,8 @@ pub async fn e621_json(engine: &Engine, path_and_query: &str) -> Result<Value, S
     if !response.status().is_success() {
         return Err(format!("e621 answered {}", response.status().as_u16()));
     }
-    serde_json::from_slice(&response.bytes().await.map_err(|_| "e621 didn't answer".to_string())?).map_err(|_| "e621 sent something that isn't JSON".to_string())
+    let answer: Value = serde_json::from_slice(&response.bytes().await.map_err(|_| "e621 didn't answer".to_string())?).map_err(|_| "e621 sent something that isn't JSON".to_string())?;
+    Ok(if path_and_query.starts_with("/posts.json") { super::sites::e621_old_posts(answer) } else { answer })
 }
 
 struct Job {

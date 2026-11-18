@@ -142,6 +142,8 @@ pub fn frost(ctx: &egui::Context, rect: Rect, look: Look, opacity: f32) -> Shape
         let Some(programs) = PROGRAMS.get_or_init(|| unsafe { compile(gl) }) else {
             return ctx.request_repaint();
         };
+        // Where the shape is now: the swipe back moves the page after it was drawn.
+        let rect = info.viewport;
         let [sw, sh] = info.screen_size_px.map(|v| v as i32);
         let ppp = info.pixels_per_point;
         let mut chain = CHAIN.lock().unwrap();

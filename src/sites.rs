@@ -334,7 +334,9 @@ pub fn parse(c: &Config, site: Site, body: &str) -> Result<(Vec<Slide>, usize), 
 
 fn parse_posts(c: &Config, site: Site, body: &str) -> Result<(Vec<Slide>, usize), String> {
     match site {
-        Site::E621 => json_posts(body, Some("posts")).map(|p| (p.iter().filter_map(|v| e621(c, v)).collect(), p.len())),
+        Site::E621 => json_posts(body, None)
+            .or_else(|_| json_posts(body, Some("posts")))
+            .map(|p| (p.iter().filter_map(|v| e621(c, &e621_old_post(v.clone()))).collect(), p.len())),
         Site::Danbooru => json_posts(body, None).map(|p| (p.iter().filter_map(|v| danbooru(c, v)).collect(), p.len())),
         Site::Konachan | Site::Yandere => json_posts(body, None).map(|p| (p.iter().filter_map(|v| moebooru(c, site, v)).collect(), p.len())),
         Site::Derpibooru | Site::Tantabus => json_posts(body, Some("images")).map(|p| (p.iter().filter_map(|v| philomena(c, site, v)).collect(), p.len())),
@@ -377,6 +379,31 @@ fn absolute(base: &str, url: &str) -> String {
     }
 }
 
+/// e621 changed posts.json on 18.11.2026: a bare list instead of {"posts": …}, "files" in place of "file",
+/// "preview" and "sample", the score under "stats" and the tags as one list without categories.
+/// This gives a new post the old fields, which the rest of MSG reads; an old post passes unchanged.
+pub fn e621_old_post(mut post: Value) -> Value {
+    if let Some(files) = post.get("files").cloned() {
+        let (meta, original) = (&files["meta"], &files["original"]);
+        post["file"] = serde_json::json!({"url": original["url"], "md5": meta["md5"], "ext": meta["ext"], "width": original["width"], "height": original["height"]});
+        post["preview"] = serde_json::json!({"url": files["preview"]["jpg"]});
+        let sample = if meta["has_sample"] == true { files["sample"]["jpg"].clone() } else { Value::Null };
+        post["sample"] = serde_json::json!({ "url": sample });
+    }
+    if let Some(score) = post.get("stats").map(|s| s["score"].clone()) {
+        post["score"] = score;
+    }
+    post
+}
+
+/// posts.json in the old shape, {"posts": [old posts]}, whichever shape e621 sent.
+pub fn e621_old_posts(answer: Value) -> Value {
+    match answer {
+        Value::Array(posts) => serde_json::json!({ "posts": posts.into_iter().map(e621_old_post).collect::<Vec<_>>() }),
+        other => other,
+    }
+}
+
 fn e621(c: &Config, post: &Value) -> Option<Slide> {
     let file = post.get("file")?;
     let id = post.get("id")?.clone();
@@ -389,8 +416,11 @@ fn e621(c: &Config, post: &Value) -> Option<Slide> {
         }
         None => return None,
     };
-    let groups = post.get("tags")?.as_object()?.clone();
-    let tags = groups.values().filter_map(Value::as_array).flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(" ");
+    // Since 18.11.2026 e621 sends the tags as one list, without categories (artist, species …).
+    let all = post.get("tags")?;
+    let groups = all.as_object().cloned();
+    let lists: Vec<&Value> = groups.as_ref().map_or_else(|| vec![all], |g| g.values().collect());
+    let tags = lists.into_iter().filter_map(Value::as_array).flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(" ");
     let kind = c.accepts(&url, post.get("rating").and_then(Value::as_str), &tags)?;
     Some(Slide {
         site_id: "E621".into(),
@@ -404,7 +434,7 @@ fn e621(c: &Config, post: &Value) -> Option<Slide> {
         media_type: kind,
         md5,
         tags,
-        tag_groups: Some(groups),
+        tag_groups: groups,
         file_url: url,
         id,
     })
@@ -596,6 +626,24 @@ mod tests {
         assert_eq!(slides[0].media_type, MediaType::Video);
         let only_safe = Config { safe: true, ..config() };
         assert_eq!(parse(&only_safe, Site::E621, body).unwrap().0.len(), 0);
+    }
+
+    #[test]
+    fn e621_posts_since_november_2026() {
+        let body = r#"[{"id":4,"created_at":"2026-11-18T12:31:38.309-05:00","rating":"s","stats":{"score":{"total":9}},
+          "files":{"meta":{"md5":"b32f","ext":"jpg","has_sample":true},"original":{"width":20,"height":30,"url":"https://static1.e621.net/data/b3/2f/b32f.jpg"},
+          "preview":{"jpg":"https://static1.e621.net/data/preview/b3/2f/b32f.jpg"},"sample":{"jpg":"https://static1.e621.net/data/sample/b3/2f/b32f.jpg"}},
+          "tags":["cat","mantis"]}]"#;
+        let (slides, n) = parse(&config(), Site::E621, body).unwrap();
+        assert_eq!((slides.len(), n), (1, 1));
+        let s = &slides[0];
+        assert_eq!(s.file_url, "https://static1.e621.net/data/b3/2f/b32f.jpg");
+        assert_eq!(s.preview_file_url, "https://static1.e621.net/data/preview/b3/2f/b32f.jpg");
+        assert_eq!(s.sample_file_url.as_deref(), Some("https://static1.e621.net/data/sample/b3/2f/b32f.jpg"));
+        assert_eq!((s.width, s.height, s.score, s.tags.as_str(), s.md5.as_str()), (20, 30, 9, "cat mantis", "b32f"));
+        assert!(s.tag_groups.is_none());
+        let old = e621_old_posts(serde_json::from_str(body).unwrap());
+        assert_eq!(old["posts"][0]["preview"]["url"], "https://static1.e621.net/data/preview/b3/2f/b32f.jpg");
     }
 
     #[test]
