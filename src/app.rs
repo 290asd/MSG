@@ -1815,7 +1815,7 @@ impl App {
         if faved {
             fave_mark(ui, place);
         }
-        if showing == url && response.clicked() && self.mode == Mode::Favorites && self.flag("clickOpensPost", true) {
+        if response.middle_clicked() {
             self.open_source();
         }
     }
@@ -1848,7 +1848,7 @@ impl App {
         let Some(player) = &self.video else {
             let text = self.video_error.clone().unwrap_or_else(|| "Video playback is not available.".into());
             ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(16.0), tok(ui.ctx()).text2);
-            if response.clicked() {
+            if response.middle_clicked() {
                 self.open_source();
             }
             return rect;
@@ -1860,6 +1860,9 @@ impl App {
         player.paint(ui, place);
         if response.clicked() {
             player.set_paused(!player.status().paused);
+        }
+        if response.middle_clicked() {
+            self.open_source();
         }
         ui.ctx().request_repaint_after(Duration::from_millis(250));
         place

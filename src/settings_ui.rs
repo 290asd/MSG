@@ -466,7 +466,6 @@ impl App {
                 ui.label(RichText::new(&self.progress).weak());
             }
             self.check(ui, "syncE621Favorites", true, "Also fave and unfave on e621 (needs the e621 username and API key)");
-            self.check(ui, "clickOpensPost", true, "Clicking the picture opens its post");
             theme::row(ui, "Download all favorites being shown", |ui| {
                 if ui.button("Stop").clicked() {
                     self.downloader.cancel_bulk();
