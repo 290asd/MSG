@@ -487,7 +487,7 @@ impl App {
                     self.downloader.cancel_bulk();
                 }
                 if theme::button(ui, "Download").clicked() {
-                    let urls: Vec<String> = self.fav.view.iter().map(|s| s.file_url.clone()).filter(|u| super::net::web_url(u).is_some()).collect();
+                    let urls: Vec<(String, String)> = self.fav.view.iter().filter(|s| super::net::web_url(&s.file_url).is_some()).map(|s| (s.file_url.clone(), s.tags.clone())).collect();
                     self.downloader.download_many(urls, "MSG/favorites");
                 }
             });

@@ -409,6 +409,14 @@ pub fn e621_old_posts(answer: Value) -> Value {
     }
 }
 
+/// An e621 post's tags, space-separated. Since 18.11.2026 e621 sends them as one list, without the categories
+/// (artist, species …) it used to group them in.
+pub fn e621_tags(post: &Value) -> String {
+    let all = &post["tags"];
+    let lists: Vec<&Value> = all.as_object().map_or_else(|| vec![all], |g| g.values().collect());
+    lists.into_iter().filter_map(Value::as_array).flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(" ")
+}
+
 fn e621(c: &Config, post: &Value) -> Option<Slide> {
     let file = post.get("file")?;
     let id = post.get("id")?.clone();
@@ -421,11 +429,8 @@ fn e621(c: &Config, post: &Value) -> Option<Slide> {
         }
         None => return None,
     };
-    // Since 18.11.2026 e621 sends the tags as one list, without categories (artist, species …).
-    let all = post.get("tags")?;
-    let groups = all.as_object().cloned();
-    let lists: Vec<&Value> = groups.as_ref().map_or_else(|| vec![all], |g| g.values().collect());
-    let tags = lists.into_iter().filter_map(Value::as_array).flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(" ");
+    let groups = post.get("tags")?.as_object().cloned();
+    let tags = e621_tags(post);
     let kind = c.accepts(&url, post.get("rating").and_then(Value::as_str), &tags)?;
     Some(Slide {
         site_id: "E621".into(),

@@ -140,6 +140,14 @@ pub fn local_folders(store: &Store) -> Vec<String> {
     folders
 }
 
+/// The tags in `<file>.txt` beside a file (MSG writes them with downloads; Hydrus and others write the same):
+/// one a line, spaces inside a tag become underscores.
+pub fn sidecar_tags(file: &str) -> Option<String> {
+    let text = std::fs::read_to_string(format!("{file}.txt")).ok()?;
+    let tags: Vec<String> = text.lines().map(|l| l.split_whitespace().collect::<Vec<_>>().join("_").to_lowercase()).filter(|t| !t.is_empty()).collect();
+    (!tags.is_empty()).then(|| tags.join(" "))
+}
+
 /// The "Your folders" site. Search words filter by folder and file name (`-word` leaves out); empty shows everything.
 pub fn local_slides(store: &Store, cfg: &Config, search: &str) -> Vec<Slide> {
     let files = list_local_media(&local_folders(store));
@@ -168,7 +176,10 @@ pub fn local_slides(store: &Store, cfg: &Config, search: &str) -> Vec<Slide> {
         }
         let name = parts[parts.len() - 1];
         let stem = name.trim_start_matches(|c: char| c.is_ascii_digit()).trim_start().rsplit_once('.').map(|(s, _)| s).unwrap_or(name);
-        let site_tags = favorite_tags.get(stem).cloned().unwrap_or_default();
+        let mut site_tags = favorite_tags.get(stem).cloned().unwrap_or_default();
+        if let Some(own) = sidecar_tags(&file.abs) {
+            site_tags = format!("{site_tags} {own}").trim().to_string();
+        }
         let searchable = format!("{} {site_tags}", parts.join(" ")).to_lowercase().replace(['_', '.', '-'], " ");
         let matches = words.iter().all(|w| match w.strip_prefix('-') {
             Some(w) => !searchable.contains(w),

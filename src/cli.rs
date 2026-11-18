@@ -486,7 +486,7 @@ impl Cli {
             if slide.site_id == "LOCL" {
                 return self.notice("That file is already on your computer.");
             }
-            self.downloader.download_one(&slide.file_url);
+            self.downloader.download_one(&slide.file_url, &slide.tags);
         }
     }
 

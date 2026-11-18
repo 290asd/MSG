@@ -36,6 +36,21 @@ async fn download_file(engine: &Engine, url: &str, path: &Path) -> Result<Outcom
         .map(|_| Outcome::Downloaded)
 }
 
+/// The post's tags beside the file, one a line (`a.jpg` → `a.jpg.txt`, the sidecar Hydrus imports), so a
+/// downloaded picture keeps its tags in Your folders and elsewhere. One already there is left as it is.
+fn write_tags(path: &Path, tags: &str) {
+    let sidecar = tags_file(path);
+    if tags.trim().is_empty() || sidecar.exists() {
+        return;
+    }
+    let lines: Vec<&str> = tags.split_whitespace().collect();
+    let _ = std::fs::write(sidecar, lines.join("\r\n") + "\r\n");
+}
+
+pub fn tags_file(path: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.txt", path.to_string_lossy()))
+}
+
 #[derive(Default)]
 struct Auto {
     running: bool,
@@ -60,8 +75,8 @@ impl Downloader {
         engine.wake();
     }
 
-    /// <download folder>/downloads/<name>, overwriting.
-    pub fn download_one(&self, url: &str) {
+    /// <download folder>/downloads/<name>, overwriting, and its tags beside it.
+    pub fn download_one(&self, url: &str, tags: &str) {
         let name = safe_file_name(url);
         let target = match download_path(&self.engine.store, &format!("downloads/{name}")) {
             Ok(t) => t,
@@ -71,10 +86,14 @@ impl Downloader {
             let _ = std::fs::create_dir_all(dir);
         }
         let _ = std::fs::remove_file(&target);
-        let (engine, tx, url) = (self.engine.clone(), self.tx.clone(), url.to_string());
+        let _ = std::fs::remove_file(tags_file(&target));
+        let (engine, tx, url, tags) = (self.engine.clone(), self.tx.clone(), url.to_string(), tags.to_string());
         self.engine.rt.spawn(async move {
             let text = match download_file(&engine, &url, &target).await {
-                Ok(_) => format!("Saved {name}"),
+                Ok(_) => {
+                    write_tags(&target, &tags);
+                    format!("Saved {name}")
+                }
                 Err(_) => format!("Download failed: {name}"),
             };
             Self::say(&engine, &tx, text);
@@ -85,8 +104,8 @@ impl Downloader {
         self.bulk_cancelled.store(true, Ordering::SeqCst);
     }
 
-    /// Download all favorites: 3 files at a time, into `folder` (like "MSG/favorites").
-    pub fn download_many(&self, urls: Vec<String>, folder: &str) {
+    /// Download all favorites: (address, tags), 3 files at a time, into `folder` (like "MSG/favorites").
+    pub fn download_many(&self, urls: Vec<(String, String)>, folder: &str) {
         self.bulk_cancelled.store(false, Ordering::SeqCst);
         let dir = match download_path(&self.engine.store, folder) {
             Ok(d) => d,
@@ -108,11 +127,16 @@ impl Downloader {
                             if i >= urls.len() || cancelled.load(Ordering::SeqCst) {
                                 break;
                             }
-                            let slot = match download_file(&engine, &urls[i], &dir.join(safe_file_name(&urls[i]))).await {
+                            let (url, tags) = &urls[i];
+                            let path = dir.join(safe_file_name(url));
+                            let slot = match download_file(&engine, url, &path).await {
                                 Ok(Outcome::Downloaded) => 0,
                                 Ok(Outcome::Skipped) => 1,
                                 Err(_) => 2,
                             };
+                            if slot < 2 {
+                                write_tags(&path, tags);
+                            }
                             counts[slot].fetch_add(1, Ordering::SeqCst);
                             let done: usize = counts.iter().map(|c| c.load(Ordering::SeqCst)).sum();
                             if done.is_multiple_of(10) {
@@ -195,6 +219,7 @@ pub async fn e621_json(engine: &Engine, path_and_query: &str) -> Result<Value, S
 struct Job {
     url: String,
     path: PathBuf,
+    tags: String,
 }
 
 fn wanted(store: &Store) -> bool {
@@ -213,6 +238,7 @@ async fn download_all(engine: &Engine, tx: &Sender<Msg>, jobs: Vec<Job>, label: 
                     let Some(job) = jobs.get(n) else { break };
                     match download_file(&engine, &job.url, &job.path).await {
                         Ok(Outcome::Downloaded) => {
+                            write_tags(&job.path, &job.tags);
                             done.fetch_add(1, Ordering::SeqCst);
                         }
                         Ok(Outcome::Skipped) => {}
@@ -244,8 +270,8 @@ async fn sync(engine: &Engine, tx: &Sender<Msg>, new_files: &mut usize) -> Resul
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default()
             .iter()
-            .filter_map(|item| item["fileUrl"].as_str().filter(|u| net::web_url(u).is_some()).map(String::from))
-            .map(|url| Job { path: dir.join(safe_file_name(&url)), url })
+            .filter_map(|item| Some((item["fileUrl"].as_str().filter(|u| net::web_url(u).is_some())?.to_string(), item["tags"].as_str().unwrap_or("").to_string())))
+            .map(|(url, tags)| Job { path: dir.join(safe_file_name(&url)), url, tags })
             .filter(|job| !job.path.exists())
             .collect();
         if !jobs.is_empty() {
@@ -270,7 +296,7 @@ async fn sync(engine: &Engine, tx: &Sender<Msg>, new_files: &mut usize) -> Resul
                 let data = e621_json(engine, &format!("/posts.json?limit=100&tags=id:{}", list.join(","))).await?;
                 for post in data["posts"].as_array().into_iter().flatten() {
                     if let (Some(post_id), Some(url)) = (post["id"].as_u64(), post["file"]["url"].as_str()) {
-                        urls.insert(post_id, url.to_string());
+                        urls.insert(post_id, (url.to_string(), super::sites::e621_tags(post)));
                     }
                 }
             }
@@ -282,8 +308,8 @@ async fn sync(engine: &Engine, tx: &Sender<Msg>, new_files: &mut usize) -> Resul
             let jobs: Vec<Job> = ids
                 .iter()
                 .enumerate()
-                .filter_map(|(i, post_id)| urls.get(post_id).map(|url| (i + 1, url)))
-                .map(|(page, url)| Job { url: url.clone(), path: dir.join(format!("{page:0>width$} {}", safe_file_name(url))) })
+                .filter_map(|(i, post_id)| urls.get(post_id).map(|found| (i + 1, found)))
+                .map(|(page, (url, tags))| Job { url: url.clone(), path: dir.join(format!("{page:0>width$} {}", safe_file_name(url))), tags: tags.clone() })
                 .filter(|job| !job.path.exists())
                 .collect();
             let (done, failed, stopped) = if jobs.is_empty() { (0, 0, false) } else { download_all(engine, tx, jobs, name).await };
@@ -332,6 +358,21 @@ pub fn display_url(copies: &HashMap<String, String>, url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tags_go_beside_the_file_and_come_back() {
+        let dir = std::env::temp_dir().join("msg-tags-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.jpg");
+        write_tags(&file, " red_fox  snow ");
+        assert_eq!(std::fs::read_to_string(tags_file(&file)).unwrap(), "red_fox\r\nsnow\r\n");
+        write_tags(&file, "other"); // one already there stays
+        assert_eq!(super::super::files::sidecar_tags(&file.to_string_lossy()).as_deref(), Some("red_fox snow"));
+        std::fs::write(dir.join("b.png.txt"), "Blue Sky\n\n  wolf \n").unwrap();
+        assert_eq!(super::super::files::sidecar_tags(&dir.join("b.png").to_string_lossy()).as_deref(), Some("blue_sky wolf"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn downloaded_copy_replaces_url() {
