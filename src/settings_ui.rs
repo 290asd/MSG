@@ -260,6 +260,10 @@ impl App {
             self.line(ui, "rule34ApiKey", "Rule34 API key", true);
         });
         theme::note(ui, "Optional, except Rule34 (rule34.xxx → My Account → Options). Kept in settings.json on this computer.");
+        theme::group(ui, "e621", |ui| {
+            self.check(ui, "e621TagCategories", true, "Read the tag categories (artist, species …)");
+        });
+        theme::note(ui, "e621 no longer sends them with the posts, so they cost a request for each post you look at and for new favorites. They show the artist and sort the tags, and following artists automatically needs them. Turn off on a slow connection.");
     }
 
     fn tab_slideshow(&mut self, ui: &mut egui::Ui) {
@@ -828,6 +832,7 @@ impl App {
                     }
                 }
             }
+            let mut hovered_post = None;
             for (n, cell) in cells.iter().enumerate().filter(|(_, c)| c.intersects(viewport)) {
                 let tile = cell.translate(origin);
                 // What the tile needs of its post, without a copy of the post on every frame.
@@ -835,6 +840,9 @@ impl App {
                 let slide = &self.list()[n];
                 let (video, url, faved) = (slide.media_type == MediaType::Video, url_of(slide), self.fav.contains(slide));
                 let artist = if hovered { artist_of(slide) } else { None };
+                if hovered && super::favorites::lacks_tag_groups(slide) {
+                    hovered_post = Some(slide.clone());
+                }
                 let id = ui.id().with(("post", n));
                 let veil = veiling.then(|| {
                     let Some(at) = reveal else { return 0.0 };
@@ -872,6 +880,7 @@ impl App {
                     go = Some(n);
                 }
             }
+            self.hovered_post = hovered_post;
         });
         if near_end && !favorites {
             self.load_more();

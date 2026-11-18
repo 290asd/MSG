@@ -175,6 +175,10 @@ pub struct App {
     pub playing: bool,
     shown_at: Option<Instant>,
     shown_index: Option<(Mode, usize)>,
+    /// e621 posts whose tag categories have been asked for (favorites::fetch_tag_groups).
+    tags_asked: HashSet<String>,
+    /// The mosaic tile under the pointer, for its tag categories.
+    pub hovered_post: Option<Slide>,
     pub show_tags: bool,
     pub show_controls: bool,
     pub show_settings: bool,
@@ -262,6 +266,8 @@ impl App {
             playing: false,
             shown_at: None,
             shown_index: None,
+            tags_asked: HashSet::new(),
+            hovered_post: None,
             show_tags: false,
             show_controls: true,
             show_settings: false,
@@ -436,6 +442,21 @@ impl App {
         self.shown_at = None;
         // The new slide's clock starts in the next frame. A frame that came from a timer is followed by no other by itself.
         self.engine.wake();
+    }
+
+    /// e621's tag categories for the slide on the screen and the mosaic tile under the pointer, once each.
+    fn ask_tag_groups(&mut self) {
+        let shown = if self.covered() { None } else { self.current_ref() };
+        let wanted: Vec<Slide> = shown
+            .into_iter()
+            .chain(self.hovered_post.as_ref())
+            .filter(|s| favorites::lacks_tag_groups(s) && !self.tags_asked.contains(&super::slide::id_text(&s.id)))
+            .cloned()
+            .collect();
+        if !wanted.is_empty() {
+            self.tags_asked.extend(wanted.iter().map(|s| super::slide::id_text(&s.id)));
+            favorites::fetch_tag_groups(&self.engine, self.tx.clone(), &wanted);
+        }
     }
 
     pub fn current(&self) -> Option<Slide> {
@@ -767,10 +788,14 @@ impl App {
                     self.notice(status);
                 }
                 Msg::TagGroups(found) => {
-                    self.fav.set_tag_groups(found);
-                    self.fav.save(&self.store);
-                    if self.reading_list && self.refresh_auto_follow() {
-                        self.start_reading();
+                    if let Some(search) = self.search.as_mut() {
+                        favorites::set_tag_groups(&mut search.slides, &found);
+                    }
+                    if self.fav.set_tag_groups(&found) {
+                        self.fav.save(&self.store);
+                        if self.reading_list && self.refresh_auto_follow() {
+                            self.start_reading();
+                        }
                     }
                 }
                 Msg::Pools(found) => {
@@ -2373,6 +2398,7 @@ impl eframe::App for App {
         self.tick(&ctx);
         self.swipe_back(&ctx);
         self.preload();
+        self.ask_tag_groups();
 
         self.ambient(ui, ctx.content_rect());
         if self.onboarding {
