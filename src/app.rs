@@ -1917,7 +1917,7 @@ impl App {
         let len = self.list().len();
         let room = |i: usize| (len.saturating_sub(i + 1), i);
         if response.hovered() && !self.hotkeys.map.values().flatten().any(|code| hotkeys::is_wheel(*code)) {
-            let now = Instant::now();
+            let mut dy = 0.0;
             for event in ui.input(|i| i.events.clone()) {
                 let egui::Event::MouseWheel { unit, delta, modifiers, .. } = event else { continue };
                 // Mostly sideways is the swipe back.
@@ -1927,7 +1927,7 @@ impl App {
                 // A mouse's notch is a step; a touchpad's many small moves add up to one.
                 if unit == egui::MouseWheelUnit::Point {
                     if smooth {
-                        self.roll.drag(-delta.y, now, page, room(self.idx()));
+                        dy -= delta.y * crate::roll::GAIN;
                         continue;
                     }
                     self.wheel += delta.y;
@@ -1945,6 +1945,9 @@ impl App {
                         self.move_by(by);
                     }
                 }
+            }
+            if dy != 0.0 {
+                self.roll.drag(dy, Instant::now(), page, room(self.idx()));
             }
         }
         if self.roll.moving() {

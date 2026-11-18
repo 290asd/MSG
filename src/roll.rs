@@ -6,7 +6,12 @@ use std::time::{Duration, Instant};
 pub const GAP: Duration = Duration::from_millis(120);
 /// How long a flick coasts: the strip ends about speed × TAU further on, like iOS's deceleration.
 // ponytail: fixed feel; measure on the touchpad if a flick goes too far or too short.
-const TAU: f32 = 0.33;
+const TAU: f32 = 0.25;
+/// The strip moves this much per touchpad point: Windows' own coasting adds to the flick, so 1:1 went too far.
+// ponytail: tuned by feel on one touchpad (18.11.2026); others may want another value.
+pub const GAIN: f32 = 0.5;
+/// A flick is at most this fast (points per second), so it passes a few slides, not dozens.
+const MAX_V: f32 = 4000.0;
 /// The quickest settle, for a slow let-go or a mouse notch.
 const SNAP: f32 = 0.08;
 /// Past the first or last slide the strip follows the fingers this much, and at most a quarter of a slide.
@@ -29,11 +34,13 @@ impl Roll {
         self.y != 0.0 || self.target.is_some()
     }
 
-    /// The fingers move the strip by `dy`. `room` is how many slides there are (ahead, behind).
+    /// The fingers move the strip by `dy` (all of one frame's events together: the speed is per frame).
+    /// `room` is how many slides there are (ahead, behind).
     pub fn drag(&mut self, dy: f32, now: Instant, page: f32, room: (usize, usize)) {
         let fresh = self.last.is_none_or(|t| now - t > GAP);
-        let dt = if fresh { 1.0 / 60.0 } else { (now - self.last.unwrap()).as_secs_f32().max(0.004) };
-        self.v = if fresh { dy / dt } else { 0.6 * self.v + 0.4 * dy / dt };
+        let dt = if fresh { 1.0 / 60.0 } else { (now - self.last.unwrap()).as_secs_f32().max(1.0 / 120.0) };
+        let v = if fresh { dy / dt } else { 0.6 * self.v + 0.4 * dy / dt };
+        self.v = v.clamp(-MAX_V, MAX_V);
         self.last = Some(now);
         // Caught while it was settling: it stays where it is, under the fingers.
         self.target = None;
@@ -127,6 +134,17 @@ mod tests {
         let passed = run(&mut roll, now, (99, 99));
         assert!(passed >= 1, "a flick of 3750 pt/s went {passed} slides");
         assert_eq!(roll.y, 0.0);
+    }
+
+    #[test]
+    fn small_flick_stays() {
+        let mut roll = Roll::default();
+        let mut now = Instant::now();
+        for _ in 0..3 {
+            now += Duration::from_millis(16);
+            roll.drag(20.0, now, 1000.0, (99, 99));
+        }
+        assert_eq!(run(&mut roll, now, (99, 99)), 0);
     }
 
     #[test]
