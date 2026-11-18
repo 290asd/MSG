@@ -141,8 +141,47 @@ pub const E621: Tokens = Tokens {
     ambient: alpha(0x02, 0x0f, 0x23, 190),
 };
 
+/// Frutiger Aero / Windows Vista: sky blue, aqua and grass green, clear glass.
+pub const AERO_LIGHT: Tokens = Tokens {
+    base: Color32::from_rgb(0xdc, 0xec, 0xf7),
+    surface: Color32::from_rgb(0xf2, 0xf8, 0xfc),
+    raised: Color32::from_rgb(0xff, 0xff, 0xff),
+    top: Color32::from_rgb(0xb9, 0xd6, 0xea),
+    text: Color32::from_rgb(0x0f, 0x22, 0x33),
+    text2: Color32::from_rgb(0x2f, 0x4f, 0x68),
+    muted: Color32::from_rgb(0x6a, 0x87, 0x9c),
+    accent: Color32::from_rgb(0x0a, 0x84, 0xd0),
+    apricot: Color32::from_rgb(0x3f, 0x9e, 0x22),
+    lavender: Color32::from_rgb(0x10, 0x9c, 0xae),
+    hairline: alpha(0x0a, 0x4a, 0x80, 30),
+    control: alpha(0x0a, 0x60, 0xa0, 14),
+    hover: alpha(0x0a, 0x60, 0xa0, 30),
+    press: alpha(0x0a, 0x84, 0xd0, 56),
+    glass: alpha(0xf0, 0xf8, 0xff, 140),
+    ambient: alpha(0xdc, 0xec, 0xf7, 195),
+};
+
+pub const AERO_DARK: Tokens = Tokens {
+    base: Color32::from_rgb(0x07, 0x16, 0x24),
+    surface: Color32::from_rgb(0x0e, 0x25, 0x38),
+    raised: Color32::from_rgb(0x15, 0x33, 0x49),
+    top: Color32::from_rgb(0x22, 0x50, 0x6f),
+    text: Color32::from_rgb(0xee, 0xf7, 0xff),
+    text2: Color32::from_rgb(0xa9, 0xcb, 0xe3),
+    muted: Color32::from_rgb(0x6f, 0x8e, 0xa6),
+    accent: Color32::from_rgb(0x45, 0xc3, 0xf5),
+    apricot: Color32::from_rgb(0x8b, 0xd6, 0x4a),
+    lavender: Color32::from_rgb(0x3f, 0xd8, 0xc8),
+    hairline: alpha(0xa9, 0xdc, 0xff, 28),
+    control: alpha(0x9f, 0xd8, 0xff, 16),
+    hover: alpha(0x9f, 0xd8, 0xff, 34),
+    press: alpha(0x45, 0xc3, 0xf5, 60),
+    glass: alpha(0x0e, 0x2a, 0x44, 130),
+    ambient: alpha(0x07, 0x16, 0x24, 185),
+};
+
 /// The themes: (setting, name, dark, light). A theme without a light look has `None`.
-pub const THEMES: [(&str, &str, &Tokens, Option<&Tokens>); 2] = [("msg", "MSG", &DARK, Some(&LIGHT)), ("e621", "e621", &E621, None)];
+pub const THEMES: [(&str, &str, &Tokens, Option<&Tokens>); 3] = [("msg", "MSG", &DARK, Some(&LIGHT)), ("e621", "e621", &E621, None), ("aero", "Aero", &AERO_DARK, Some(&AERO_LIGHT))];
 
 /// The chosen theme, an index in THEMES.
 static THEME: AtomicU8 = AtomicU8::new(0);

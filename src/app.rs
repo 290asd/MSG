@@ -77,8 +77,28 @@ struct Screen {
     search: Option<String>,
 }
 
+/// Two fingers to the right on the touchpad pull the page aside, and letting go far or fast enough goes back.
+#[derive(Default)]
+struct Swipe {
+    /// How far the page is pulled, in points.
+    x: f32,
+    /// Points per second, smoothed: a quick flick goes back from a short distance.
+    speed: f32,
+    last: Option<Instant>,
+    /// Let go: when, from where, and whether it goes back (or springs home).
+    out: Option<(Instant, f32, bool)>,
+    /// After letting go the touchpad's coasting is not a new swipe.
+    spent: bool,
+}
+
 /// The space between slides in the strip.
 const ROLL_GAP: f32 = 24.0;
+
+/// Windows tells a touchpad's horizontal scrolling in wheel lines; Chrome also takes a line as 100 px.
+// ponytail: fixed ratio, measure on the touchpad if the page drifts from the fingers.
+const SWIPE_POINTS_PER_LINE: f32 = 100.0;
+/// No touchpad event for this long means the fingers are off (Windows tells no end).
+const SWIPE_GAP: Duration = Duration::from_millis(120);
 
 /// A search put aside when another took its place, and the slide it was on.
 type Left = (Search, usize);
@@ -184,6 +204,7 @@ pub struct App {
     wheel: f32,
     /// The slides as a strip under two fingers (with animations on).
     roll: crate::roll::Roll,
+    swipe: Swipe,
     /// Where the player is (nothing while hidden), whether the drawer is out, and the test script's order to keep it out.
     player_rect: egui::Rect,
     drawer_open: bool,
@@ -261,6 +282,7 @@ impl App {
             home_kept: None,
             wheel: 0.0,
             roll: Default::default(),
+            swipe: Swipe::default(),
             player_rect: egui::Rect::NOTHING,
             drawer_open: false,
             drawer_forced: false,
@@ -2059,6 +2081,94 @@ impl App {
     }
 
     fn test_script(&mut self, ctx: &egui::Context) {
+    /// Two fingers to the right pull the page with them; lifting them goes back, or the page springs home.
+    fn swipe_back(&mut self, ctx: &egui::Context) {
+        let now = Instant::now();
+        let width = ctx.content_rect().width();
+        let mut dx = 0.0;
+        let mut any = false;
+        for event in ctx.input(|i| i.events.clone()) {
+            let egui::Event::MouseWheel { unit, delta, modifiers, .. } = event else { continue };
+            // Scrolling down a page with a little sideways in it is not a swipe.
+            if modifiers.any() || delta.x == 0.0 || (self.swipe.x == 0.0 && delta.x.abs() < delta.y.abs()) {
+                continue;
+            }
+            any = true;
+            dx += delta.x
+                * match unit {
+                    egui::MouseWheelUnit::Line => SWIPE_POINTS_PER_LINE,
+                    egui::MouseWheelUnit::Point => 1.0,
+                    egui::MouseWheelUnit::Page => width,
+                };
+        }
+        let prev = self.swipe.last;
+        let new_gesture = prev.is_none_or(|t| now - t > SWIPE_GAP);
+        if any {
+            self.swipe.last = Some(now);
+        }
+        if let Some((at, from, back)) = self.swipe.out {
+            let k = if theme::smooth() > 0.0 { (at.elapsed().as_secs_f32() / 0.22).min(1.0) } else { 1.0 };
+            let to = if back { width } else { 0.0 };
+            self.swipe.x = from + (to - from) * (1.0 - (1.0 - k).powi(3));
+            if k < 1.0 {
+                ctx.request_repaint();
+                return;
+            }
+            self.swipe.out = None;
+            self.swipe.x = 0.0;
+            if back && self.go_back() {
+                self.changed_at = Some(now);
+            }
+            return;
+        }
+        // The touchpad coasts on after the fingers lift; that and a swipe that started wrong are let go by.
+        if self.swipe.spent {
+            if !new_gesture {
+                return;
+            }
+            self.swipe.spent = false;
+        }
+        if any && self.swipe.x == 0.0 {
+            let over_thumbs = ctx.pointer_hover_pos().is_some_and(|p| self.player_rect.contains(p));
+            if dx <= 0.0 || over_thumbs || self.back.is_empty() {
+                self.swipe.spent = true;
+                return;
+            }
+        }
+        if any {
+            let dt = prev.filter(|_| !new_gesture).map_or(1.0 / 60.0, |t| (now - t).as_secs_f32().max(0.004));
+            self.swipe.speed = if new_gesture { dx / dt } else { 0.6 * self.swipe.speed + 0.4 * dx / dt };
+            self.swipe.x = (self.swipe.x + dx).clamp(0.0, width);
+        }
+        if self.swipe.x > 0.0 {
+            if self.swipe.last.is_some_and(|t| now - t > SWIPE_GAP) {
+                let back = self.swipe.x > width * 0.3 || (self.swipe.speed > 800.0 && self.swipe.x > 40.0);
+                self.swipe.out = Some((now, self.swipe.x, back));
+                self.swipe.spent = true;
+                ctx.request_repaint();
+            } else {
+                ctx.request_repaint_after(SWIPE_GAP);
+            }
+        }
+    }
+
+    /// Moves everything drawn on the page (not the background under it, from `from` on) by the swipe.
+    fn shift_page(&self, ctx: &egui::Context, from: egui::layers::ShapeIdx) {
+        if self.swipe.x <= 0.0 {
+            return;
+        }
+        let by = egui::emath::TSTransform::from_translation(Vec2::new(self.swipe.x, 0.0));
+        let layers: Vec<egui::LayerId> = ctx.memory(|m| m.layer_ids().collect());
+        ctx.graphics_mut(|g| {
+            let page = g.entry(egui::LayerId::background());
+            let end = page.next_idx();
+            page.transform_range(from, end, by);
+            for layer in layers.into_iter().filter(|l| *l != egui::LayerId::background()) {
+                g.entry(layer).transform(by);
+            }
+        });
+    }
+
         let dir = std::path::PathBuf::from(std::env::var_os("MSG_SHOT_DIR").unwrap_or_default());
         for event in ctx.input(|i| i.events.clone()) {
             if let egui::Event::Screenshot { image, user_data, .. } = event {
@@ -2207,10 +2317,16 @@ impl eframe::App for App {
         self.handle_messages();
         self.handle_keys(&ctx);
         self.tick(&ctx);
+        self.swipe_back(&ctx);
         self.preload();
 
         self.ambient(ui, ctx.content_rect());
         if self.onboarding {
+        if self.swipe.x > 0.0 {
+            let edge = ctx.content_rect().translate(Vec2::new(self.swipe.x, 0.0));
+            ui.painter().add(egui::Shadow { offset: [0, 0], blur: 40, spread: 0, color: Color32::from_black_alpha(110) }.as_shape(edge, 0));
+        }
+        let page_from = ctx.graphics_mut(|g| g.entry(egui::LayerId::background()).next_idx());
             if ctx.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
                 self.onboarding = false;
             }
@@ -2246,6 +2362,7 @@ impl eframe::App for App {
             self.drawer(&ctx);
         }
         self.page_fade(&ctx);
+        self.shift_page(&ctx, page_from);
         self.test_hook(&ctx);
         self.test_script(&ctx);
         self.toasts(&ctx);
