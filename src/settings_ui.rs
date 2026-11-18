@@ -164,10 +164,19 @@ impl App {
         let theme_now = self.text("appTheme");
         let choices = ["dark", "light", "system"];
         theme::group(ui, "Look", |ui| {
-            let chosen = choices.iter().position(|c| *c == theme_now).unwrap_or(0);
-            if let Some(n) = theme::row(ui, "Theme", |ui| theme::choice(ui, &["System", "Light", "Dark"], 2 - chosen)) {
-                self.set("appTheme", json!(choices[2 - n]));
+            let name = self.text("themeName");
+            let n_theme = theme::THEMES.iter().position(|th| th.0 == name).unwrap_or(0);
+            let names: Vec<&str> = theme::THEMES.iter().map(|th| th.1).collect();
+            if let Some(n) = theme::row(ui, "Theme", |ui| theme::choice(ui, &names, n_theme)) {
+                self.set("themeName", json!(theme::THEMES[n].0));
                 self.apply_theme(ctx);
+            }
+            if theme::THEMES[n_theme].3.is_some() {
+                let chosen = choices.iter().position(|c| *c == theme_now).unwrap_or(0);
+                if let Some(n) = theme::row(ui, "Mode", |ui| theme::choice(ui, &["System", "Light", "Dark"], 2 - chosen)) {
+                    self.set("appTheme", json!(choices[2 - n]));
+                    self.apply_theme(ctx);
+                }
             }
             let chosen = match self.text("animations").as_str() {
                 "off" => 0,

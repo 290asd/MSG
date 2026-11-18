@@ -121,8 +121,48 @@ pub const LIGHT: Tokens = Tokens {
     ambient: alpha(0xf3, 0xef, 0xe9, 205),
 };
 
+/// e621's Hexagon theme (e621ng `_theme_hexagon.scss`): navy, gold links, its tag colours. Dark only.
+pub const E621: Tokens = Tokens {
+    base: Color32::from_rgb(0x02, 0x0f, 0x23),
+    surface: Color32::from_rgb(0x15, 0x2f, 0x56),
+    raised: Color32::from_rgb(0x1f, 0x3c, 0x67),
+    top: Color32::from_rgb(0x2b, 0x53, 0x8f),
+    text: Color32::from_rgb(0xff, 0xff, 0xff),
+    text2: Color32::from_rgb(0xb4, 0xc7, 0xd9),
+    muted: Color32::from_rgb(0x99, 0x99, 0x99),
+    accent: Color32::from_rgb(0xe8, 0xc4, 0x46),
+    apricot: Color32::from_rgb(0xf2, 0xac, 0x08),
+    lavender: Color32::from_rgb(0xdd, 0x00, 0xdd),
+    hairline: alpha(0xb4, 0xc7, 0xd9, 30),
+    control: alpha(0xb4, 0xc7, 0xd9, 18),
+    hover: alpha(0xb4, 0xc7, 0xd9, 36),
+    press: alpha(0xe8, 0xc4, 0x46, 60),
+    glass: alpha(0x0b, 0x1f, 0x3d, 150),
+    ambient: alpha(0x02, 0x0f, 0x23, 190),
+};
+
+/// The themes: (setting, name, dark, light). A theme without a light look has `None`.
+pub const THEMES: [(&str, &str, &Tokens, Option<&Tokens>); 2] = [("msg", "MSG", &DARK, Some(&LIGHT)), ("e621", "e621", &E621, None)];
+
+/// The chosen theme, an index in THEMES.
+static THEME: AtomicU8 = AtomicU8::new(0);
+
 pub fn tok(ctx: &egui::Context) -> &'static Tokens {
-    if ctx.theme() == Theme::Light { &LIGHT } else { &DARK }
+    let (_, _, dark, light) = THEMES[THEME.load(Ordering::Relaxed) as usize];
+    match light {
+        Some(light) if ctx.theme() == Theme::Light => light,
+        _ => dark,
+    }
+}
+
+/// Takes the theme into use (unknown: MSG). Returns whether it has a light look.
+pub fn set_theme(ctx: &egui::Context, name: &str) -> bool {
+    let n = THEMES.iter().position(|th| th.0 == name).unwrap_or(0);
+    THEME.store(n as u8, Ordering::Relaxed);
+    let (_, _, dark, light) = THEMES[n];
+    ctx.set_visuals_of(Theme::Dark, visuals(dark, true));
+    ctx.set_visuals_of(Theme::Light, light.map_or_else(|| visuals(dark, true), |l| visuals(l, false)));
+    light.is_some()
 }
 
 /// The Animations setting: 0 off, 1 fast, 2 slow.
@@ -254,8 +294,7 @@ pub fn paint_title_bar(window: isize, t: &Tokens, dark: bool) {
 /// The fonts and the styles of both themes. Once, at the start.
 pub fn install(ctx: &egui::Context) {
     ctx.set_fonts(fonts());
-    ctx.set_visuals_of(Theme::Dark, visuals(&DARK, true));
-    ctx.set_visuals_of(Theme::Light, visuals(&LIGHT, false));
+    set_theme(ctx, "msg");
     ctx.all_styles_mut(|style| {
         style.text_styles = [
             (TextStyle::Small, FontId::proportional(11.0)),

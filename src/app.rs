@@ -364,7 +364,9 @@ impl App {
     }
 
     pub fn apply_theme(&self, ctx: &egui::Context) {
+        let has_light = theme::set_theme(ctx, &self.text("themeName"));
         ctx.set_theme(match self.text("appTheme").as_str() {
+            _ if !has_light => egui::ThemePreference::Dark,
             "light" => egui::ThemePreference::Light,
             "system" => egui::ThemePreference::System,
             _ => egui::ThemePreference::Dark,
@@ -2013,7 +2015,8 @@ impl App {
                     }
                 }
                 Some(("theme", name)) => {
-                    self.set("appTheme", json!(name));
+                    let key = if theme::THEMES.iter().any(|th| th.0 == name) { "themeName" } else { "appTheme" };
+                    self.set(key, json!(name));
                     self.apply_theme(ctx);
                 }
                 _ if action == "drawer" => self.drawer_forced = !self.drawer_forced,
