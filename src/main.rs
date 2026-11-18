@@ -15,6 +15,7 @@ mod settings_ui;
 mod sites;
 mod slide;
 mod theme;
+mod tick;
 mod video;
 mod store;
 

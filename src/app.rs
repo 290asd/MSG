@@ -998,6 +998,9 @@ impl App {
         if self.shown_index != Some(here) {
             self.shown_index = Some(here);
             self.shown_at = None;
+            if self.flag("slideTick", true) {
+                crate::tick::play();
+            }
         }
         let is_video = slide.media_type == MediaType::Video;
         let url = self.copies_or(&slide.file_url);

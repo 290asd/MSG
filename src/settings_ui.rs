@@ -271,6 +271,7 @@ impl App {
             }
             self.check(ui, "autoFitSlide", true, "Fit the picture to the window (off: at most its own size)");
             self.check(ui, "showDownloadButton", true, "Show the Download button");
+            self.check(ui, "slideTick", true, "Tick on each slide change");
         });
         theme::group(ui, "Videos", |ui| {
             self.check(ui, "playVideosToEnd", false, "Play videos to the end before moving on");
