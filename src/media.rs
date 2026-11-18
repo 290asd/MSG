@@ -28,6 +28,7 @@ const AT_ONCE: usize = 6;
 const MAX_VIDEO: u64 = 200 << 20;
 /// Megabytes of pictures kept on the disk between starts, unless the settings say otherwise.
 pub const DISK_MB: f64 = 1024.0;
+pub const DISK_DAYS: f64 = 30.0;
 // A file of your own asked for as a thumbnail (`thumb`) is shrunk to this when it is decoded; '|' is never in a Windows path.
 const THUMB: &str = "|thumb";
 const THUMB_SIDE: u32 = 640;
@@ -138,13 +139,21 @@ fn disk_path(url: &str) -> PathBuf {
     disk_dir().join(format!("{:x}", hash.finish()))
 }
 
-/// Lets the least recently used pictures go until the folder is within `limit` (on starting, off the UI thread).
-// ponytail: only when the program starts; a long session can go over the limit until the next start.
-pub fn trim_disk_cache(limit: u64) {
-    trim(&disk_dir(), limit);
+/// How long a kept picture may go unused (`diskCacheDays`, 0 = no limit).
+pub fn disk_max_age(store: &super::store::Store) -> Option<Duration> {
+    let days = store.get("diskCacheDays").and_then(|v| v.as_f64()).unwrap_or(DISK_DAYS);
+    (days >= 1.0).then(|| Duration::from_secs(days as u64 * 86_400))
 }
 
-fn trim(dir: &std::path::Path, limit: u64) {
+/// Lets the least recently used pictures go until the folder is within `limit`, and those unused for longer
+/// than `max_age` (on starting, off the UI thread).
+// ponytail: only when the program starts; a long session can go over the limit until the next start.
+pub fn trim_disk_cache(limit: u64, max_age: Option<Duration>) {
+    trim(&disk_dir(), limit, max_age);
+}
+
+fn trim(dir: &std::path::Path, limit: u64, max_age: Option<Duration>) {
+    let cutoff = max_age.and_then(|age| std::time::SystemTime::now().checked_sub(age));
     let Ok(dir) = std::fs::read_dir(dir) else { return };
     let mut files: Vec<(std::time::SystemTime, u64, PathBuf)> = dir
         .flatten()
@@ -155,8 +164,8 @@ fn trim(dir: &std::path::Path, limit: u64) {
         .collect();
     files.sort();
     let mut total: u64 = files.iter().map(|f| f.1).sum();
-    for (_, size, path) in files {
-        if total <= limit {
+    for (used, size, path) in files {
+        if total <= limit && cutoff.is_none_or(|cutoff| used >= cutoff) {
             break;
         }
         if std::fs::remove_file(&path).is_ok() {
@@ -476,7 +485,12 @@ mod tests {
         std::fs::write(&new, [0u8; 100]).unwrap();
         let hour_ago = std::time::SystemTime::now() - Duration::from_secs(3600);
         std::fs::File::options().write(true).open(&old).unwrap().set_modified(hour_ago).unwrap();
-        trim(&dir, 150);
+        trim(&dir, 150, None);
+        assert!(!old.exists() && new.exists());
+        // Within the size limit, but unused for longer than allowed.
+        std::fs::write(&old, [0u8; 10]).unwrap();
+        std::fs::File::options().write(true).open(&old).unwrap().set_modified(hour_ago).unwrap();
+        trim(&dir, 1000, Some(Duration::from_secs(60)));
         assert!(!old.exists() && new.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }

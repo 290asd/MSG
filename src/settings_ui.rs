@@ -249,6 +249,13 @@ impl App {
             if theme::row(ui, "Pictures kept on disk between starts (MB)", |ui| ui.add(egui::DragValue::new(&mut mb).range(0.0..=100000.0).speed(10.0)).on_hover_text(hover).changed()) {
                 self.set("diskCacheMB", json!(mb.round()));
             }
+            let mut days = self.number("diskCacheDays", media::DISK_DAYS);
+            let hover = "A kept picture that hasn't been shown for this many days goes when MSG starts. 0 = no time limit.";
+            ui.add_enabled_ui(mb >= 1.0, |ui| {
+                if theme::row(ui, "Keep unused pictures for (days)", |ui| ui.add(egui::DragValue::new(&mut days).range(0.0..=3650.0)).on_hover_text(hover).changed()) {
+                    self.set("diskCacheDays", json!(days.round()));
+                }
+            });
             self.check(ui, "autoFitSlide", true, "Fit the picture to the window");
             ui.add_enabled_ui(!self.flag("autoFitSlide", true), |ui| {
                 for (key, label) in [("maxWidth", "Max width (px, 0 = no limit)"), ("maxHeight", "Max height (px, 0 = no limit)")] {

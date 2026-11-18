@@ -291,8 +291,8 @@ impl App {
         app.rebuild_favorites();
         app.refresh_copies();
         media::clear_video_files();
-        let limit = media::disk_limit(&app.store);
-        std::thread::spawn(move || media::trim_disk_cache(limit));
+        let (limit, max_age) = (media::disk_limit(&app.store), media::disk_max_age(&app.store));
+        std::thread::spawn(move || media::trim_disk_cache(limit, max_age));
         app.downloader.schedule(Duration::from_secs(15));
         if app.auto_follow_limit() > 0.0 {
             favorites::fetch_tag_groups(&app.engine, app.tx.clone(), &app.fav.items);
