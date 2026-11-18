@@ -14,6 +14,11 @@ path = "src/main.rs"
 name = "msg-cli"
 path = "src/cli.rs"
 
+# Records touchpad gestures for tuning the slide strip (src/gestures.rs, src/roll.rs).
+[[bin]]
+name = "gestures"
+path = "src/gestures.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
