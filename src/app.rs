@@ -89,6 +89,12 @@ struct Swipe {
     out: Option<(Instant, f32, bool)>,
     /// After letting go the touchpad's coasting is not a new swipe.
     spent: bool,
+    /// A picture of each screen that can be gone back to, shown under the page while it is pulled.
+    snaps: Vec<(Screen, egui::TextureHandle)>,
+    /// The screen the pictures are being taken of, since when, and when the next is due.
+    seen: Screen,
+    arrived: Option<Instant>,
+    due: Option<Instant>,
 }
 
 /// The space between slides in the strip.
@@ -2266,7 +2272,9 @@ impl App {
             }
             self.swipe.out = None;
             self.swipe.x = 0.0;
-            if back && self.go_back() {
+            // With its picture already under it, the page comes without a fade.
+            let pictured = self.back.last().is_some_and(|(s, _)| self.swipe.snaps.iter().any(|(k, _)| k == s));
+            if back && self.go_back() && !pictured {
                 self.changed_at = Some(now);
             }
             return;
@@ -2300,6 +2308,46 @@ impl App {
                 ctx.request_repaint_after(SWIPE_GAP);
             }
         }
+    }
+
+    /// Keeps a picture of the screen for the swipe back: when it has settled after arriving, every 2 s while its
+    /// pictures may still be loading, and after the user stops scrolling, clicking or typing on it.
+    fn snapshot(&mut self, ctx: &egui::Context) {
+        let now = Instant::now();
+        for event in ctx.input(|i| i.events.clone()) {
+            let egui::Event::Screenshot { image, user_data, .. } = event else { continue };
+            let Some(screen) = user_data.data.as_ref().and_then(|d| d.downcast_ref::<Screen>()) else { continue };
+            // No input on the frame it was asked on, so it shows that screen even if another is up now.
+            let snap = ctx.load_texture("swipe snap", (*image).clone(), egui::TextureOptions::LINEAR);
+            self.swipe.snaps.retain(|(k, _)| k != screen);
+            self.swipe.snaps.push((screen.clone(), snap));
+        }
+        // Only the screens Back can reach (and this one) are kept.
+        let (here, back) = (&self.here, &self.back);
+        self.swipe.snaps.retain(|(k, _)| k == here || back.iter().any(|(s, _)| s == k));
+        if self.swipe.seen != self.here {
+            self.swipe.seen = self.here.clone();
+            self.swipe.arrived = Some(now);
+            self.swipe.due = Some(now + Duration::from_millis(800));
+        }
+        let touched = ctx.input(|i| {
+            i.events.iter().any(|e| matches!(e, egui::Event::PointerButton { .. } | egui::Event::MouseWheel { .. } | egui::Event::Key { .. } | egui::Event::Text(_)))
+        });
+        if touched {
+            self.swipe.due = Some(now + Duration::from_millis(400));
+        }
+        let Some(due) = self.swipe.due else { return };
+        if now < due {
+            ctx.request_repaint_after(due - now);
+            return;
+        }
+        // Not mid-swipe or mid-fade: the picture is of the page as it stands.
+        if self.swipe.x > 0.0 || self.changed_at.is_some() || self.onboarding {
+            return;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(self.here.clone())));
+        let young = self.swipe.arrived.is_some_and(|t| now - t < Duration::from_secs(10));
+        self.swipe.due = young.then(|| now + Duration::from_secs(2));
     }
 
     /// Moves everything drawn on the page (not the background under it, from `from` on) by the swipe.
@@ -2360,7 +2408,11 @@ impl App {
     fn test_hook(&mut self, ctx: &egui::Context) {
         let Some((path, started, sent)) = self.hook.as_mut() else { return };
         for event in ctx.input(|i| i.events.clone()) {
-            if let egui::Event::Screenshot { image, .. } = event {
+            // Its own has no data (the swipe's pictures and the script's shots have).
+            if let egui::Event::Screenshot { image, user_data, .. } = event {
+                if user_data.data.is_some() {
+                    continue;
+                }
                 let bytes: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
                 let _ = image::save_buffer(&*path, &bytes, image.size[0] as u32, image.size[1] as u32, image::ColorType::Rgba8);
                 self.store.flush();
@@ -2467,14 +2519,24 @@ impl eframe::App for App {
         self.media.poll(&ctx);
         self.handle_messages();
         self.handle_keys(&ctx);
-        self.tick(&ctx);
         self.swipe_back(&ctx);
+        self.snapshot(&ctx);
+        self.tick(&ctx);
         self.preload();
         self.ask_tag_groups();
 
         self.ambient(ui, ctx.content_rect());
         if self.swipe.x > 0.0 {
-            let edge = ctx.content_rect().translate(Vec2::new(self.swipe.x, 0.0));
+            let rect = ctx.content_rect();
+            let k = self.swipe.x / rect.width();
+            // The screen before, as it was left: it comes from a little to the left and brightens as the page goes.
+            let under = self.back.last().and_then(|(s, _)| self.swipe.snaps.iter().find(|(k, _)| k == s));
+            if let Some((_, snap)) = under {
+                let whole = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                ui.painter().image(snap.id(), rect.translate(Vec2::new(-(1.0 - k) * rect.width() * 0.25, 0.0)), whole, Color32::WHITE);
+                ui.painter().rect_filled(rect, 0.0, Color32::from_black_alpha((90.0 * (1.0 - k)) as u8));
+            }
+            let edge = rect.translate(Vec2::new(self.swipe.x, 0.0));
             ui.painter().add(egui::Shadow { offset: [0, 0], blur: 40, spread: 0, color: Color32::from_black_alpha(110) }.as_shape(edge, 0));
         }
         let page_from = ctx.graphics_mut(|g| g.entry(egui::LayerId::background()).next_idx());
