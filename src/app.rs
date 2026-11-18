@@ -116,14 +116,14 @@ impl Default for OnScreen {
 #[derive(Clone, Copy, PartialEq)]
 pub enum Tab {
     Appearance,
-    Sites,
-    Slideshow,
+    Home,
+    Search,
     Filtering,
-    Hotkeys,
-    Folders,
+    Slideshow,
+    Sites,
     Favorites,
-    Quick,
-    History,
+    Storage,
+    Hotkeys,
     About,
 }
 
@@ -1774,8 +1774,7 @@ impl App {
         match self.media.get(&url) {
             Some(State::Ready(picture)) => {
                 let (w, h) = (picture.size[0] as f32, picture.size[1] as f32);
-                let (max_w, max_h) = (self.number("maxWidth", f64::INFINITY) as f32, self.number("maxHeight", f64::INFINITY) as f32);
-                let scale = if self.flag("autoFitSlide", true) { (rect.width() / w).min(rect.height() / h) } else { 1.0f32.min(max_w / w).min(max_h / h) };
+                let scale = if self.flag("autoFitSlide", true) { (rect.width() / w).min(rect.height() / h) } else { 1.0 };
                 showing = url.clone();
                 place = egui::Rect::from_center_size(rect.center(), Vec2::new(w * scale, h * scale));
             }

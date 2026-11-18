@@ -19,14 +19,14 @@ const TILE_RADIUS: u8 = 8;
 
 const TABS: [(Tab, char, &str); 10] = [
     (Tab::Appearance, icon::PALETTE, "Appearance"),
-    (Tab::Sites, icon::SITES, "Sites & accounts"),
-    (Tab::Slideshow, icon::SLIDESHOW, "Slideshow"),
+    (Tab::Home, icon::HOME, "Home"),
+    (Tab::Search, icon::SEARCH, "Search"),
     (Tab::Filtering, icon::FILTERS, "Filtering"),
-    (Tab::Hotkeys, icon::KEYBOARD, "Hotkeys"),
-    (Tab::Folders, icon::FOLDER, "Folders"),
+    (Tab::Slideshow, icon::SLIDESHOW, "Slideshow"),
+    (Tab::Sites, icon::SITES, "Sites & accounts"),
     (Tab::Favorites, icon::HEART, "Favorites"),
-    (Tab::Quick, icon::SAVED, "Quick searches"),
-    (Tab::History, icon::HISTORY, "History"),
+    (Tab::Storage, icon::DOWNLOAD, "Downloads & storage"),
+    (Tab::Hotkeys, icon::KEYBOARD, "Hotkeys"),
     (Tab::About, icon::INFO, "About"),
 ];
 
@@ -142,14 +142,14 @@ impl App {
                         ui.spacing_mut().item_spacing.y = 4.0;
                         match self.tab {
                             Tab::Appearance => self.tab_appearance(ui, &ctx),
-                            Tab::Sites => self.tab_sites(ui),
-                            Tab::Slideshow => self.tab_slideshow(ui),
+                            Tab::Home => self.tab_home(ui),
+                            Tab::Search => self.tab_search(ui),
                             Tab::Filtering => self.tab_filtering(ui),
-                            Tab::Hotkeys => self.tab_hotkeys(ui, &ctx),
-                            Tab::Folders => self.tab_folders(ui),
+                            Tab::Slideshow => self.tab_slideshow(ui),
+                            Tab::Sites => self.tab_sites(ui),
                             Tab::Favorites => self.tab_favorites(ui),
-                            Tab::Quick => self.tab_quick(ui),
-                            Tab::History => self.tab_history(ui),
+                            Tab::Storage => self.tab_storage(ui),
+                            Tab::Hotkeys => self.tab_hotkeys(ui, &ctx),
                             Tab::About => self.tab_about(ui),
                         }
                         ui.add_space(theme::S6);
@@ -181,6 +181,14 @@ impl App {
             }
             self.check(ui, "spinLogo", true, "Turn the logo");
         });
+        theme::group(ui, "Mosaic", |ui| {
+            self.check(ui, "mosaicFirst", true, "Open searches and favorites as a mosaic (off: straight to the slideshow)");
+            self.check(ui, "mosaicDates", false, "Divide mosaics by date");
+        });
+    }
+
+    fn tab_home(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Home");
         theme::group(ui, "Front page", |ui| {
             let chosen = if self.reading_home() { 0 } else if self.hot_home() { 1 } else { 2 };
             if let Some(n) = theme::row(ui, "Show", |ui| theme::choice(ui, &["Mosaic", "Hottest", "Saved searches"], chosen)) {
@@ -197,19 +205,26 @@ impl App {
             if theme::row(ui, "Artists the mosaic follows automatically (0 = off)", |ui| ui.add(egui::DragValue::new(&mut limit).range(0.0..=100.0).speed(0.2).fixed_decimals(0)).on_hover_text(hover).changed()) {
                 self.set("autoFollowArtists", json!(limit.round()));
             }
-            self.check(ui, "mosaicFirst", true, "Open searches and favorites as a mosaic (off: straight to the slideshow)");
-            self.check(ui, "mosaicDates", false, "Divide mosaics by date");
         });
         self.following(ui);
-        theme::group(ui, "Browsing", |ui| {
+    }
+
+    fn tab_search(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Search");
+        theme::group(ui, "Searching", |ui| {
             let add = self.text("tagClick") == "add";
             if let Some(n) = theme::row(ui, "Clicking a tag", |ui| theme::choice(ui, &["Searches for it", "Adds it to the search"], if add { 1 } else { 0 })) {
                 self.set("tagClick", json!(if n == 1 { "add" } else { "replace" }));
             }
-            self.check(ui, "clickOpensPost", true, "Favorites: clicking the picture opens its post");
-            self.check(ui, "showDownloadButton", true, "Show the Download button");
             self.check(ui, "searchSortMenu", false, "Sort menu with the search");
+            self.check(ui, "storeHistory", true, "Remember my searches");
+            theme::row(ui, "Searches remembered so far", |ui| {
+                if ui.button("Clear the history").clicked() {
+                    self.set("searchHistory", json!([]));
+                }
+            });
         });
+        self.saved_searches(ui);
     }
 
     fn tab_sites(&mut self, ui: &mut egui::Ui) {
@@ -224,6 +239,7 @@ impl App {
                 }
             }
         });
+        self.your_folders(ui);
         theme::group(ui, "Accounts", |ui| {
             self.line(ui, "e621Login", "e621 username", false);
             self.line(ui, "e621ApiKey", "e621 API key", true);
@@ -244,27 +260,8 @@ impl App {
             if theme::row(ui, "Seconds per slide", |ui| ui.add(egui::DragValue::new(&mut secs).range(1.0..=600.0)).changed()) {
                 self.set("secondsPerSlide", json!(secs));
             }
-            let mut mb = self.number("diskCacheMB", media::DISK_MB);
-            let hover = "Pictures from the sites are kept on the disk and open at once the next time. The oldest go when MSG starts, if there are more. 0 = nothing is kept.";
-            if theme::row(ui, "Pictures kept on disk between starts (MB)", |ui| ui.add(egui::DragValue::new(&mut mb).range(0.0..=100000.0).speed(10.0)).on_hover_text(hover).changed()) {
-                self.set("diskCacheMB", json!(mb.round()));
-            }
-            let mut days = self.number("diskCacheDays", media::DISK_DAYS);
-            let hover = "A kept picture that hasn't been shown for this many days goes when MSG starts. 0 = no time limit.";
-            ui.add_enabled_ui(mb >= 1.0, |ui| {
-                if theme::row(ui, "Keep unused pictures for (days)", |ui| ui.add(egui::DragValue::new(&mut days).range(0.0..=3650.0)).on_hover_text(hover).changed()) {
-                    self.set("diskCacheDays", json!(days.round()));
-                }
-            });
-            self.check(ui, "autoFitSlide", true, "Fit the picture to the window");
-            ui.add_enabled_ui(!self.flag("autoFitSlide", true), |ui| {
-                for (key, label) in [("maxWidth", "Max width (px, 0 = no limit)"), ("maxHeight", "Max height (px, 0 = no limit)")] {
-                    let mut v = self.number(key, 0.0);
-                    if theme::row(ui, label, |ui| ui.add(egui::DragValue::new(&mut v).range(0.0..=20000.0)).changed()) {
-                        self.set(key, if v < 1.0 { Value::Null } else { json!(v) });
-                    }
-                }
-            });
+            self.check(ui, "autoFitSlide", true, "Fit the picture to the window (off: at most its own size)");
+            self.check(ui, "showDownloadButton", true, "Show the Download button");
         });
         theme::group(ui, "Videos", |ui| {
             self.check(ui, "playVideosToEnd", false, "Play videos to the end before moving on");
@@ -371,12 +368,12 @@ impl App {
         }
     }
 
-    fn tab_folders(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Folders");
+    /// The folders of the "Your folders" site (Sites & accounts).
+    fn your_folders(&mut self, ui: &mut egui::Ui) {
         let list = |app: &App, key: &str| -> Vec<String> { app.store.get(key).and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|v| v.as_str().map(String::from)).collect() };
         let (mut folders, mut off) = (list(self, "localFolders"), list(self, "localFoldersOff"));
         let mut remove = None;
-        theme::group(ui, "Your folders (the \"Your folders\" site; tick it in Sites)", |ui| {
+        theme::group(ui, "Your folders (searched when the \"Your folders\" site is on)", |ui| {
             for (i, folder) in folders.iter().enumerate() {
                 theme::row(ui, folder.as_str(), |ui| {
                     if theme::icon_button(ui, icon::CLOSE, "Remove", false).clicked() {
@@ -408,8 +405,12 @@ impl App {
             folders.remove(i);
             self.set("localFolders", json!(folders));
         }
+    }
+
+    fn tab_storage(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Downloads & storage");
         let current = self.text("downloadFolder");
-        theme::group(ui, "Downloads", |ui| {
+        theme::group(ui, "Download folder", |ui| {
             theme::row(ui, if current.is_empty() { "Downloads/MSG (default)" } else { current.as_str() }, |ui| {
                 if ui.button("Default").clicked() {
                     self.set("downloadFolder", json!(""));
@@ -420,30 +421,6 @@ impl App {
                         self.set("downloadFolder", json!(path));
                         self.settings_changed();
                     }
-                }
-            });
-        });
-    }
-
-    fn tab_favorites(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Favorites");
-        theme::group(ui, "Your favorites", |ui| {
-            theme::row(ui, format!("{} favorites", self.fav.items.len()), |ui| {
-                if ui.button("Import").on_hover_text("From e621, Derpibooru and Gelbooru, with the details under Sites & accounts. Already-added items are skipped.").clicked() {
-                    super::favorites::import(&self.engine, self.tx.clone());
-                }
-            });
-            if !self.progress.is_empty() {
-                ui.label(RichText::new(&self.progress).weak());
-            }
-            self.check(ui, "syncE621Favorites", true, "Also fave and unfave on e621 (needs the e621 username and API key)");
-            theme::row(ui, "Download all favorites being shown", |ui| {
-                if ui.button("Stop").clicked() {
-                    self.downloader.cancel_bulk();
-                }
-                if ui.button("Download").clicked() {
-                    let urls: Vec<String> = self.fav.view.iter().map(|s| s.file_url.clone()).filter(|u| super::net::web_url(u).is_some()).collect();
-                    self.downloader.download_many(urls, "MSG/favorites");
                 }
             });
         });
@@ -461,17 +438,55 @@ impl App {
                 self.settings_changed();
             }
         });
+        theme::group(ui, "Picture cache", |ui| {
+            let mut mb = self.number("diskCacheMB", media::DISK_MB);
+            let hover = "Pictures from the sites are kept on the disk and open at once the next time. The oldest go when MSG starts, if there are more. 0 = nothing is kept.";
+            if theme::row(ui, "Pictures kept on disk between starts (MB)", |ui| ui.add(egui::DragValue::new(&mut mb).range(0.0..=100000.0).speed(10.0)).on_hover_text(hover).changed()) {
+                self.set("diskCacheMB", json!(mb.round()));
+            }
+            let mut days = self.number("diskCacheDays", media::DISK_DAYS);
+            let hover = "A kept picture that hasn't been shown for this many days goes when MSG starts. 0 = no time limit.";
+            ui.add_enabled_ui(mb >= 1.0, |ui| {
+                if theme::row(ui, "Keep unused pictures for (days)", |ui| ui.add(egui::DragValue::new(&mut days).range(0.0..=3650.0)).on_hover_text(hover).changed()) {
+                    self.set("diskCacheDays", json!(days.round()));
+                }
+            });
+        });
     }
 
-    fn tab_quick(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Quick searches");
-        theme::note(ui, "Keys 1–0 select the sites and search for the tags (or what is in the box when the tags are empty).");
+    fn tab_favorites(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Favorites");
+        theme::group(ui, "Your favorites", |ui| {
+            theme::row(ui, format!("{} favorites", self.fav.items.len()), |ui| {
+                if ui.button("Import").on_hover_text("From e621, Derpibooru and Gelbooru, with the details under Sites & accounts. Already-added items are skipped.").clicked() {
+                    super::favorites::import(&self.engine, self.tx.clone());
+                }
+            });
+            if !self.progress.is_empty() {
+                ui.label(RichText::new(&self.progress).weak());
+            }
+            self.check(ui, "syncE621Favorites", true, "Also fave and unfave on e621 (needs the e621 username and API key)");
+            self.check(ui, "clickOpensPost", true, "Clicking the picture opens its post");
+            theme::row(ui, "Download all favorites being shown", |ui| {
+                if ui.button("Stop").clicked() {
+                    self.downloader.cancel_bulk();
+                }
+                if ui.button("Download").clicked() {
+                    let urls: Vec<String> = self.fav.view.iter().map(|s| s.file_url.clone()).filter(|u| super::net::web_url(u).is_some()).collect();
+                    self.downloader.download_many(urls, "MSG/favorites");
+                }
+            });
+        });
+    }
+
+    /// The searches behind keys 1–0, which the front page shows as cards (Search).
+    fn saved_searches(&mut self, ui: &mut egui::Ui) {
         let mut quick: Vec<Value> = self.store.get("quickSearches").and_then(|v| v.as_array().cloned()).unwrap_or_default();
         while quick.len() < 10 {
             quick.push(json!({"sites": [], "tags": ""}));
         }
         let mut changed = false;
-        theme::group(ui, "", |ui| {
+        theme::group(ui, "Saved searches (keys 1–0)", |ui| {
             for (n, entry) in quick.iter_mut().enumerate() {
                 theme::row(ui, format!("{}", (n + 1) % 10), |ui| {
                     let mut tags = entry["tags"].as_str().unwrap_or("").to_string();
@@ -499,18 +514,7 @@ impl App {
         if changed {
             self.set("quickSearches", Value::Array(quick));
         }
-    }
-
-    fn tab_history(&mut self, ui: &mut egui::Ui) {
-        ui.heading("History");
-        theme::group(ui, "", |ui| {
-            self.check(ui, "storeHistory", true, "Remember my searches");
-            theme::row(ui, "Searches remembered so far", |ui| {
-                if ui.button("Clear the history").clicked() {
-                    self.set("searchHistory", json!([]));
-                }
-            });
-        });
+        theme::note(ui, "A key selects the sites and searches for the tags (or for what is in the box when the tags are empty).");
     }
 
     fn tab_about(&mut self, ui: &mut egui::Ui) {
@@ -638,7 +642,7 @@ impl App {
     }
 
     /// The mosaic's part of the top bar, right to left (see top_bar); the search or favorites bar comes after it.
-    /// What the reading list follows, and stopping it (Settings → Appearance).
+    /// What the reading list follows, and stopping it (Settings → Home).
     fn following(&mut self, ui: &mut egui::Ui) {
         let list = super::session::reading_list(&self.store);
         let mut remove = None;

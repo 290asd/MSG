@@ -47,7 +47,6 @@ pub mod icon {
     pub const MUTED: char = '\u{e1ac}';
     pub const PALETTE: char = '\u{e1dd}';
     pub const KEYBOARD: char = '\u{e284}';
-    pub const FOLDER: char = '\u{e0d7}';
     pub const INFO: char = '\u{e0f9}';
 }
 
