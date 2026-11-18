@@ -133,6 +133,8 @@ pub struct Search {
     // Held here while idle; moved into the task while a page is being read.
     cursors: Vec<Cursor>,
     pub cfg: Config,
+    /// Read from this site only, whatever is ticked (a post's family).
+    pub only: Option<Site>,
     seen: HashSet<String>,
     include_dupes: bool,
     // What it was started with (each cursor's words and site), to tell whether the settings have changed since.
@@ -151,6 +153,7 @@ impl Search {
             basis: sites.iter().map(|s| (None, *s)).collect(),
             cursors: sites.into_iter().map(Cursor::new).collect(),
             cfg: config(store),
+            only: None,
             seen: HashSet::new(),
             include_dupes: store.flag("includeDupes"),
         }

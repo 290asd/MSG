@@ -28,6 +28,17 @@ pub struct Slide {
     pub tags: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag_groups: Option<Map<String, Value>>,
+    /// The e621 pools the post is in.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pools: Vec<u64>,
+    /// The post's parent, and whether it has children (e621 and Danbooru).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<u64>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub has_children: bool,
+    /// Where the artist posted it (http(s) only).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +67,17 @@ impl MediaType {
 impl Slide {
     pub fn key(&self) -> (String, String) {
         (self.site_id.clone(), id_text(&self.id))
+    }
+
+    /// The search that shows the post's parent and its children, on e621 and Danbooru.
+    pub fn family_search(&self) -> Option<String> {
+        let root = self.parent.or_else(|| self.has_children.then(|| self.id.as_u64()).flatten())?;
+        // Danbooru's parent: has the parent too; e621's has only the children.
+        match self.site_id.as_str() {
+            "E621" => Some(format!("~id:{root} ~parent:{root} order:id_asc")),
+            "DANB" => Some(format!("parent:{root} order:id_asc")),
+            _ => None,
+        }
     }
 
     /// Seconds since 1970, for sorting; 0 when the date can't be read.

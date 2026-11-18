@@ -369,6 +369,11 @@ fn num_of(v: &Value, key: &str) -> i64 {
     }
 }
 
+/// The artist's own pages among a post's sources: web addresses only (e621 marks a removed one with "-").
+fn web_sources<'a>(list: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    list.into_iter().map(str::trim).filter(|s| super::net::web_url(s).is_some()).map(String::from).collect()
+}
+
 fn absolute(base: &str, url: &str) -> String {
     if url.starts_with("//") {
         format!("https:{url}")
@@ -437,6 +442,11 @@ fn e621(c: &Config, post: &Value) -> Option<Slide> {
         tag_groups: groups,
         file_url: url,
         id,
+        pools: post.get("pools").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).collect()).unwrap_or_default(),
+        parent: post["relationships"]["parent_id"].as_u64(),
+        has_children: post["relationships"]["has_children"].as_bool().unwrap_or(false)
+            || post["relationships"]["children"].as_array().is_some_and(|c| !c.is_empty()),
+        sources: web_sources(post.get("sources").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str)),
     })
 }
 
@@ -467,6 +477,10 @@ fn danbooru(c: &Config, post: &Value) -> Option<Slide> {
         tag_groups: Some(groups),
         file_url: file,
         id,
+        parent: post["parent_id"].as_u64(),
+        has_children: post["has_children"].as_bool().unwrap_or(false),
+        sources: web_sources(str_of(post, "source")),
+        ..Default::default()
     })
 }
 
@@ -490,6 +504,7 @@ fn moebooru(c: &Config, site: Site, post: &Value) -> Option<Slide> {
         tags,
         file_url: file,
         id,
+        sources: web_sources(str_of(post, "source")),
         ..Default::default()
     })
 }
@@ -516,6 +531,7 @@ fn philomena(c: &Config, site: Site, post: &Value) -> Option<Slide> {
         tags,
         file_url: full,
         id,
+        sources: web_sources(post.get("source_urls").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).chain(str_of(post, "source_url"))),
         ..Default::default()
     })
 }
@@ -560,6 +576,7 @@ fn dapi(c: &Config, site: Site, body: &str) -> Result<(Vec<Slide>, usize), Strin
                 tags,
                 file_url: fix(&file),
                 id: Value::String(id),
+                sources: web_sources(Some(field("source").as_str())),
                 ..Default::default()
             })
         })
@@ -644,6 +661,20 @@ mod tests {
         assert!(s.tag_groups.is_none());
         let old = e621_old_posts(serde_json::from_str(body).unwrap());
         assert_eq!(old["posts"][0]["preview"]["url"], "https://static1.e621.net/data/preview/b3/2f/b32f.jpg");
+    }
+
+    #[test]
+    fn post_links() {
+        let body = r#"[{"id":4,"rating":"s","files":{"meta":{"md5":"b","ext":"jpg"},"original":{"url":"https://static1.e621.net/data/b.jpg"}},
+          "tags":["cat"],"pools":[59400],"relationships":{"parent_id":3,"children":[]},
+          "sources":["https://www.furaffinity.net/view/1/","-https://gone.example/","file:///C:/x","not a url"]}]"#;
+        let s = &parse(&config(), Site::E621, body).unwrap().0[0];
+        assert_eq!((s.pools.as_slice(), s.parent, s.sources.as_slice()), (&[59400][..], Some(3), &["https://www.furaffinity.net/view/1/".to_string()][..]));
+        assert_eq!(s.family_search().as_deref(), Some("~id:3 ~parent:3 order:id_asc"));
+        let body = r#"[{"id":5,"rating":"g","file_url":"/a.png","tag_string":"a","has_children":true,"source":"https://x.com/a/status/1"}]"#;
+        let s = &parse(&config(), Site::Danbooru, body).unwrap().0[0];
+        assert_eq!((s.parent, s.sources.len()), (None, 1));
+        assert_eq!(s.family_search().as_deref(), Some("parent:5 order:id_asc"));
     }
 
     #[test]

@@ -546,17 +546,19 @@ impl App {
         self.close_search_list();
         let text = text.trim();
         self.query = text.to_string();
-        let sites = session::ticked_sites(&self.store);
+        let sites = only.map_or_else(|| session::ticked_sites(&self.store), |site| vec![site]);
         if sites.is_empty() {
             self.notice("Tick at least one site (Sites ▾).");
             return;
         }
         self.set_aside_search();
-        self.search = Some(Search::new(self.generation, text, sites, &self.store));
+        let mut search = Search::new(self.generation, text, sites, &self.store);
+        search.only = only;
+        self.search = Some(search);
         self.reading_list = false;
         self.cur[Mode::Slideshow as usize] = 0;
         self.shown_at = None;
-        if self.flag("storeHistory", true) && !text.is_empty() {
+        if self.flag("storeHistory", true) && !text.is_empty() && only.is_none() {
             let mut history: Vec<Value> = self.store.get("searchHistory").and_then(|v| v.as_array().cloned()).unwrap_or_default();
             history.retain(|h| h.as_str() != Some(text));
             history.push(json!(text));
@@ -565,6 +567,11 @@ impl App {
             self.set("searchHistory", Value::Array(history));
         }
         self.load_more();
+        self.start_search_on(text, None);
+    }
+
+    /// With `only` the search reads that site, whatever is ticked, and stays out of the history (a post's family).
+    pub fn start_search_on(&mut self, text: &str, only: Option<Site>) {
     }
 
     /// The Hottest front page: the best scored posts of the chosen time on the ticked sites that can search by age.
@@ -634,6 +641,10 @@ impl App {
     pub fn open_reading(&mut self) {
         self.mode = Mode::Slideshow;
         self.show_pools = false;
+        } else if let Some(site) = search.only {
+            let mut new = Search::new(self.generation, &search.text, vec![site], &self.store);
+            new.only = Some(site);
+            new
         self.show_settings = false;
         self.show_mosaic = true;
         if self.refresh_auto_follow() {
@@ -1783,10 +1794,43 @@ impl App {
     fn viewer(&mut self, ui: &mut egui::Ui) {
         let rect = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(rect, Sense::click());
+    /// The post's own links: its pools and family (searches) and where the artist posted it (the browser).
+    fn post_links(&self, slide: &Slide) -> Vec<(char, String, String, bool)> {
+        let saved = self.store.get("savedPools").and_then(|p| p.as_array().cloned()).unwrap_or_default();
+        let mut links: Vec<(char, String, String, bool)> = slide
+            .pools
+            .iter()
+            .map(|id| {
+                let name = saved.iter().find(|p| p["id"].as_u64() == Some(*id)).and_then(|p| p["name"].as_str()).map(|n| n.replace('_', " "));
+                (icon::POOLS, name.unwrap_or_else(|| format!("Pool #{id}")), format!("pool:{id}"), true)
+            })
+            .collect();
+        if let Some(search) = slide.family_search() {
+            let label = if slide.parent.is_some() { "Parent and siblings" } else { "Children" };
+            links.push((icon::MOSAIC, label.into(), search, true));
+        }
+        for url in &slide.sources {
+            let host = super::net::web_url(url).and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_string()));
+            links.push((icon::SITES, host.unwrap_or_else(|| url.clone()), url.clone(), false));
+        }
+        links
+    }
+
         let Some(slide) = self.current() else {
             self.on_screen = OnScreen::default();
+        let links = self.post_links(slide);
+        let mut link: Option<(String, bool)> = None;
             self.front_page(ui, rect);
             return;
+            for (glyph, label, target, search) in &links {
+                let row = theme::drawer_row(ui, *glyph, label, false);
+                if (if *search { row } else { row.on_hover_text(target) }).clicked() {
+                    link = Some((target.clone(), *search));
+                }
+            }
+            if !links.is_empty() {
+                ui.add_space(theme::S2);
+            }
         };
         self.wheel_slides(ui, &response);
         if self.roll.moving() {
@@ -1804,6 +1848,13 @@ impl App {
             if faved {
                 fave_mark(ui, place);
             }
+        match link {
+            Some((search, true)) => self.start_search_on(&search, Site::from_id(&slide.site_id)),
+            Some((url, false)) if net_ok(&url) => {
+                let _ = open::that(&url);
+            }
+            _ => {}
+        }
             return;
         }
         let elapsed = self.shown_at.map(|t| t.elapsed()).unwrap_or_default();
