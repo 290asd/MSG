@@ -2018,37 +2018,39 @@ impl App {
         let len = self.list().len();
         let room = |i: usize| (len.saturating_sub(i + 1), i);
         if response.hovered() && !self.hotkeys.map.values().flatten().any(|code| hotkeys::is_wheel(*code)) {
-            let mut dy = 0.0;
+            let now = Instant::now();
+            let mut lines = 0.0;
             for event in ui.input(|i| i.events.clone()) {
                 let egui::Event::MouseWheel { unit, delta, modifiers, .. } = event else { continue };
                 // Mostly sideways is the swipe back.
                 if modifiers.any() || delta.y == 0.0 || delta.x.abs() > delta.y.abs() {
                     continue;
                 }
-                // A mouse's notch is a step; a touchpad's many small moves add up to one.
-                if unit == egui::MouseWheelUnit::Point {
-                    if smooth {
-                        dy -= delta.y * crate::roll::GAIN;
-                        continue;
-                    }
-                    self.wheel += delta.y;
-                    if self.wheel.abs() >= 60.0 {
-                        self.move_by(if self.wheel < 0.0 { 1 } else { -1 });
-                        self.wheel = 0.0;
-                    }
+                // Windows tells a touchpad in fractions of a line and a mouse's notch as a whole one.
+                if unit == egui::MouseWheelUnit::Point || delta.y.fract() != 0.0 || self.roll.in_gesture(now) {
+                    lines -= if unit == egui::MouseWheelUnit::Point { delta.y / crate::roll::POINTS_PER_LINE } else { delta.y };
+                    continue;
+                }
+                let by = if delta.y < 0.0 { 1 } else { -1 };
+                let room = room(self.idx());
+                // Past the last one the notch goes round to the start (or waits for more) as before.
+                if smooth && (if by > 0 { room.0 } else { room.1 }) > 0 {
+                    self.roll.nudge(by, room);
                 } else {
-                    let by = if delta.y < 0.0 { 1 } else { -1 };
-                    let room = room(self.idx());
-                    // Past the last one the notch goes round to the start (or waits for more) as before.
-                    if smooth && (if by > 0 { room.0 } else { room.1 }) > 0 {
-                        self.roll.nudge(by, page, room);
-                    } else {
-                        self.move_by(by);
-                    }
+                    self.move_by(by);
                 }
             }
-            if dy != 0.0 {
-                self.roll.drag(dy, Instant::now(), page, room(self.idx()));
+            if lines != 0.0 {
+                if smooth {
+                    self.roll.drag(lines, now);
+                } else {
+                    // Without animations a touchpad steps a slide each time it has gone past the friction.
+                    self.wheel += lines;
+                    if self.wheel.abs() >= crate::roll::EDGE {
+                        self.move_by(self.wheel.signum() as i64);
+                        self.wheel = 0.0;
+                    }
+                }
             }
         }
         if self.roll.moving() {
