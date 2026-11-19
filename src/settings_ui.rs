@@ -67,7 +67,7 @@ impl App {
             ("Search", "Type tags in the bar at the top. Suggestions come as you type; Enter takes one.".to_string()),
             ("Mosaic and slideshow", "Click a picture to open it. Enter or Space starts the slideshow, Esc goes back.".to_string()),
             ("In the slideshow", format!(
-                "{} and {} change the picture, so does the wheel. {} plays or pauses, {} faves, {} shows the tags. The rest is in the drawer at the left edge.",
+                "{} and {} change the picture, so does the wheel. {} plays or pauses, {} faves, {} shows the tags. The rest is in the drawer at the right edge (or swipe two fingers to the left).",
                 keys("previous"), keys("next"), keys("playPause"), keys("favorite"), keys("toggleTags"),
             )),
             ("Settings", "Sites and accounts, hotkeys, filters and the look are behind the gear in the rail.".to_string()),

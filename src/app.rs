@@ -233,6 +233,8 @@ pub struct App {
     player_rect: egui::Rect,
     drawer_open: bool,
     drawer_forced: bool,
+    /// Swiped out with two fingers to the left; the back swipe (or Esc) puts it away.
+    drawer_swiped: bool,
     on_screen: OnScreen,
     zoom: Zoom,
     /// When the screen last changed, for the fade between pages.
@@ -313,6 +315,7 @@ impl App {
             player_rect: egui::Rect::NOTHING,
             drawer_open: false,
             drawer_forced: false,
+            drawer_swiped: false,
             on_screen: OnScreen::default(),
             zoom: Zoom::new(String::new()),
             changed_at: None,
@@ -1034,6 +1037,8 @@ impl App {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
                     }
                     // An open menu closes by itself on this press.
+                    // A drawer swiped out goes back in first.
+                    egui::Key::Escape if self.drawer_swiped => self.drawer_swiped = false,
                     egui::Key::Escape if !egui::Popup::is_any_open(ctx) && !self.search_list_open() => self.act(ctx, "back"),
                     egui::Key::Enter if !wants_text && !modifiers.any() => self.act(ctx, "playPause"),
                     _ if !wants_text && !modifiers.any() && self.mode == Mode::Slideshow => {
@@ -1608,9 +1613,9 @@ impl App {
             self.player_rect = egui::Rect::NOTHING;
             return;
         }
-        let left = area.left() + if self.show_tags { DRAWER_SPACE } else { 0.0 };
-        let room = area.right() - left - 2.0 * theme::S4;
-        let center = (left + area.right()) / 2.0;
+        let (left, right) = (area.left(), area.right() - if self.show_tags { DRAWER_SPACE } else { 0.0 });
+        let room = right - left - 2.0 * theme::S4;
+        let center = (left + right) / 2.0;
         let (mut pause, mut seek, mut audio) = (None, None, false);
         let (mut volume, mut muted) = (self.number("videoVolume", 0.5), self.flag("videoMuted", false));
         // Each part floats on its own, centred. The buttons are at the bottom and the same width always, so that nothing
@@ -1716,30 +1721,34 @@ impl App {
         }
     }
 
-    /// Everything else of the slideshow, on glass that slides in from the left edge of the window when the pointer
-    /// goes there, and over the picture. Tags (the button or its hotkey) pin it, and the picture then makes room.
+    /// Everything else of the slideshow, on glass that slides in from the right edge of the window when the pointer
+    /// goes there or two fingers swipe to the left, and over the picture. Tags (the button or its hotkey) pin it, and
+    /// the picture then makes room.
     fn drawer(&mut self, ctx: &egui::Context) {
         let area = ctx.content_rect();
         let pointer = ctx.input(|i| i.pointer.hover_pos());
-        let at_edge = pointer.is_some_and(|p| p.x <= area.left() + DRAWER_EDGE);
-        let on_it = self.drawer_open && pointer.is_some_and(|p| p.x <= area.left() + DRAWER_SPACE + theme::S4);
+        let at_edge = pointer.is_some_and(|p| p.x >= area.right() - DRAWER_EDGE);
+        let on_it = self.drawer_open && pointer.is_some_and(|p| p.x >= area.right() - DRAWER_SPACE - theme::S4);
         let held = self.drawer_open && (egui::Popup::is_any_open(ctx) || ctx.egui_wants_keyboard_input() || self.search_list_open());
-        self.drawer_open = self.show_tags || self.drawer_forced || at_edge || on_it || held;
+        self.drawer_open = self.show_tags || self.drawer_forced || self.drawer_swiped || at_edge || on_it || held;
         let k = ctx.animate_bool_with_time(egui::Id::new("drawer"), self.drawer_open, theme::drawer_slide());
         let t = tok(ctx);
         if k < 1.0 && self.show_controls && self.player_rect.is_positive() {
             // Where it is: a short mark at the edge, with the player.
-            let mark = egui::Rect::from_center_size(egui::pos2(area.left() + 4.0, area.center().y), Vec2::new(3.0, 44.0));
+            let mark = egui::Rect::from_center_size(egui::pos2(area.right() - 4.0, area.center().y), Vec2::new(3.0, 44.0));
             ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new("drawer mark"))).rect_filled(mark, 2, t.hover);
         }
         if k == 0.0 {
             return;
         }
-        let x = egui::lerp(-(DRAWER_W + theme::S4)..=RAIL_MARGIN, k);
+        // Held by its right edge, so that a row too wide grows it into the window rather than out of it.
+        let x = egui::lerp(area.right() + theme::S4 + DRAWER_W..=area.right() - RAIL_MARGIN, k);
         let height = area.height() - 2.0 * RAIL_MARGIN;
-        egui::Area::new(egui::Id::new("drawer area")).order(egui::Order::Middle).fixed_pos(egui::pos2(area.left() + x, area.top() + RAIL_MARGIN)).constrain(false).show(ctx, |ui| {
+        egui::Area::new(egui::Id::new("drawer area")).order(egui::Order::Middle).pivot(egui::Align2::RIGHT_TOP).fixed_pos(egui::pos2(x, area.top() + RAIL_MARGIN)).constrain(false).show(ctx, |ui| {
             glass::card(ui, glass::bar(ctx), egui::Margin::same(12), |ui| {
+                // Also at most this wide: the rows wrap instead of running off the window's edge.
                 ui.set_width(DRAWER_W - 24.0);
+                ui.set_max_width(DRAWER_W - 24.0);
                 ui.set_height(height - 24.0);
                 self.drawer_content(ui);
             });
@@ -2290,6 +2299,14 @@ impl App {
             }
             self.swipe.spent = false;
         }
+        // In the slideshow two fingers to the left bring the drawer out, and the back swipe puts it away first.
+        let slideshow = !self.covered() && self.current_ref().is_some();
+        self.drawer_swiped &= slideshow;
+        if any && self.swipe.x == 0.0 && slideshow && ((dx < 0.0 && !self.drawer_swiped) || (dx > 0.0 && self.drawer_swiped)) {
+            self.drawer_swiped = dx < 0.0;
+            self.swipe.spent = true;
+            return;
+        }
         if any && self.swipe.x == 0.0 {
             let over_thumbs = ctx.pointer_hover_pos().is_some_and(|p| self.player_rect.contains(p));
             if dx <= 0.0 || over_thumbs || self.back.is_empty() {
@@ -2573,7 +2590,7 @@ impl eframe::App for App {
             }
         } else {
             if self.show_tags {
-                egui::Panel::left("pinned drawer").exact_size(DRAWER_SPACE).resizable(false).show_separator_line(false).frame(egui::Frame::NONE).show(ui, |_| {});
+                egui::Panel::right("pinned drawer").exact_size(DRAWER_SPACE).resizable(false).show_separator_line(false).frame(egui::Frame::NONE).show(ui, |_| {});
             }
             egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| self.viewer(ui));
             self.player(&ctx);
