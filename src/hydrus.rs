@@ -8,7 +8,7 @@ use super::sites::{Config, Cursor};
 use super::slide::{self, MediaType, Slide};
 use crate::store::Store;
 use serde_json::{json, Map, Value};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
@@ -368,31 +368,36 @@ pub fn sync(engine: &Engine, tx: &Sender<Msg>, slide: &Slide, faved: bool) {
 
 /// Set to end `send_all` early.
 pub static STOP: AtomicBool = AtomicBool::new(false);
+/// `send_all` is going.
+pub static SENDING: AtomicBool = AtomicBool::new(false);
+/// How far the last `send_all` got: sent, failed, all.
+pub static SENT: [AtomicUsize; 3] = [AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0)];
 
-/// Sends every favorite to Hydrus, one at a time, telling how far it is. `STOP` ends it early.
+/// Sends every favorite to Hydrus, one at a time; `SENDING` and `SENT` tell how far it is. `STOP` ends it early.
 pub fn send_all(engine: &Engine, tx: &Sender<Msg>, slides: Vec<Slide>) {
-    let (engine, tx, stop) = (engine.clone(), tx.clone(), &STOP);
-    stop.store(false, Ordering::SeqCst);
+    if SENDING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let (engine, tx) = (engine.clone(), tx.clone());
+    STOP.store(false, Ordering::SeqCst);
+    SENT[0].store(0, Ordering::SeqCst);
+    SENT[1].store(0, Ordering::SeqCst);
+    SENT[2].store(slides.len(), Ordering::SeqCst);
+    engine.wake();
     engine.rt.clone().spawn(async move {
-        let say = |text: String| {
-            let _ = tx.send(Msg::Notice(text));
-            engine.wake();
-        };
-        let (mut done, mut failed) = (0, 0);
-        for (n, slide) in slides.iter().enumerate() {
-            if stop.load(Ordering::SeqCst) {
+        for slide in &slides {
+            if STOP.load(Ordering::SeqCst) {
                 break;
             }
-            match keep(&engine, slide, true).await {
-                Ok(()) => done += 1,
-                Err(_) => failed += 1,
-            }
-            if (n + 1) % 10 == 0 {
-                say(format!("Sending favorites to Hydrus: {} / {}", n + 1, slides.len()));
-            }
+            let ok = keep(&engine, slide, true).await.is_ok();
+            SENT[usize::from(!ok)].fetch_add(1, Ordering::SeqCst);
+            engine.wake();
         }
-        let stopped = if stop.load(Ordering::SeqCst) { " (stopped)" } else { "" };
-        say(format!("Hydrus has {done} of {} favorites, {failed} failed{stopped}.", slides.len()));
+        SENDING.store(false, Ordering::SeqCst);
+        let [done, failed, all] = SENT.each_ref().map(|n| n.load(Ordering::SeqCst));
+        let stopped = if STOP.load(Ordering::SeqCst) { " (stopped)" } else { "" };
+        let _ = tx.send(Msg::Notice(format!("Hydrus has {done} of {all} favorites, {failed} failed{stopped}.")));
+        engine.wake();
     });
 }
 

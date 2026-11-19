@@ -271,14 +271,27 @@ impl App {
                 }
             });
             self.check(ui, "hydrusFavorites", true, "Keep favorites in Hydrus too");
+            use std::sync::atomic::Ordering::SeqCst;
+            let sending = super::hydrus::SENDING.load(SeqCst);
+            let [done, failed, all] = super::hydrus::SENT.each_ref().map(|n| n.load(SeqCst));
             theme::row(ui, "Send all favorites to Hydrus", |ui| {
-                if theme::button(ui, "Stop").clicked() {
-                    super::hydrus::STOP.store(true, std::sync::atomic::Ordering::SeqCst);
-                }
-                if theme::button(ui, "Send").clicked() {
+                if sending {
+                    if theme::button(ui, "Stop").clicked() {
+                        super::hydrus::STOP.store(true, SeqCst);
+                    }
+                } else if theme::button(ui, "Send").clicked() {
                     super::hydrus::send_all(&self.engine, &self.tx, self.fav.items.clone());
                 }
             });
+            if all > 0 {
+                let state = if sending { "Sending" } else if super::hydrus::STOP.load(SeqCst) { "Stopped at" } else { "Done:" };
+                let mut text = format!("{state} {} / {all}", done + failed);
+                if failed > 0 {
+                    text += &format!(" ({failed} failed)");
+                }
+                ui.add(egui::ProgressBar::new((done + failed) as f32 / all as f32).text(text).animate(sending));
+                ui.add_space(8.0);
+            }
         });
         theme::note(ui, "Your own Hydrus client (services → manage services → client api, like http://192.168.1.10:45869), with a key that may import URLs and files, edit tags and ratings, and search. Tick Hydrus under Sites to search it: nothing goes to the boorus, and system:favorites finds your favorites. A favorite is sent there with its tags and links and liked on \"favourites\"; unfaving only takes the like away.");
         theme::group(ui, "e621", |ui| {
