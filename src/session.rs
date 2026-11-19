@@ -529,6 +529,8 @@ mod tests {
 
     #[test]
     fn reading_list_cursors() {
+        // Both binaries run this test: start from an empty folder, not from what the other one left there.
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join("msg-native-reading"));
         let store = Store::load(std::env::temp_dir().join("msg-native-reading"), std::env::temp_dir().join("msg-native-reading-legacy")).unwrap();
         let list = serde_json::json!([{"tags": "a", "sites": ["E621", "SAFE"]}, {"tags": "b", "sites": ["E621"]}, {"tags": "c"}]);
         store.data.lock().unwrap().insert("readingList".into(), list);
