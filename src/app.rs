@@ -95,6 +95,8 @@ struct Swipe {
     seen: Screen,
     arrived: Option<Instant>,
     due: Option<Instant>,
+    /// Gone back: the picture fades into the live page.
+    handoff: Option<Instant>,
 }
 
 /// The space between slides in the strip.
@@ -2287,8 +2289,12 @@ impl App {
             self.swipe.x = 0.0;
             // With its picture already under it, the page comes without a fade.
             let pictured = self.back.last().is_some_and(|(s, _)| self.swipe.snaps.iter().any(|(k, _)| k == s));
-            if back && self.go_back() && !pictured {
-                self.changed_at = Some(now);
+            if back && self.go_back() {
+                if pictured {
+                    self.swipe.handoff = Some(now);
+                } else {
+                    self.changed_at = Some(now);
+                }
             }
             return;
         }
@@ -2363,12 +2369,40 @@ impl App {
             return;
         }
         // Not mid-swipe or mid-fade: the picture is of the page as it stands.
-        if self.swipe.x > 0.0 || self.changed_at.is_some() || self.onboarding {
+        if self.swipe.x > 0.0 || self.swipe.handoff.is_some() || self.changed_at.is_some() || self.onboarding {
             return;
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(self.here.clone())));
         let young = self.swipe.arrived.is_some_and(|t| now - t < Duration::from_secs(10));
         self.swipe.due = young.then(|| now + Duration::from_secs(2));
+    }
+
+    /// The screen before shows through the pulled page the further it goes, and after going back its picture
+    /// fades into the live page (which may have scrolled to the slide it was left on).
+    fn cross_fade(&mut self, ctx: &egui::Context) {
+        let rect = ctx.content_rect();
+        let (key, k, alpha, clip) = if self.swipe.x > 0.0 {
+            let k = self.swipe.x / rect.width();
+            let Some((s, _)) = self.back.last() else { return };
+            (s, k, k, rect.translate(Vec2::new(self.swipe.x, 0.0)).intersect(rect))
+        } else if let Some(at) = self.swipe.handoff {
+            let t = at.elapsed().as_secs_f32() / 0.3;
+            if t >= 1.0 {
+                self.swipe.handoff = None;
+                return;
+            }
+            ctx.request_repaint();
+            (&self.here, 1.0, 1.0 - t * t, rect)
+        } else {
+            return;
+        };
+        let Some((_, snap)) = self.swipe.snaps.iter().find(|(s, _)| s == key) else { return };
+        // Dimmed as the picture under the page is, so the two match.
+        let tint = Color32::from_gray(255 - (90.0 * (1.0 - k)) as u8).gamma_multiply(alpha);
+        let whole = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("swipe fade")))
+            .with_clip_rect(clip)
+            .image(snap.id(), rect.translate(Vec2::new(-(1.0 - k) * rect.width() * 0.25, 0.0)), whole, tint);
     }
 
     /// Moves everything drawn on the page (not the background under it, from `from` on) by the swipe.
@@ -2597,6 +2631,7 @@ impl eframe::App for App {
             self.drawer(&ctx);
         }
         self.shift_page(&ctx, page_from);
+        self.cross_fade(&ctx);
         self.page_fade(&ctx);
         self.test_hook(&ctx);
         self.test_script(&ctx);
