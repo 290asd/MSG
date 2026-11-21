@@ -100,6 +100,125 @@ struct Swipe {
     handoff: Option<Instant>,
 }
 
+/// The touchpad now and then puts one event the wrong way round in the middle of a flick (+3.3 between -2.8
+/// and -2.3 in the recorded gestures), and on the pages egui scrolls back with it. Such an event is held: the
+/// next one going its way lets both through, one going the old way drops it. A mouse's whole notches pass.
+/// Windows' coasting after the fingers lift comes as events every 25 ms (the fingers' come every 8 ms), or
+/// gathered into bigger ones every 42 or 83 ms (-16.6 lines), and sometimes about 0.3 s late in one big
+/// event and a trickle, when the touch has ended and the page stopped; that is dropped.
+#[derive(Default)]
+struct Spike {
+    dir: f32,
+    /// The last touchpad event.
+    last: Option<Instant>,
+    held: Option<egui::Event>,
+    /// When late coasting was dropped: the trickle after it goes too.
+    late: Option<Instant>,
+    /// Lines come in but not yet passed on, how fast they go out, and how fast they went last (lines per second).
+    owed: f32,
+    rate: f32,
+    speed: f32,
+    frame: Option<Instant>,
+}
+
+/// No touchpad event for this long: the touch has ended (Windows' gathered coasting comes up to 84 ms apart).
+const LIFT: Duration = Duration::from_millis(120);
+/// The page speeds up at most this much every 8 ms (from `START_SPEED` lines per second), so a big event after
+/// small ones, like the first of a touch or of Windows' coasting (+7.5 lines 9 ms after +1.0), is let out over
+/// a few frames instead of in one.
+const SPEED_UP: f32 = 1.25;
+const START_SPEED: f32 = 125.0;
+
+/// A touchpad event of this many lines or more after a pause of `LATE_AFTER` is Windows' late coasting: the
+/// first of a new touch stays under 6.
+const LATE_LINES: f32 = 6.0;
+const LATE_AFTER: Duration = Duration::from_millis(150);
+
+fn held_y(event: &egui::Event) -> f32 {
+    if let egui::Event::MouseWheel { delta, .. } = event { delta.y } else { 0.0 }
+}
+
+/// A wheel event that only tells egui the fingers went down or came up.
+fn touch(phase: egui::TouchPhase) -> egui::Event {
+    egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: Vec2::ZERO, phase, modifiers: egui::Modifiers::NONE }
+}
+
+impl Spike {
+    /// The touch is framed by Start and End, so egui moves the page by what it is given, as for a Mac's
+    /// trackpad; otherwise it eases the events in like a wheel's notches, falls behind a quick flick and
+    /// catches up with a jump. What comes in is given out evenly over as long as it took to come, so the page
+    /// moves on every frame and not in steps of 25 ms while Windows coasts. Returns when to look again.
+    fn filter(&mut self, events: &mut Vec<egui::Event>, now: Instant) -> Option<Duration> {
+        let dt = self.frame.map_or(1.0 / 60.0, |t| (now - t).as_secs_f32().min(0.05));
+        self.frame = Some(now);
+        let since = self.last.map(|t| now - t);
+        let mut out = Vec::with_capacity(events.len() + 2);
+        let mut moved = 0.0;
+        for event in events.drain(..) {
+            let egui::Event::MouseWheel { delta, modifiers, .. } = &event else {
+                out.push(event);
+                continue;
+            };
+            // Windows tells a mouse's notch as a whole line and a touchpad in fractions, but now and then those
+            // come out whole too (+1.000 in the log).
+            if modifiers.any() || delta.x != 0.0 || (delta.y.fract() == 0.0 && self.last.is_none()) {
+                out.push(event);
+                continue;
+            }
+            let (y, sign) = (delta.y, delta.y.signum());
+            let paused = since.is_none_or(|s| s >= LATE_AFTER);
+            if paused && y.abs() >= LATE_LINES {
+                self.late = Some(now);
+                continue;
+            }
+            if y.abs() < 0.5 && self.late.is_some_and(|t| now - t < Duration::from_millis(500)) {
+                continue;
+            }
+            self.late = None;
+            if self.last.replace(now).is_none() {
+                out.push(touch(egui::TouchPhase::Start));
+            }
+            match self.held.take() {
+                Some(held) if sign != self.dir => {
+                    moved += held_y(&held) + y;
+                    self.dir = sign;
+                }
+                Some(_) => moved += y,
+                None if self.dir != 0.0 && sign != self.dir => self.held = Some(event),
+                None => {
+                    self.dir = sign;
+                    moved += y;
+                }
+            }
+        }
+        if moved != 0.0 {
+            // Half as long again, so the next events come before these have all gone out (they come 8–9 ms
+            // apart and frames every 8 ms or so, and a frame with nothing would be a stutter).
+            let span = since.map_or(1.0 / 60.0, |s| 1.5 * s.as_secs_f32()).clamp(0.004, 0.1);
+            self.owed += moved;
+            self.rate = self.owed / span;
+        }
+        if self.owed != 0.0 {
+            let step = if (self.rate * dt).abs() >= self.owed.abs() { self.owed } else { self.rate * dt };
+            let most = (self.speed * SPEED_UP.powf(dt / 0.008)).max(START_SPEED) * dt;
+            let step = step.clamp(-most, most);
+            self.speed = step.abs() / dt.max(0.001);
+            self.owed -= step;
+            out.push(egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: Vec2::new(0.0, step), phase: egui::TouchPhase::Move, modifiers: egui::Modifiers::NONE });
+        }
+        if self.owed == 0.0 && self.last.is_some_and(|t| now - t >= LIFT) {
+            *self = Spike { frame: self.frame, late: self.late, ..Spike::default() };
+            out.push(touch(egui::TouchPhase::End));
+        }
+        *events = out;
+        if self.owed != 0.0 {
+            Some(Duration::ZERO)
+        } else {
+            self.last.map(|_| LIFT)
+        }
+    }
+}
+
 /// The space between slides in the strip.
 const ROLL_GAP: f32 = 24.0;
 
@@ -232,6 +351,7 @@ pub struct App {
     /// The slides as a strip under two fingers (with animations on).
     roll: crate::roll::Roll,
     swipe: Swipe,
+    spike: Spike,
     /// Where the player is (nothing while hidden), whether the drawer is out, and the test script's order to keep it out.
     player_rect: egui::Rect,
     drawer_open: bool,
@@ -315,6 +435,7 @@ impl App {
             wheel: 0.0,
             roll: Default::default(),
             swipe: Swipe::default(),
+            spike: Spike::default(),
             player_rect: egui::Rect::NOTHING,
             drawer_open: false,
             drawer_forced: false,
@@ -2643,6 +2764,17 @@ impl eframe::App for App {
         self.toasts(&ctx);
     }
 
+    /// The pages only: the slideshow's strip (`roll.rs`) takes the touchpad as it comes.
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if self.covered() || self.current_ref().is_none() {
+            if let Some(after) = self.spike.filter(&mut raw.events, Instant::now()) {
+                ctx.request_repaint_after(after);
+            }
+        } else if std::mem::take(&mut self.spike).last.is_some() {
+            raw.events.push(touch(egui::TouchPhase::End));
+        }
+    }
+
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
         if let Some(player) = self.video.as_mut() {
             player.shutdown(gl);
@@ -2655,6 +2787,102 @@ impl eframe::App for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn wheel(y: f32) -> egui::Event {
+        egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: Vec2::new(0.0, y), phase: egui::TouchPhase::Move, modifiers: egui::Modifiers::NONE }
+    }
+
+    /// What one frame `ms` after the one before passes on of these events: the steps and the touch's phases.
+    fn frame(spike: &mut Spike, t: &mut Instant, events: Vec<egui::Event>, ms: u64) -> (Vec<f32>, Vec<egui::TouchPhase>) {
+        *t += Duration::from_millis(ms);
+        let mut events = events;
+        spike.filter(&mut events, *t);
+        let steps = events.iter().filter_map(|e| if let egui::Event::MouseWheel { delta, phase: egui::TouchPhase::Move, .. } = e { Some(delta.y) } else { None }).collect();
+        let phases = events.iter().filter_map(|e| if let egui::Event::MouseWheel { phase, delta, .. } = e { (*delta == Vec2::ZERO).then_some(*phase) } else { None }).collect();
+        (steps, phases)
+    }
+
+    /// Frames 8 ms apart until the touch ends: how far the page went.
+    fn settle(spike: &mut Spike, t: &mut Instant) -> f32 {
+        let mut gone = 0.0;
+        if spike.last.is_none() {
+            return gone;
+        }
+        for _ in 0..100 {
+            let (steps, phases) = frame(spike, t, vec![], 8);
+            gone += steps.iter().sum::<f32>();
+            if phases.contains(&egui::TouchPhase::End) {
+                return gone;
+            }
+        }
+        panic!("the touch did not end: owed {} rate {} last {:?}", spike.owed, spike.rate, spike.last.map(|l| *t - l));
+    }
+
+    #[test]
+    fn touchpad_scrolling_on_the_pages_has_no_jumps() {
+        let t = &mut Instant::now();
+        // From the recording: -2.79, +3.31, -2.25 is one flick down. The touch is told first, so egui moves the
+        // page by what it is given without easing it in.
+        let spike = &mut Spike::default();
+        let (steps, phases) = frame(spike, t, vec![wheel(-2.79), wheel(3.31), wheel(-2.25)], 0);
+        assert_eq!(phases, [egui::TouchPhase::Start]);
+        let gone = steps.iter().sum::<f32>() + settle(spike, t);
+        assert!((gone + 5.04).abs() < 1e-4, "{gone}");
+
+        // Going back up for real: the held event comes through with the next one.
+        let spike = &mut Spike::default();
+        let (mut gone, _) = (frame(spike, t, vec![wheel(-1.5)], 8).0.iter().sum::<f32>(), 0);
+        gone += frame(spike, t, vec![wheel(3.01)], 8).0.iter().sum::<f32>();
+        gone += frame(spike, t, vec![wheel(5.05)], 8).0.iter().sum::<f32>();
+        gone += settle(spike, t);
+        assert!((gone - 6.56).abs() < 1e-4, "{gone}");
+
+        // A mouse's notch passes as it is.
+        let spike = &mut Spike::default();
+        assert_eq!(frame(spike, t, vec![wheel(-1.0)], 8), (vec![-1.0], vec![]));
+
+        // Windows coasts in events 25 ms apart; frames come every 8 ms, and the page moves on each of them.
+        let spike = &mut Spike::default();
+        let mut moves = vec![];
+        for n in 1..=24 {
+            // The events due by this frame since the one before: in frames 4, 7, 10 …
+            let events = if (n * 8) / 25 != ((n - 1) * 8) / 25 { vec![wheel(-4.1)] } else { vec![] };
+            moves.push(frame(spike, t, events, 8).0.iter().sum::<f32>());
+        }
+        // From the second event on (the first has nothing before it to be spread over), every frame moves
+        // about as much: as the events come, a frame would move 4.1 lines and the next two nothing.
+        let even = &moves[6..];
+        assert!(even.iter().all(|s| (-2.0..-0.8).contains(s)), "{moves:?}");
+
+        // Windows' coasting gathered into big events 83 ms apart (from the log) goes, spread out.
+        let spike = &mut Spike::default();
+        let mut moves = vec![frame(spike, t, vec![wheel(-1.5)], 8).0.iter().sum::<f32>()];
+        for n in 1..=40 {
+            let events = match n {
+                4 => vec![wheel(-8.21)],
+                14 => vec![wheel(-16.58)],
+                24 => vec![wheel(-12.13)],
+                _ => vec![],
+            };
+            moves.push(frame(spike, t, events, 8).0.iter().sum::<f32>());
+        }
+        let gone = moves.iter().sum::<f32>() + settle(spike, t);
+        assert!((gone + 38.42).abs() < 1e-3, "{gone}");
+        assert!(moves.iter().all(|m| m.abs() < 3.0), "{moves:?}");
+
+        // Windows' late coasting: one big event long after the fingers lifted, then a trickle. Nothing moves.
+        let spike = &mut Spike::default();
+        frame(spike, t, vec![wheel(-1.5)], 8);
+        settle(spike, t);
+        assert_eq!(frame(spike, t, vec![wheel(-65.23)], 250), (vec![], vec![]));
+        assert_eq!(frame(spike, t, vec![wheel(-0.12)], 10), (vec![], vec![]));
+        assert_eq!(frame(spike, t, vec![wheel(-7.31)], 300), (vec![], vec![]));
+        // But a new flick goes, and so does Windows' first coasting event right after the fingers.
+        let (steps, phases) = frame(spike, t, vec![wheel(-2.5)], 300);
+        assert_eq!((steps, phases), (vec![-2.5], vec![egui::TouchPhase::Start]));
+        let gone = frame(spike, t, vec![wheel(-7.0)], 8).0.iter().sum::<f32>() + settle(spike, t);
+        assert!((gone + 7.0).abs() < 1e-4, "{gone}");
+    }
 
     #[test]
     fn a_suggestion_replaces_the_word_being_typed() {
