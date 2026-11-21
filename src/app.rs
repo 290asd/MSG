@@ -3,6 +3,7 @@
 use super::downloads::{self, Downloader};
 use super::favorites::{self, Favorites};
 use super::glass;
+use super::hydrus;
 use super::logo;
 use super::hotkeys::{self, Hotkeys};
 use super::theme::{self, icon, tok};
@@ -355,6 +356,7 @@ impl App {
         let (limit, max_age) = (media::disk_limit(&app.store), media::disk_max_age(&app.store));
         std::thread::spawn(move || media::trim_disk_cache(limit, max_age));
         app.downloader.schedule(Duration::from_secs(15));
+        hydrus::expire(&app.engine);
         if app.auto_follow_limit() > 0.0 {
             favorites::fetch_tag_groups(&app.engine, app.tx.clone(), &app.fav.items);
         }
@@ -646,7 +648,7 @@ impl App {
         self.close_search_list();
         self.query.clear();
         self.set_aside_search();
-        self.search = Some(Search::new(self.generation, &text, sites, &self.store));
+        self.search = Some(hydrus::front_page(&self.store, Search::new(self.generation, &text, sites, &self.store), &text.replace(HOT_QUERY, "msg:hot:")));
         self.reading_list = false;
         self.cur[Mode::Slideshow as usize] = 0;
         self.shown_at = None;
@@ -663,10 +665,10 @@ impl App {
     /// The search as it would start now, with the settings as they are now (nothing is read yet).
     fn search_now(&self, search: &Search) -> Search {
         if self.reading_list {
-            Search::many(self.generation, &session::reading_list(&self.store), &self.store)
+            hydrus::front_page(&self.store, Search::many(self.generation, &session::reading_list(&self.store), &self.store), "msg:home")
         } else if search.text.starts_with(HOT_QUERY) {
             let (text, sites) = self.hot_search();
-            Search::new(self.generation, &text, sites, &self.store)
+            hydrus::front_page(&self.store, Search::new(self.generation, &text, sites, &self.store), &text.replace(HOT_QUERY, "msg:hot:"))
         } else if let Some(site) = search.only {
             let mut new = Search::new(self.generation, &search.text, vec![site], &self.store);
             new.only = Some(site);
@@ -711,7 +713,7 @@ impl App {
     /// The followed searches together, newest first (not saved in the history).
     pub fn start_reading(&mut self) {
         // Coming back from elsewhere soon: as it was left. Asked for on the list itself: read again.
-        let now = Search::many(self.generation, &session::reading_list(&self.store), &self.store);
+        let now = hydrus::front_page(&self.store, Search::many(self.generation, &session::reading_list(&self.store), &self.store), "msg:home");
         let kept = if self.reading_list { None } else { self.home_kept.take().filter(|k| k.2.elapsed() < HOME_KEEP && k.0.same_as(&now)) };
         self.generation += 1;
         self.query.clear();
@@ -793,7 +795,10 @@ impl App {
                     }
                     let Some(search) = self.search.as_mut().filter(|s| s.generation == batch.generation) else { continue };
                     let warnings = batch.warnings.clone();
-                    search.accept(batch);
+                    let added = search.accept(batch);
+                    if let Some(tag) = &search.home {
+                        hydrus::remember(&self.engine, tag, search.slides[search.slides.len() - added..].to_vec());
+                    }
                     let empty = search.slides.is_empty() && !search.has_more();
                     for w in warnings {
                         self.notice(w);

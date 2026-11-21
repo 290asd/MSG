@@ -366,6 +366,75 @@ pub fn sync(engine: &Engine, tx: &Sender<Msg>, slide: &Slide, faved: bool) {
     });
 }
 
+/// Days the front page is kept in Hydrus (`hydrusHomeDays`, 0 = off).
+fn home_days(store: &Store) -> u64 {
+    store.get("hydrusHomeDays").and_then(|v| v.as_f64()).unwrap_or(0.0).max(0.0) as u64
+}
+
+/// The tags the front pages are kept under in Hydrus: the reading list, and Hottest by its period.
+const HOME_TAGS: [&str; 5] = ["msg:home", "msg:hot:day", "msg:hot:week", "msg:hot:month", "msg:hot:year"];
+
+/// The front page with Hydrus first (when `hydrusHomeDays` is on): what Hydrus has downloaded under `tag`, then the
+/// sites for the rest (`Search::load_more` waits for Hydrus to run out).
+pub fn front_page(store: &Store, search: super::session::Search, tag: &str) -> super::session::Search {
+    if home_days(store) == 0 || base(store).is_none() {
+        return search;
+    }
+    search.hydrus_first(tag)
+}
+
+/// The front page's new posts from the sites go to Hydrus, which downloads them itself (its own downloaders) under
+/// `tag`. Posts Hydrus has already are left alone, so `expire` never deletes a file that was there before.
+pub fn remember(engine: &Engine, tag: &str, slides: Vec<Slide>) {
+    let Some(base) = base(&engine.store).filter(|_| home_days(&engine.store) > 0) else { return };
+    let (engine, tag) = (engine.clone(), tag.to_string());
+    engine.rt.clone().spawn(async move {
+        // Hydrus shows the newest import first: the first post goes last.
+        // ponytail: order by import time, Hydrus's queue usually keeps it; the spread of the reading list is lost.
+        for slide in slides.iter().rev().filter(|s| s.site_id != "HYDR" && net::web_url(&s.viewable_website_post_url).is_some()) {
+            let url = format!("{base}/add_urls/get_url_files?url={}", enc(&slide.viewable_website_post_url));
+            let Ok(v) = get_json(&engine, &url).await else { return };
+            if v["url_file_statuses"].as_array().is_some_and(|s| !s.is_empty()) {
+                continue;
+            }
+            let body = json!({ "url": slide.viewable_website_post_url, "destination_page_name": "MSG front page", "show_destination_page": false, "service_keys_to_additional_tags": { MY_TAGS: [tag] } });
+            if post_json(&engine, "/add_urls/add_url", body).await.is_err() {
+                return;
+            }
+        }
+    });
+}
+
+/// Sends the front page files older than `hydrusHomeDays` to Hydrus's trash, except favorites.
+pub fn expire(engine: &Engine) {
+    let days = home_days(&engine.store);
+    let Some(base) = base(&engine.store).filter(|_| days > 0) else { return };
+    let engine = engine.clone();
+    engine.rt.clone().spawn(async move {
+        let url = format!("{base}/get_files/search_files?tags={}", enc(&json!([HOME_TAGS]).to_string()));
+        let Ok(v) = get_json(&engine, &url).await else { return };
+        let ids: Vec<u64> = v["file_ids"].as_array().into_iter().flatten().filter_map(Value::as_u64).collect();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+        let mut old = vec![];
+        for chunk in ids.chunks(PAGE) {
+            let url = format!("{base}/get_files/file_metadata?file_ids={}&include_services_object=false", enc(&json!(chunk).to_string()));
+            let Ok(v) = get_json(&engine, &url).await else { return };
+            old.extend(v["metadata"].as_array().into_iter().flatten().filter(|m| expired(m, now, days)).filter_map(|m| m["file_id"].as_u64()));
+        }
+        if !old.is_empty() {
+            let _ = post_json(&engine, "/add_files/delete_files", json!({ "file_ids": old, "reason": "MSG front page, kept its days" })).await;
+        }
+    });
+}
+
+/// A front page file imported more than `days` ago and not a favorite (liked on "favourites" or msg:favorite).
+fn expired(m: &Value, now: i64, days: u64) -> bool {
+    let imported = m["file_services"]["current"].as_object().into_iter().flatten().filter_map(|(_, s)| s["time_imported"].as_i64()).min().unwrap_or(now);
+    let liked = m["ratings"][FAVOURITES] == true;
+    let tagged = m["tags"][ALL_KNOWN_TAGS]["display_tags"]["0"].as_array().is_some_and(|t| t.iter().any(|t| t == FAVORITE_TAG));
+    now - imported > days as i64 * 86400 && !liked && !tagged
+}
+
 /// Set to end `send_all` early.
 pub static STOP: AtomicBool = AtomicBool::new(false);
 /// `send_all` is going.
@@ -434,6 +503,23 @@ mod tests {
         assert!(s.date.starts_with("2023-11-14"));
         let explicit_only = Config { explicit: true, ..cfg };
         assert!(slide_of(&explicit_only, "http://h:45869", &m).is_none());
+    }
+
+    #[test]
+    fn front_page_expiry() {
+        let day = 86400;
+        let m = |imported: i64, extra: Value| {
+            let mut m = json!({"file_services": {"current": {"k": {"time_imported": imported}}}, "tags": {ALL_KNOWN_TAGS: {"display_tags": {"0": ["msg:home"]}}}});
+            if let Value::Object(e) = extra {
+                m.as_object_mut().unwrap().extend(e);
+            }
+            m
+        };
+        let now = 100 * day;
+        assert!(expired(&m(now - 8 * day, json!({})), now, 7));
+        assert!(!expired(&m(now - 6 * day, json!({})), now, 7));
+        assert!(!expired(&m(now - 8 * day, json!({"ratings": {FAVOURITES: true}})), now, 7));
+        assert!(!expired(&m(now - 8 * day, json!({"tags": {ALL_KNOWN_TAGS: {"display_tags": {"0": [FAVORITE_TAG]}}}})), now, 7));
     }
 
     #[test]

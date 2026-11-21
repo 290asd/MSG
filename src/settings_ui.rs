@@ -271,6 +271,11 @@ impl App {
                 }
             });
             self.check(ui, "hydrusFavorites", true, "Keep favorites in Hydrus too");
+            let mut days = self.number("hydrusHomeDays", 0.0);
+            let hover = "The front page's posts are downloaded by Hydrus and shown from there first the next time, then the sites. Older ones go to Hydrus's trash when MSG starts (not favorites). 0 = off.";
+            if theme::row(ui, "Keep the front page in Hydrus (days)", |ui| ui.add(egui::DragValue::new(&mut days).range(0.0..=365.0)).on_hover_text(hover).changed()) {
+                self.set("hydrusHomeDays", json!(days.round()));
+            }
             use std::sync::atomic::Ordering::SeqCst;
             let sending = super::hydrus::SENDING.load(SeqCst);
             let [done, failed, all] = super::hydrus::SENT.each_ref().map(|n| n.load(SeqCst));

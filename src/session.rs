@@ -141,6 +141,8 @@ pub struct Search {
     include_dupes: bool,
     // What it was started with (each cursor's words and site), to tell whether the settings have changed since.
     basis: Vec<(Option<String>, Site)>,
+    /// A front page read from Hydrus first: its tag there (hydrus::front_page).
+    pub home: Option<String>,
 }
 
 impl Search {
@@ -158,7 +160,16 @@ impl Search {
             only: None,
             seen: HashSet::new(),
             include_dupes: store.flag("includeDupes"),
+            home: None,
         }
+    }
+
+    /// Reads what Hydrus keeps under `tag` before the sites.
+    pub fn hydrus_first(mut self, tag: &str) -> Search {
+        self.cursors.insert(0, Cursor { query: Some(tag.into()), ..Cursor::new(Site::Hydrus) });
+        self.basis.insert(0, (Some(tag.into()), Site::Hydrus));
+        self.home = Some(tag.into());
+        self
     }
 
     /// The reading list: every entry searched on its own sites, the results together (newest first, a page at a time).
@@ -190,7 +201,10 @@ impl Search {
             return;
         }
         self.loading = true;
-        let (cursors, finished) = std::mem::take(&mut self.cursors).into_iter().partition(|c| !c.exhausted);
+        // A front page kept in Hydrus: the sites only after Hydrus has run out.
+        let is_home = |c: &Cursor| c.site == Site::Hydrus && c.query.is_some() && c.query == self.home;
+        let home_first = self.cursors.iter().any(|c| !c.exhausted && is_home(c));
+        let (cursors, finished) = std::mem::take(&mut self.cursors).into_iter().partition(|c| !c.exhausted && (!home_first || is_home(c)));
         self.cursors = finished;
         let (cfg, text, generation, engine) = (self.cfg.clone(), self.text.clone(), self.generation, engine.clone());
         engine.rt.clone().spawn(async move {
@@ -239,7 +253,11 @@ impl Search {
         let mut fresh: Vec<Slide> = batch
             .slides
             .into_iter()
-            .filter(|s| self.include_dupes || s.md5.is_empty() || self.seen.insert(s.md5.clone()))
+            // Also the same post from Hydrus and from its site (Hydrus's hash isn't an md5).
+            .filter(|s| {
+                (self.include_dupes || s.md5.is_empty() || self.seen.insert(s.md5.clone()))
+                    && (self.home.is_none() || s.viewable_website_post_url.is_empty() || self.seen.insert(s.viewable_website_post_url.clone()))
+            })
             .collect();
         // A pool keeps its own order.
         if sites::pool_id(&self.text).is_none() {
