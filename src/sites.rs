@@ -398,8 +398,9 @@ pub fn e621_old_post(mut post: Value) -> Value {
         let (meta, original) = (&files["meta"], &files["original"]);
         post["file"] = serde_json::json!({"url": original["url"], "md5": meta["md5"], "ext": meta["ext"], "width": original["width"], "height": original["height"]});
         post["preview"] = serde_json::json!({"url": files["preview"]["jpg"]});
-        let sample = if meta["has_sample"] == true { files["sample"]["jpg"].clone() } else { Value::Null };
-        post["sample"] = serde_json::json!({ "url": sample });
+        // Without a sample of its own, "sample" holds the original, as the old "sample.url" did: the mosaic's
+        // wide tiles need it, the preview is only about 256 px.
+        post["sample"] = serde_json::json!({ "url": files["sample"]["jpg"] });
     }
     if let Some(score) = post.get("stats").map(|s| s["score"].clone()) {
         post["score"] = score;
@@ -672,6 +673,10 @@ mod tests {
         assert!(s.tag_groups.is_none());
         let old = e621_old_posts(serde_json::from_str(body).unwrap());
         assert_eq!(old["posts"][0]["preview"]["url"], "https://static1.e621.net/data/preview/b3/2f/b32f.jpg");
+        // A small picture has no sample of its own: e621 gives the original there, and the wide tiles use it.
+        let small = body.replace("\"has_sample\":true", "\"has_sample\":false").replace("data/sample/b3/2f/b32f.jpg", "data/b3/2f/b32f.jpg");
+        let s = &parse(&config(), Site::E621, &small).unwrap().0[0];
+        assert_eq!(s.sample_file_url.as_deref(), Some("https://static1.e621.net/data/b3/2f/b32f.jpg"));
     }
 
     #[test]
