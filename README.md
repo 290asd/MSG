@@ -12,7 +12,7 @@ Native Windows, written in Rust with [egui](https://github.com/emilk/egui). Base
 
 ## Features
 
-- **Mosaic**: every search opens as a wall of pictures. Click one to look closer, or press Space to play.
+- **Mosaic**: every search opens as a wall of pictures. Click one to look closer, or press Space to play. Right click copies a picture (in the slideshow too).
 - **Slideshow**: the picture fills the window. The controls fade away, and the rest waits in a drawer on the left.
 - **Reading list**: follow artists and tags, and their newest posts are your front page.
 - **Hottest**: the best of the last day, week, month or year.

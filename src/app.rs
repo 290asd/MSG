@@ -1023,6 +1023,26 @@ impl App {
         downloads::display_url(&self.copies, url)
     }
 
+    /// Right click: the slide's whole picture to the clipboard, fetched again (the shown one is on the GPU).
+    pub fn copy_picture(&self, slide: &Slide) {
+        if slide.media_type == MediaType::Video {
+            let _ = self.tx.send(Msg::Notice("Videos can't be copied.".into()));
+            return;
+        }
+        let (engine, tx, url) = (self.engine.clone(), self.tx.clone(), self.copies_or(&slide.file_url));
+        self.engine.rt.spawn(async move {
+            let result = match media::bytes(&engine, &url).await {
+                Ok(bytes) => tokio::task::spawn_blocking(move || super::clipboard::copy_picture(&bytes)).await.unwrap_or_else(|_| Err("copying failed".into())),
+                Err(e) => Err(e),
+            };
+            let _ = tx.send(Msg::Notice(match result {
+                Ok(()) => "Picture copied.".into(),
+                Err(e) => format!("Couldn't copy: {e}"),
+            }));
+            engine.wake();
+        });
+    }
+
     fn toggle_tag_search(&mut self, tag: &str) {
         let add = self.text("tagClick") == "add";
         if self.mode == Mode::Favorites {
@@ -2108,6 +2128,9 @@ impl App {
         }
         if response.middle_clicked() {
             self.open_source();
+        }
+        if response.secondary_clicked() {
+            self.copy_picture(&slide);
         }
     }
 

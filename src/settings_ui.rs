@@ -921,6 +921,9 @@ impl App {
                 if response.clicked() {
                     go = Some(n);
                 }
+                if response.secondary_clicked() {
+                    self.copy_picture(&self.list()[n].clone());
+                }
             }
             self.hovered_post = hovered_post;
         });

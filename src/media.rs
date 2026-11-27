@@ -193,6 +193,15 @@ async fn get_cached(engine: &Engine, url: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+/// The bytes of a picture: a site's (from the disk if kept) or a file's.
+pub async fn bytes(engine: &Engine, url: &str) -> Result<Vec<u8>, String> {
+    if net::web_url(url).is_some() {
+        get_cached(engine, url).await
+    } else {
+        tokio::fs::read(url).await.map_err(|_| "file not found".to_string())
+    }
+}
+
 enum Decoded {
     Frames(Vec<(ColorImage, Duration)>),
     Video(TempVideo),
