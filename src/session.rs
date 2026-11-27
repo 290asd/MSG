@@ -173,9 +173,23 @@ impl Search {
     }
 
     /// The reading list: every entry searched on its own sites, the results together (newest first, a page at a time).
+    /// e621's one-word entries go together as `~a ~b …`, 40 words a search (e621's limit): 65 artists are two
+    /// requests, not 65 at two a second, so the whole list comes at once.
     pub fn many(generation: u64, entries: &[(String, Vec<Site>)], store: &Store) -> Search {
+        const OR_MAX: usize = 40;
+        let one_word = |t: &str| !t.is_empty() && !t.contains(char::is_whitespace) && !t.starts_with(['-', '~']) && !t.contains([':', '*']);
         let mut search = Search::new(generation, "", vec![], store);
-        search.cursors = entries.iter().flat_map(|(tags, sites)| sites.iter().map(|s| Cursor { query: Some(tags.clone()), ..Cursor::new(*s) })).collect();
+        let mut words = vec![];
+        for (tags, sites) in entries {
+            for site in sites {
+                if *site == Site::E621 && one_word(tags) {
+                    words.push(format!("~{tags}"));
+                } else {
+                    search.cursors.push(Cursor { query: Some(tags.clone()), ..Cursor::new(*site) });
+                }
+            }
+        }
+        search.cursors.extend(words.chunks(OR_MAX).map(|w| Cursor { query: Some(w.join(" ")), ..Cursor::new(Site::E621) }));
         search.basis = search.cursors.iter().map(|c| (c.query.clone(), c.site)).collect();
         search
     }
@@ -228,7 +242,7 @@ impl Search {
             for (n, task) in tasks.into_iter().enumerate() {
                 if let Ok((cursor, mut got, warning)) = task.await {
                     if let Some(query) = &cursor.query {
-                        part.owners.extend(got.iter().map(|s| (s.key(), query.clone())));
+                        part.owners.extend(got.iter().map(|s| (s.key(), owner(query, s))));
                     }
                     part.cursors.push(cursor);
                     part.slides.append(&mut got);
@@ -270,6 +284,16 @@ impl Search {
         self.slides.append(&mut fresh);
         added
     }
+}
+
+/// The followed search a post came from: in `~a ~b …` the word among its tags.
+fn owner(query: &str, slide: &Slide) -> String {
+    let words: Vec<&str> = query.split_whitespace().collect();
+    let any_of: Vec<&str> = words.iter().filter_map(|w| w.strip_prefix('~')).collect();
+    if any_of.is_empty() || any_of.len() != words.len() {
+        return query.to_string();
+    }
+    any_of.into_iter().find(|w| slide.tags.split(' ').any(|t| t.eq_ignore_ascii_case(w))).unwrap_or(query).to_string()
 }
 
 /// How many posts of others come between two of the same followed search, when there are others left.
@@ -554,7 +578,12 @@ mod tests {
         store.data.lock().unwrap().insert("readingList".into(), list);
         let search = Search::many(1, &reading_list(&store), &store);
         let cursors: Vec<(Site, &str)> = search.cursors.iter().map(|c| (c.site, c.query.as_deref().unwrap_or(""))).collect();
-        assert_eq!(cursors, [(Site::E621, "a"), (Site::Safebooru, "a"), (Site::E621, "b")]);
+        assert_eq!(cursors, [(Site::Safebooru, "a"), (Site::E621, "~a ~b")]);
+        let post = Slide { tags: "cat B".into(), ..Default::default() };
+        assert_eq!((owner("~a ~b", &post), owner("b -x", &post)), ("b".to_string(), "b -x".to_string()));
+        let many: Vec<(String, Vec<Site>)> = (0..41).map(|n| (format!("t{n}"), vec![Site::E621])).chain([("x y".into(), vec![Site::E621])]).collect();
+        let words: Vec<usize> = Search::many(1, &many, &store).cursors.iter().map(|c| c.query.as_deref().unwrap_or("").split(' ').count()).collect();
+        assert_eq!(words, [2, 40, 1]);
         // Only a change in what it reads makes it another search.
         assert!(search.same_as(&Search::many(2, &reading_list(&store), &store)));
         store.data.lock().unwrap().insert("readingList".into(), serde_json::json!([{"tags": "a", "sites": ["E621"]}]));
