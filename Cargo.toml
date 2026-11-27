@@ -1,6 +1,6 @@
 [package]
 name = "msg"
-version = "2.6.1"
+version = "2.6.2"
 description = "A slideshow for booru sites, based on the BooruSlideshow extension."
 edition = "2021"
 default-run = "MSG"
