@@ -2321,7 +2321,7 @@ dependencies = [
 
 [[package]]
 name = "msg"
-version = "2.6.2"
+version = "2.6.3"
 dependencies = [
  "chrono",
  "color_quant",
